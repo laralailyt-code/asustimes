@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.exe
+*.pkl
+*.log
+cf_output.txt
+ssh_out.txt
+ssh_err.txt
+*.bat
+jd_*
