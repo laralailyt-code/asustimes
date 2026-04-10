@@ -11,6 +11,7 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 from email.utils import parsedate_to_datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -225,14 +226,21 @@ FEEDS = [
 ]
 
 
-# ── Main aggregator ───────────────────────────────────────────────────────────
+# ── Main aggregator (parallel fetch) ─────────────────────────────────────────
 def fetch_all_news() -> list[dict]:
-    logger.info("ASUSTIMES: starting fetch…")
+    logger.info("ASUSTIMES: starting parallel fetch…")
     results: list[dict] = []
 
-    for feed in FEEDS:
-        items = parse_rss(feed["url"], feed["source"], feed.get("hint", ""))
-        results.extend(items)
+    def _fetch(feed):
+        return parse_rss(feed["url"], feed["source"], feed.get("hint", ""))
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(_fetch, feed): feed for feed in FEEDS}
+        for future in as_completed(futures):
+            try:
+                results.extend(future.result())
+            except Exception as e:
+                logger.warning(f"Feed failed: {e}")
 
     # Deduplicate by normalised title prefix
     seen: set[str] = set()
