@@ -54,9 +54,20 @@ def background_refresh_loop():
         refresh_news()
 
 
-# Start background thread
-_bg_thread = threading.Thread(target=background_refresh_loop, daemon=True)
-_bg_thread.start()
+# ── Background thread: starts on first request (gunicorn-compatible) ───────────
+_bg_started = False
+_bg_lock = threading.Lock()
+
+@app.before_request
+def _ensure_bg_running():
+    global _bg_started
+    if not _bg_started:
+        with _bg_lock:
+            if not _bg_started:
+                _bg_started = True
+                t = threading.Thread(target=background_refresh_loop, daemon=True)
+                t.start()
+                logger.info("Background refresh thread started in worker")
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
