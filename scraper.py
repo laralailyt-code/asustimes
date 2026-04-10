@@ -24,7 +24,7 @@ HEADERS = {
     ),
     "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
 }
-TIMEOUT = 15
+TIMEOUT = 8
 
 # ── ASUS-relevant categories ─────────────────────────────────────────────────
 CATEGORY_KEYWORDS = {
@@ -194,35 +194,28 @@ GN_EN = "https://news.google.com/rss/search?hl=en-US&gl=US&ceid=US:en&q="
 
 FEEDS = [
     # ── 台灣科技媒體 ────────────────────────────────────────────────────────
-    {"url": GN + "site:digitimes.com.tw",                "source": "Digitimes",  "hint": "半導體"},
-    {"url": GN + "site:ctee.com.tw+科技",                "source": "工商時報",   "hint": "PC / NB"},
-    {"url": GN + "site:ctee.com.tw+半導體",              "source": "工商時報",   "hint": "半導體"},
-    {"url": GN + "site:money.udn.com+科技",              "source": "經濟日報",   "hint": "半導體"},
-    {"url": GN + "site:technews.tw",                     "source": "科技新報",   "hint": "AI 產業"},
-    {"url": GN + "site:ithome.com.tw",                   "source": "iThome",     "hint": "AI 產業"},
-    {"url": GN + "site:cool3c.com",                      "source": "電腦王",     "hint": "電競/ROG"},
-    {"url": GN + "site:benchlife.info",                  "source": "Benchlife",  "hint": "半導體"},
+    {"url": GN + "site:digitimes.com.tw",   "source": "Digitimes",   "hint": "半導體"},
+    {"url": GN + "site:ctee.com.tw+科技",   "source": "工商時報",    "hint": "PC / NB"},
+    {"url": GN + "site:technews.tw",        "source": "科技新報",    "hint": "AI 產業"},
+    {"url": GN + "site:ithome.com.tw",      "source": "iThome",      "hint": "AI 產業"},
+    {"url": GN + "site:cool3c.com",         "source": "電腦王",      "hint": "電競/ROG"},
 
     # ── 主題精選 ────────────────────────────────────────────────────────────
-    {"url": GN + "AI+伺服器+台灣",                       "source": "Google News", "hint": "伺服器/雲端"},
-    {"url": GN + "HBM+記憶體+AI",                        "source": "Google News", "hint": "記憶體/儲存"},
-    {"url": GN + "台積電+先進製程",                      "source": "Google News", "hint": "半導體"},
-    {"url": GN + "電競+顯卡+RTX",                        "source": "Google News", "hint": "電競/ROG"},
-    {"url": GN + "筆電+出貨+PC市場",                     "source": "Google News", "hint": "PC / NB"},
-    {"url": GN + "關稅+科技+供應鏈",                     "source": "Google News", "hint": "供應鏈/關稅"},
-    {"url": GN + "OLED+面板+顯示器",                     "source": "Google News", "hint": "面板/顯示"},
+    {"url": GN + "AI+伺服器+台灣",          "source": "Google News", "hint": "伺服器/雲端"},
+    {"url": GN + "HBM+記憶體+AI",           "source": "Google News", "hint": "記憶體/儲存"},
+    {"url": GN + "台積電+先進製程",         "source": "Google News", "hint": "半導體"},
+    {"url": GN + "電競+顯卡+RTX",           "source": "Google News", "hint": "電競/ROG"},
+    {"url": GN + "筆電+出貨+PC市場",        "source": "Google News", "hint": "PC / NB"},
+    {"url": GN + "關稅+科技+供應鏈",        "source": "Google News", "hint": "供應鏈/關稅"},
+    {"url": GN + "OLED+面板+顯示器",        "source": "Google News", "hint": "面板/顯示"},
 
-    # ── 英文科技媒體 (English tech) ─────────────────────────────────────────
-    {"url": GN_EN + "site:tomshardware.com",             "source": "Tom's Hardware", "hint": "電競/ROG"},
-    {"url": GN_EN + "site:anandtech.com OR site:semianalysis.com", "source": "SemiAnalysis", "hint": "半導體"},
-    {"url": GN_EN + "site:theverge.com+chip OR GPU OR AI","source": "The Verge",  "hint": "AI 產業"},
-    {"url": GN_EN + "TSMC+semiconductor+AI",             "source": "Global Tech", "hint": "半導體"},
-    {"url": GN_EN + "DRAM+HBM+memory+AI",               "source": "Global Tech", "hint": "記憶體/儲存"},
-    {"url": GN_EN + "NVIDIA+GPU+data center",            "source": "Global Tech", "hint": "AI 產業"},
-    {"url": GN_EN + "gaming+laptop+GPU+2025 OR 2026",   "source": "Global Tech", "hint": "電競/ROG"},
+    # ── 英文科技媒體 ────────────────────────────────────────────────────────
+    {"url": GN_EN + "site:tomshardware.com",  "source": "Tom's Hardware", "hint": "電競/ROG"},
+    {"url": GN_EN + "TSMC+semiconductor+AI",  "source": "Global Tech",    "hint": "半導體"},
+    {"url": GN_EN + "NVIDIA+GPU+data+center", "source": "Global Tech",    "hint": "AI 產業"},
 
-    # ── Yahoo財經 (tech headlines) ──────────────────────────────────────────
-    {"url": "https://tw.news.yahoo.com/rss/finance",     "source": "Yahoo財經",  "hint": "供應鏈/關稅"},
+    # ── Yahoo財經 ────────────────────────────────────────────────────────────
+    {"url": "https://tw.news.yahoo.com/rss/finance", "source": "Yahoo財經", "hint": "供應鏈/關稅"},
 ]
 
 
@@ -236,7 +229,7 @@ def fetch_all_news() -> list[dict]:
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = {executor.submit(_fetch, feed): feed for feed in FEEDS}
-        for future in as_completed(futures):
+        for future in as_completed(futures, timeout=60):
             try:
                 results.extend(future.result())
             except Exception as e:
