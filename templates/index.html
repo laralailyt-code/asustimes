@@ -69,7 +69,7 @@
   }
 
   /* ── Logo ── */
-  .logo { display: flex; align-items: center; gap: 0.7rem; text-decoration: none; }
+  .logo { display: flex; align-items: center; gap: 0.7rem; text-decoration: none; flex-shrink: 0; }
   .logo-mark {
     width: 38px; height: 38px;
     background: linear-gradient(135deg, #0f40c8, #1464f6, #38a3ff);
@@ -114,6 +114,16 @@
   .search-input::placeholder { color: var(--text-muted); }
   .search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--glow); }
 
+  /* Mobile search bar (hidden by default, shown below header) */
+  .mobile-search-bar {
+    display: none;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    padding: 0.6rem 1rem;
+  }
+  .mobile-search-bar.open { display: flex; }
+  .mobile-search-bar .search-input { max-width: 100%; }
+
   .header-actions { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
   .btn-icon {
     width: 34px; height: 34px; background: var(--bg-card);
@@ -154,6 +164,21 @@
   .stat-sep { width: 1px; height: 13px; background: var(--border); }
   .last-update { margin-left: auto; font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; }
 
+  /* ── Date filter pills ── */
+  .date-filters { display: flex; gap: 0.4rem; margin-bottom: 0.7rem; flex-wrap: wrap; align-items: center; }
+  .date-label { font-size: 0.72rem; color: var(--text-muted); margin-right: 0.2rem; }
+  .date-pill {
+    padding: 0.22rem 0.65rem; border-radius: 20px;
+    border: 1px solid var(--border); background: var(--bg-card);
+    font-size: 0.72rem; cursor: pointer; transition: all 0.18s;
+    color: var(--text-secondary); font-family: inherit; font-weight: 500;
+  }
+  .date-pill:hover { border-color: var(--accent); color: var(--accent-2); }
+  .date-pill.active {
+    background: var(--accent); border-color: var(--accent);
+    color: white; box-shadow: 0 0 8px var(--glow);
+  }
+
   /* ── Source pills ── */
   .source-filters { display: flex; gap: 0.4rem; margin-bottom: 0.9rem; flex-wrap: wrap; }
   .source-pill {
@@ -168,9 +193,9 @@
     color: white; box-shadow: 0 0 10px var(--glow);
   }
 
-  /* ── Category tabs ── */
+  /* ── Category tabs (multi-select) ── */
   .tabs {
-    display: flex; gap: 0.2rem; margin-bottom: 1.3rem;
+    display: flex; gap: 0.2rem; margin-bottom: 0.6rem;
     background: var(--bg-card); border: 1px solid var(--border);
     border-radius: 12px; padding: 0.28rem;
     overflow-x: auto; scrollbar-width: none;
@@ -181,6 +206,7 @@
     font-size: 0.8rem; font-weight: 500; cursor: pointer;
     transition: all 0.18s; white-space: nowrap; border: none;
     background: transparent; color: var(--text-secondary); font-family: inherit;
+    user-select: none;
   }
   .tab:hover { color: var(--text-primary); background: var(--bg-card-hover); }
   .tab.active { background: var(--accent); color: white; box-shadow: 0 2px 10px var(--glow); }
@@ -190,12 +216,40 @@
     padding: 0 0.38rem; font-size: 0.66rem; margin-left: 0.28rem;
     min-width: 1.3rem; height: 1.3rem; font-weight: 600;
   }
+  .multi-hint {
+    font-size: 0.68rem; color: var(--text-muted); margin-bottom: 1rem;
+    padding-left: 0.3rem;
+  }
+
+  /* ── Result bar ── */
+  .result-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 0.8rem; min-height: 1.4rem;
+  }
+  .result-count { font-size: 0.75rem; color: var(--text-muted); }
+  .result-count strong { color: var(--text-secondary); }
 
   /* ── News grid ── */
   .news-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(345px, 1fr));
     gap: 1rem;
+  }
+
+  /* ── Date separator ── */
+  .date-sep {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: 0.75rem;
+    margin-top: 0.4rem;
+  }
+  .date-sep::before, .date-sep::after {
+    content: ''; flex: 1; height: 1px; background: var(--border);
+  }
+  .date-sep-label {
+    font-size: 0.7rem; color: var(--text-muted); white-space: nowrap;
+    font-family: 'Inter', sans-serif; font-weight: 600; letter-spacing: 0.06em;
+    background: var(--bg-card); padding: 0.2rem 0.6rem; border-radius: 20px;
+    border: 1px solid var(--border);
   }
 
   /* ── News card ── */
@@ -228,19 +282,17 @@
     border-radius: 5px; border: 1px solid; white-space: nowrap;
     letter-spacing: 0.03em; font-family: 'Inter', sans-serif;
   }
-  .src-digitimes    { color: #60a5fa; border-color: rgba(96,165,250,0.3);  background: rgba(96,165,250,0.08); }
-  .src-ctee         { color: #fbbf24; border-color: rgba(251,191,36,0.3);  background: rgba(251,191,36,0.08); }
-  .src-udn          { color: #34d399; border-color: rgba(52,211,153,0.3);  background: rgba(52,211,153,0.08); }
-  .src-technews     { color: #a78bfa; border-color: rgba(167,139,250,0.3); background: rgba(167,139,250,0.08); }
-  .src-ithome       { color: #fb923c; border-color: rgba(251,146,60,0.3);  background: rgba(251,146,60,0.08); }
-  .src-toms         { color: #f87171; border-color: rgba(248,113,113,0.3); background: rgba(248,113,113,0.08); }
-  .src-yahoo        { color: #38bdf8; border-color: rgba(56,189,248,0.3);  background: rgba(56,189,248,0.08); }
-  .src-global       { color: #94a3b8; border-color: rgba(148,163,184,0.25); background: rgba(148,163,184,0.07); }
+  .src-digitimes  { color: #60a5fa; border-color: rgba(96,165,250,0.3);  background: rgba(96,165,250,0.08); }
+  .src-ctee       { color: #fbbf24; border-color: rgba(251,191,36,0.3);  background: rgba(251,191,36,0.08); }
+  .src-udn        { color: #34d399; border-color: rgba(52,211,153,0.3);  background: rgba(52,211,153,0.08); }
+  .src-technews   { color: #a78bfa; border-color: rgba(167,139,250,0.3); background: rgba(167,139,250,0.08); }
+  .src-ithome     { color: #fb923c; border-color: rgba(251,146,60,0.3);  background: rgba(251,146,60,0.08); }
+  .src-toms       { color: #f87171; border-color: rgba(248,113,113,0.3); background: rgba(248,113,113,0.08); }
+  .src-yahoo      { color: #38bdf8; border-color: rgba(56,189,248,0.3);  background: rgba(56,189,248,0.08); }
+  .src-global     { color: #94a3b8; border-color: rgba(148,163,184,0.25); background: rgba(148,163,184,0.07); }
 
   /* Category tags */
-  .cat-tag {
-    font-size: 0.65rem; padding: 0.12rem 0.48rem; border-radius: 5px; font-weight: 600;
-  }
+  .cat-tag { font-size: 0.65rem; padding: 0.12rem 0.48rem; border-radius: 5px; font-weight: 600; }
   .cat-ai      { color: #c084fc; background: rgba(192,132,252,0.12); }
   .cat-mem     { color: #60a5fa; background: rgba(96,165,250,0.12);  }
   .cat-semi    { color: #fb923c; background: rgba(251,146,60,0.12);  }
@@ -249,6 +301,7 @@
   .cat-panel   { color: #fbbf24; background: rgba(251,191,36,0.12);  }
   .cat-gaming  { color: #f87171; background: rgba(248,113,113,0.12); }
   .cat-supply  { color: #94a3b8; background: rgba(148,163,184,0.12); }
+  .cat-fin     { color: #34d399; background: rgba(52,211,153,0.12);  }
 
   .card-title {
     font-size: 0.88rem; font-weight: 600; line-height: 1.5;
@@ -288,9 +341,7 @@
     background: var(--bg-card); border: 1px solid var(--border);
     border-radius: 14px; padding: 1.1rem 1.15rem; display: flex; flex-direction: column; gap: 0.65rem;
   }
-  .empty-state {
-    grid-column: 1/-1; text-align: center; padding: 4rem 1rem; color: var(--text-muted);
-  }
+  .empty-state { grid-column: 1/-1; text-align: center; padding: 4rem 1rem; color: var(--text-muted); }
   .empty-icon { font-size: 2.8rem; margin-bottom: 0.9rem; opacity: 0.4; }
   .empty-text { font-size: 0.88rem; }
 
@@ -322,11 +373,59 @@
   }
   .toast.show { transform: translateY(0); opacity: 1; }
 
+  /* ── Email modal ── */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+    z-index: 100; align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-box {
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: 18px; padding: 1.8rem; width: min(420px, 90vw);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .modal-title { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.4rem; }
+  .modal-desc { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1.1rem; line-height: 1.5; }
+  .modal-input {
+    width: 100%; background: var(--bg-card);
+    border: 1px solid var(--border); border-radius: 9px;
+    padding: 0.55rem 0.85rem;
+    font-size: 0.84rem; color: var(--text-primary);
+    outline: none; font-family: inherit; margin-bottom: 0.85rem;
+    transition: border-color 0.2s;
+  }
+  .modal-input:focus { border-color: var(--accent); }
+  .modal-actions { display: flex; gap: 0.6rem; }
+  .modal-send-btn {
+    flex: 1; background: linear-gradient(135deg, #0f40c8, #1464f6);
+    color: white; border: none; border-radius: 9px;
+    padding: 0.55rem; font-size: 0.84rem; font-weight: 600;
+    cursor: pointer; font-family: inherit; transition: opacity 0.2s;
+  }
+  .modal-send-btn:hover { opacity: 0.88; }
+  .modal-send-btn:disabled { opacity: 0.4; cursor: default; }
+  .modal-cancel-btn {
+    background: var(--bg-card); color: var(--text-secondary);
+    border: 1px solid var(--border); border-radius: 9px;
+    padding: 0.55rem 1rem; font-size: 0.84rem;
+    cursor: pointer; font-family: inherit; transition: all 0.2s;
+  }
+  .modal-cancel-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+  .modal-status { font-size: 0.78rem; margin-top: 0.7rem; min-height: 1.2em; color: var(--text-secondary); }
+
+  /* ── Responsive ── */
   @media (max-width: 640px) {
-    .header-inner { padding: 0 1rem; }
+    .header-inner { padding: 0 1rem; gap: 0.7rem; }
     .logo-sub, .search-wrap { display: none; }
     .main { padding: 1rem; }
     .news-grid { grid-template-columns: 1fr; }
+    .stats-bar { gap: 0.6rem; }
+    .stat-sep { display: none; }
+  }
+  @media (min-width: 641px) {
+    .btn-search-mobile { display: none !important; }
+    .mobile-search-bar { display: none !important; }
   }
 </style>
 </head>
@@ -350,6 +449,9 @@
     </div>
 
     <div class="header-actions">
+      <!-- Mobile search toggle -->
+      <button class="btn-icon btn-search-mobile" id="searchToggle" title="搜尋">🔍</button>
+      <button class="btn-icon" id="emailBtn" title="發送摘要 Email">📧</button>
       <button class="btn-icon" id="themeToggle" title="切換主題">🌙</button>
       <button class="refresh-btn" id="refreshBtn" onclick="triggerRefresh()">
         <span id="refreshIcon">↻</span> 更新
@@ -357,6 +459,15 @@
     </div>
   </div>
 </header>
+
+<!-- Mobile search bar -->
+<div class="mobile-search-bar" id="mobileSearchBar">
+  <div class="search-wrap" style="max-width:100%;width:100%">
+    <span class="search-icon">⌕</span>
+    <input class="search-input" id="mobileSearchInput" type="text"
+           placeholder="搜尋新聞…" />
+  </div>
+</div>
 
 <!-- ── Main ──────────────────────────────────────────────── -->
 <main class="main">
@@ -395,6 +506,15 @@
     <span class="last-update" id="lastUpdate">更新中…</span>
   </div>
 
+  <!-- Date filter -->
+  <div class="date-filters">
+    <span class="date-label">📅 日期：</span>
+    <button class="date-pill active" data-date="">全部</button>
+    <button class="date-pill" data-date="today">今天</button>
+    <button class="date-pill" data-date="yesterday">昨天</button>
+    <button class="date-pill" data-date="3days">近3天</button>
+  </div>
+
   <!-- Source filter -->
   <div class="source-filters" id="sourceFilters">
     <button class="source-pill active" data-source="全部">全部來源</button>
@@ -407,7 +527,7 @@
     <button class="source-pill" data-source="Yahoo財經">Yahoo</button>
   </div>
 
-  <!-- Category tabs -->
+  <!-- Category tabs (multi-select) -->
   <div class="tabs" id="categoryTabs">
     <button class="tab active" data-cat="全部">全部 <span class="tab-count" id="cnt-全部">0</span></button>
     <button class="tab" data-cat="AI 產業">🤖 AI 產業 <span class="tab-count" id="cnt-AI 產業">0</span></button>
@@ -415,9 +535,16 @@
     <button class="tab" data-cat="半導體">⚙️ 半導體 <span class="tab-count" id="cnt-半導體">0</span></button>
     <button class="tab" data-cat="PC / NB">💻 PC / NB <span class="tab-count" id="cnt-PC / NB">0</span></button>
     <button class="tab" data-cat="伺服器/雲端">🖥 伺服器/雲端 <span class="tab-count" id="cnt-伺服器/雲端">0</span></button>
-    <button class="tab" data-cat="面板/顯示">🖥️ 面板/顯示 <span class="tab-count" id="cnt-面板/顯示">0</span></button>
+    <button class="tab" data-cat="面板/顯示">📺 面板/顯示 <span class="tab-count" id="cnt-面板/顯示">0</span></button>
     <button class="tab" data-cat="電競/ROG">🎮 電競/ROG <span class="tab-count" id="cnt-電競/ROG">0</span></button>
     <button class="tab" data-cat="供應鏈/關稅">📦 供應鏈/關稅 <span class="tab-count" id="cnt-供應鏈/關稅">0</span></button>
+    <button class="tab" data-cat="財報/法說">📊 財報/法說 <span class="tab-count" id="cnt-財報/法說">0</span></button>
+  </div>
+  <div class="multi-hint" id="multiHint" style="display:none">💡 可同時選多個類別</div>
+
+  <!-- Result count -->
+  <div class="result-bar">
+    <span class="result-count" id="resultCount"></span>
   </div>
 
   <!-- News grid -->
@@ -445,21 +572,36 @@
   <div class="pagination" id="pagination"></div>
 </main>
 
+<!-- ── Email modal ───────────────────────────────────────── -->
+<div class="modal-overlay" id="emailModal">
+  <div class="modal-box">
+    <div class="modal-title">📧 發送科技新聞摘要</div>
+    <div class="modal-desc">輸入 Email，立即收到今日 ASUSTIMES 各類別精選新聞摘要。</div>
+    <input class="modal-input" id="emailInput" type="email" placeholder="your@email.com" />
+    <div class="modal-actions">
+      <button class="modal-send-btn" id="sendDigestBtn" onclick="sendDigest()">📤 立即發送</button>
+      <button class="modal-cancel-btn" onclick="closeEmailModal()">取消</button>
+    </div>
+    <div class="modal-status" id="emailStatus"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
 // ── State ──────────────────────────────────────────────────
 const state = {
-  category: '全部',
-  source:   '全部',
-  q:        '',
-  page:     1,
-  total:    0,
-  perPage:  20,
-  loading:  false,
+  categories: [],   // empty = all; array of selected category strings
+  source:     '全部',
+  q:          '',
+  dateFilter: '',
+  page:       1,
+  total:      0,
+  perPage:    20,
+  loading:    false,
 };
 
-// Source → CSS class mapping
+// Source → CSS class
 const SRC_CLASS = {
   'Digitimes':      'src-digitimes',
   '工商時報':        'src-ctee',
@@ -469,7 +611,6 @@ const SRC_CLASS = {
   "Tom's Hardware": 'src-toms',
   'Yahoo財經':       'src-yahoo',
   'Yahoo新聞':       'src-yahoo',
-  'Benchlife':      'src-ithome',
   '電腦王':          'src-technews',
 };
 
@@ -483,10 +624,10 @@ const CAT_CLASS = {
   '面板/顯示':   'cat-panel',
   '電競/ROG':   'cat-gaming',
   '供應鏈/關稅': 'cat-supply',
+  '財報/法說':   'cat-fin',
 };
 
-// All category keys for stats
-const CATS = ['AI 產業','記憶體/儲存','半導體','PC / NB','伺服器/雲端','面板/顯示','電競/ROG','供應鏈/關稅'];
+const CATS = ['AI 產業','記憶體/儲存','半導體','PC / NB','伺服器/雲端','面板/顯示','電競/ROG','供應鏈/關稅','財報/法說'];
 
 // ── Theme ──────────────────────────────────────────────────
 let dark = true;
@@ -496,21 +637,55 @@ document.getElementById('themeToggle').addEventListener('click', () => {
   document.getElementById('themeToggle').textContent = dark ? '🌙' : '☀️';
 });
 
+// ── Mobile search toggle ───────────────────────────────────
+document.getElementById('searchToggle')?.addEventListener('click', () => {
+  const bar = document.getElementById('mobileSearchBar');
+  bar.classList.toggle('open');
+  if (bar.classList.contains('open'))
+    document.getElementById('mobileSearchInput').focus();
+});
+let mobileSearchTimer;
+document.getElementById('mobileSearchInput')?.addEventListener('input', e => {
+  clearTimeout(mobileSearchTimer);
+  mobileSearchTimer = setTimeout(() => {
+    state.q = e.target.value.trim();
+    state.page = 1; loadNews();
+  }, 380);
+});
+
 // ── Load news ──────────────────────────────────────────────
 async function loadNews() {
   if (state.loading) return;
   state.loading = true;
-  const p = new URLSearchParams({ category: state.category, source: state.source, q: state.q, page: state.page });
+  const p = new URLSearchParams({
+    categories:  state.categories.join(','),
+    source:      state.source,
+    q:           state.q,
+    date_filter: state.dateFilter,
+    page:        state.page,
+  });
   try {
     const res  = await fetch('/api/news?' + p);
     const data = await res.json();
     state.total = data.total;
     renderCards(data.articles);
     renderPagination(data.total, data.page, data.per_page);
+
+    // Update last-updated timestamp
     if (data.last_updated)
       document.getElementById('lastUpdate').textContent = '更新：' + data.last_updated;
     if (data.loading)
       document.getElementById('lastUpdate').textContent = '⟳ 抓取中…';
+
+    // Update filtered result count
+    const isFiltered = state.categories.length > 0 || state.source !== '全部'
+                    || state.q || state.dateFilter;
+    const rcEl = document.getElementById('resultCount');
+    if (isFiltered) {
+      rcEl.innerHTML = `顯示 <strong>${data.total}</strong> 篇符合條件的新聞`;
+    } else {
+      rcEl.innerHTML = '';
+    }
   } catch {
     showToast('❌ 載入失敗，請稍後重試');
   } finally {
@@ -533,10 +708,28 @@ async function loadStats() {
       const el = document.getElementById('cnt-' + cat);
       if (el) el.textContent = data.categories[cat] || 0;
     });
+
+    if (data.last_updated)
+      document.getElementById('lastUpdate').textContent = '更新：' + data.last_updated;
   } catch {}
 }
 
-// ── Render ─────────────────────────────────────────────────
+// ── Date helpers ───────────────────────────────────────────
+function formatDateSep(dateStr) {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr + 'T00:00:00');
+    const today = new Date(); today.setHours(0,0,0,0);
+    const diff  = Math.round((today - d) / 86400000);
+    const days  = ['日','一','二','三','四','五','六'];
+    const wd    = days[d.getDay()];
+    const label = diff === 0 ? '今天' : diff === 1 ? '昨天' : diff === 2 ? '前天' : '';
+    const ymd   = `${d.getMonth()+1}月${d.getDate()}日（${wd}）`;
+    return label ? `${label} · ${ymd}` : ymd;
+  } catch { return dateStr; }
+}
+
+// ── Render cards with date separators ─────────────────────
 function renderCards(articles) {
   const grid = document.getElementById('newsGrid');
   ['sk1','sk2','sk3'].forEach(id => { const e = document.getElementById(id); if(e) e.remove(); });
@@ -546,13 +739,24 @@ function renderCards(articles) {
     return;
   }
 
-  grid.innerHTML = articles.map(a => {
+  let html = '';
+  let lastDate = null;
+
+  for (const a of articles) {
+    const dateStr = (a.published || a.fetched_at || '').slice(0, 10);
+    if (dateStr && dateStr !== lastDate) {
+      lastDate = dateStr;
+      html += `<div class="date-sep"><span class="date-sep-label">${formatDateSep(dateStr)}</span></div>`;
+    }
+
     const srcCls = SRC_CLASS[a.source] || 'src-global';
     const catCls = CAT_CLASS[a.category] || 'cat-supply';
     const sumHtml = a.summary ? `<p class="card-summary">${esc(a.summary)}</p>` : '';
-    const dateStr = a.published || (a.fetched_at || '').slice(0, 16);
+    const dateDisp = a.published
+      ? a.published.slice(0, 16)
+      : (a.fetched_at || '').slice(0, 16);
 
-    return `
+    html += `
     <a class="news-card" href="${esc(a.source_url)}" target="_blank" rel="noopener noreferrer">
       <div class="card-header">
         <span class="source-badge ${srcCls}">${esc(a.source)}</span>
@@ -561,11 +765,13 @@ function renderCards(articles) {
       <h3 class="card-title">${esc(a.title)}</h3>
       ${sumHtml}
       <div class="card-footer">
-        <span class="card-date">${esc(dateStr)}</span>
+        <span class="card-date">${esc(dateDisp)}</span>
         <span class="card-link">閱讀全文 →</span>
       </div>
     </a>`;
-  }).join('');
+  }
+
+  grid.innerHTML = html;
 }
 
 function esc(s) {
@@ -588,17 +794,54 @@ function renderPagination(total, page, perPage) {
 }
 function goPage(p) { state.page=p; loadNews(); window.scrollTo({top:0,behavior:'smooth'}); }
 
-// ── Filters ────────────────────────────────────────────────
+// ── Category tabs (multi-select) ──────────────────────────
 document.getElementById('categoryTabs').addEventListener('click', e => {
   const btn = e.target.closest('.tab');
   if (!btn) return;
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  btn.classList.add('active');
-  state.category = btn.dataset.cat;
+  const cat = btn.dataset.cat;
+  const hint = document.getElementById('multiHint');
+
+  if (cat === '全部') {
+    state.categories = [];
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    hint.style.display = 'none';
+  } else {
+    // Toggle this category
+    const idx = state.categories.indexOf(cat);
+    if (idx >= 0) {
+      state.categories.splice(idx, 1);
+      btn.classList.remove('active');
+    } else {
+      state.categories.push(cat);
+      btn.classList.add('active');
+    }
+    // Update "全部" tab active state
+    const allBtn = document.querySelector('.tab[data-cat="全部"]');
+    if (state.categories.length === 0) {
+      allBtn.classList.add('active');
+      hint.style.display = 'none';
+    } else {
+      allBtn.classList.remove('active');
+      hint.style.display = state.categories.length > 1 ? 'block' : 'none';
+    }
+  }
   state.page = 1;
   loadNews();
 });
 
+// ── Date filter ────────────────────────────────────────────
+document.querySelectorAll('.date-pill').forEach(pill => {
+  pill.addEventListener('click', () => {
+    document.querySelectorAll('.date-pill').forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+    state.dateFilter = pill.dataset.date;
+    state.page = 1;
+    loadNews();
+  });
+});
+
+// ── Source filter ──────────────────────────────────────────
 document.getElementById('sourceFilters').addEventListener('click', e => {
   const btn = e.target.closest('.source-pill');
   if (!btn) return;
@@ -609,6 +852,7 @@ document.getElementById('sourceFilters').addEventListener('click', e => {
   loadNews();
 });
 
+// ── Desktop search ─────────────────────────────────────────
 let searchTimer;
 document.getElementById('searchInput').addEventListener('input', e => {
   clearTimeout(searchTimer);
@@ -632,8 +876,44 @@ async function triggerRefresh() {
 async function pollUntilDone() {
   for (let i=0;i<60;i++) {
     await new Promise(r=>setTimeout(r,2000));
-    const d = await (await fetch('/api/news?page=1&per_page=1')).json();
+    const d = await (await fetch('/api/news?page=1')).json();
     if (!d.loading) return;
+  }
+}
+
+// ── Email modal ────────────────────────────────────────────
+document.getElementById('emailBtn').addEventListener('click', () => {
+  document.getElementById('emailModal').classList.add('open');
+  document.getElementById('emailStatus').textContent = '';
+  document.getElementById('emailInput').value = '';
+  document.getElementById('sendDigestBtn').disabled = false;
+});
+document.getElementById('emailModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeEmailModal();
+});
+function closeEmailModal() {
+  document.getElementById('emailModal').classList.remove('open');
+}
+async function sendDigest() {
+  const email = document.getElementById('emailInput').value.trim();
+  const status = document.getElementById('emailStatus');
+  const btn = document.getElementById('sendDigestBtn');
+  if (!email) { status.textContent = '請輸入 Email 地址'; return; }
+  btn.disabled = true;
+  status.textContent = '⏳ 發送中…';
+  try {
+    const res = await fetch('/api/send-digest', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({recipient: email}),
+    });
+    const d = await res.json();
+    status.textContent = d.message || (d.ok ? '✅ 已發送！' : '❌ 發送失敗');
+    if (d.ok) setTimeout(closeEmailModal, 2500);
+  } catch {
+    status.textContent = '❌ 網路錯誤，請稍後再試';
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -650,9 +930,12 @@ function showToast(msg) {
 setInterval(()=>{ loadNews(); loadStats(); }, 15*60*1000);
 loadNews(); loadStats();
 
+// Poll until data arrives (handles Render cold-start)
 const poller = setInterval(async()=>{
-  const d=await(await fetch('/api/stats')).json();
-  if(d.total>0){ clearInterval(poller); loadNews(); loadStats(); }
+  try {
+    const d=await(await fetch('/api/stats')).json();
+    if(d.total>0){ clearInterval(poller); loadNews(); loadStats(); }
+  } catch {}
 }, 3000);
 </script>
 </body>

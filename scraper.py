@@ -1,7 +1,7 @@
 """
 ASUSTIMES — News scraper
 Only tech-industry news relevant to ASUS executives.
-Categories: AI產業 / 記憶體儲存 / 半導體 / PC_NB / 伺服器雲端 / 面板顯示 / 電競ROG / 供應鏈關稅
+Categories: AI產業 / 記憶體儲存 / 半導體 / PC_NB / 伺服器雲端 / 面板顯示 / 電競ROG / 供應鏈關稅 / 財報法說
 """
 
 import re
@@ -40,7 +40,7 @@ CATEGORY_KEYWORDS = {
         "DRAM", "記憶體", "HBM", "HBM3", "HBM3E", "HBM4", "NAND", "SSD", "Flash",
         "Micron", "Samsung", "SK Hynix", "海力士", "南亞科", "華邦電",
         "DDR5", "DDR6", "LPDDR5", "LPDDR6", "儲存", "storage", "固態硬碟",
-        "eMMC", "UFS", "記憶體模組", "DIMM", "容量擴充", "頻寬",
+        "eMMC", "UFS", "記憶體模組", "DIMM",
         "NAND Flash", "3D NAND", "QLC", "TLC",
     ],
     "半導體": [
@@ -53,14 +53,14 @@ CATEGORY_KEYWORDS = {
     "PC / NB": [
         "筆電", "NB", "notebook", "laptop", "桌機", "desktop PC", "個人電腦",
         "PC出貨", "出貨量", "Chromebook", "Windows 11", "macOS",
-        "HP", "Dell", "Lenovo", "聯想", "Acer", "宏碁",
+        "HP", "Dell", "Lenovo", "聯想", "Acer", "宏碁", "ASUS筆電",
         "AI PC", "Copilot+", "二合一筆電", "商務筆電", "輕薄筆電",
         "Core Ultra", "Ryzen AI", "Snapdragon X",
     ],
     "伺服器/雲端": [
         "伺服器", "server", "資料中心", "data center", "雲端", "cloud",
         "AWS", "Azure", "Google Cloud", "GCP", "超大規模", "hyperscaler",
-        "機架", "rack", "散熱", "液冷", "浸沒式冷卻", "AI server",
+        "機架", "rack", "散熱", "液冷", "浸沒式冷卻",
         "鴻海", "廣達", "英業達", "緯穎", "緯創", "雲達", "Wiwynn",
         "基礎設施", "infrastructure", "GPU server",
     ],
@@ -74,13 +74,22 @@ CATEGORY_KEYWORDS = {
         "電競", "gaming", "遊戲硬體", "ROG", "Republic of Gamers", "TUF Gaming",
         "顯卡", "繪圖卡", "RTX", "GeForce", "Radeon", "RX 9",
         "電競筆電", "電競螢幕", "機械鍵盤", "電競滑鼠", "電競耳機",
-        "esports", "FPS", "幀率", "高刷", "電競椅", "散熱器",
+        "esports", "FPS", "幀率", "高刷",
+        "InfiniGuard", "NAS", "網路儲存",
     ],
     "供應鏈/關稅": [
         "關稅", "tariff", "供應鏈", "supply chain", "貿易戰", "出口管制",
         "ODM", "OEM", "代工", "制裁", "禁令", "entity list", "晶片禁令",
         "移轉", "遷廠", "越南", "印度", "墨西哥", "轉單", "去中化",
-        "庫存", "去庫存", "產能利用率", "月營收", "法說會",
+        "產能利用率",
+    ],
+    "財報/法說": [
+        "財報", "法說會", "法說", "月營收", "季報", "年報", "EPS", "每股盈餘",
+        "毛利率", "毛利", "營業利益", "淨利", "資本支出",
+        "獲利", "虧損", "盈利", "年增", "季增", "年減", "季減",
+        "Q1", "Q2", "Q3", "Q4", "業績", "財測", "展望", "營收",
+        "revenue", "earnings", "profit", "guidance", "quarterly",
+        "年成長", "創高", "創新低", "庫存", "去庫存",
     ],
 }
 
@@ -97,8 +106,10 @@ NON_TECH_SIGNALS = [
 
 
 def classify_category(title: str, summary: str = "", hint: str = "") -> str | None:
-    """Return matched category, or None if no tech keyword matches at all."""
-    text = f"{title} {summary} {hint}"
+    """Return matched category, or None if no tech keyword matches at all.
+    hint is only used as fallback when NO keywords match — it does NOT influence scoring.
+    """
+    text = f"{title} {summary}"   # hint excluded from scoring to avoid bias
     text_lower = text.lower()
 
     scores: dict[str, int] = {cat: 0 for cat in CATEGORY_KEYWORDS}
@@ -112,12 +123,11 @@ def classify_category(title: str, summary: str = "", hint: str = "") -> str | No
         return best
 
     # No tech keyword hit → check blocklist
-    # If blocklist word found, definitely drop
     for word in NON_TECH_SIGNALS:
         if word in text:
             return None  # drop
 
-    # Ambiguous: keep with hint or drop
+    # Ambiguous: use hint as fallback category, or drop
     return hint if hint else None
 
 
@@ -161,11 +171,18 @@ def parse_rss(url: str, source_name: str, hint: str = "") -> list[dict]:
             summary  = clean(desc_el.get_text() if desc_el else "")[:220]
             pub_date = parse_date(date_el.get_text() if date_el else "")
 
-            if len(title) < 6:
+            if len(title) < 4:
                 continue
 
-            # Strip source name suffix from Google News titles (e.g., "… - Digitimes")
-            title = re.sub(r"\s*[-–]\s*\S.*$", "", title).strip() if " - " in title or " – " in title else title
+            # Strip source name suffix (e.g., "Article Title - Digitimes")
+            # but only if stripped result has meaningful length
+            if " - " in title or " – " in title:
+                stripped = re.sub(r"\s*[-–]\s*[^-–]{2,}\s*$", "", title).strip()
+                if len(stripped) >= 4:
+                    title = stripped
+
+            if len(title) < 4:
+                continue
 
             category = classify_category(title, summary, hint)
             if category is None:
@@ -194,8 +211,8 @@ GN_EN = "https://news.google.com/rss/search?hl=en-US&gl=US&ceid=US:en&q="
 
 FEEDS = [
     # ── 台灣科技媒體 ────────────────────────────────────────────────────────
-    {"url": GN + "site:digitimes.com.tw",   "source": "Digitimes",   "hint": "半導體"},
-    {"url": GN + "site:ctee.com.tw+科技",   "source": "工商時報",    "hint": "PC / NB"},
+    {"url": GN + "site:digitimes.com.tw",   "source": "Digitimes",   "hint": ""},
+    {"url": GN + "site:ctee.com.tw+科技",   "source": "工商時報",    "hint": ""},
     {"url": GN + "site:technews.tw",        "source": "科技新報",    "hint": "AI 產業"},
     {"url": GN + "site:ithome.com.tw",      "source": "iThome",      "hint": "AI 產業"},
     {"url": GN + "site:cool3c.com",         "source": "電腦王",      "hint": "電競/ROG"},
@@ -208,14 +225,17 @@ FEEDS = [
     {"url": GN + "筆電+出貨+PC市場",        "source": "Google News", "hint": "PC / NB"},
     {"url": GN + "關稅+科技+供應鏈",        "source": "Google News", "hint": "供應鏈/關稅"},
     {"url": GN + "OLED+面板+顯示器",        "source": "Google News", "hint": "面板/顯示"},
+    {"url": GN + "法說會+營收+科技",        "source": "Google News", "hint": "財報/法說"},
+    {"url": GN + "財報+EPS+毛利率",         "source": "Google News", "hint": "財報/法說"},
 
     # ── 英文科技媒體 ────────────────────────────────────────────────────────
     {"url": GN_EN + "site:tomshardware.com",  "source": "Tom's Hardware", "hint": "電競/ROG"},
     {"url": GN_EN + "TSMC+semiconductor+AI",  "source": "Global Tech",    "hint": "半導體"},
     {"url": GN_EN + "NVIDIA+GPU+data+center", "source": "Global Tech",    "hint": "AI 產業"},
+    {"url": GN_EN + "earnings+semiconductor+quarterly", "source": "Global Tech", "hint": "財報/法說"},
 
     # ── Yahoo財經 ────────────────────────────────────────────────────────────
-    {"url": "https://tw.news.yahoo.com/rss/finance", "source": "Yahoo財經", "hint": "供應鏈/關稅"},
+    {"url": "https://tw.news.yahoo.com/rss/finance", "source": "Yahoo財經", "hint": "財報/法說"},
 ]
 
 
