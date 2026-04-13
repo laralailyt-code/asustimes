@@ -256,10 +256,11 @@ _WATCHLIST_PATH = os.path.join(os.path.dirname(__file__), "watchlist.csv")
 
 
 def load_watchlist() -> dict[str, str]:
-    """Return {vendor_name: risk_level} from watchlist.csv.
-    risk_level is '紅' or '黃'.
-    Supports both simplified format (廠商,股票代號,風險等級)
-    and the full quarterly report format (with 報告Risk column).
+    """Return {vendor_name: risk_level('紅'/'黃')} from watchlist.csv.
+    Supports the quarterly report format:
+      Row 1: English column names (vendor, report_signal, ...)
+      Row 2: Descriptive labels — skipped automatically
+      Data: vendor name in 'vendor' col, 紅燈/黃燈/綠燈 in 'report_signal' col
     """
     result: dict[str, str] = {}
     if not os.path.exists(_WATCHLIST_PATH):
@@ -268,29 +269,52 @@ def load_watchlist() -> dict[str, str]:
         with open(_WATCHLIST_PATH, encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
             headers = reader.fieldnames or []
-            # Find risk column: prefer 風險等級, then any header containing Risk/風險
-            risk_col = "風險等級"
-            if risk_col not in headers:
-                for h in headers:
-                    if "Risk" in h or "風險" in h:
-                        risk_col = h
-                        break
-            # Find vendor column: prefer 廠商
-            vendor_col = "廠商"
-            if vendor_col not in headers:
-                for h in headers:
-                    if "廠商" in h:
-                        vendor_col = h
-                        break
+
+            # Detect vendor column
+            vendor_col = next((h for h in headers if h.lower() in ("vendor", "廠商")), None)
+            # Detect signal column
+            signal_col = next((h for h in headers
+                               if h.lower() in ("report_signal", "report_risk")
+                               or "signal" in h.lower() or "燈" in h), None)
+
+            if not vendor_col or not signal_col:
+                logger.warning(f"Watchlist: can't find vendor/signal columns in {headers}")
+                return result
+
+            # Skip second header row if it looks like labels (e.g. "Vendor", "Stock ID")
+            first_row = next(reader, None)
+            if first_row:
+                v = (first_row.get(vendor_col) or "").strip()
+                if v.lower() in ("vendor", "廠商", "stock id", ""):
+                    pass  # was a label row, skip it
+                else:
+                    # It's real data, process it
+                    _apply_watchlist_row(first_row, vendor_col, signal_col, result)
+
             for row in reader:
-                vendor = row.get(vendor_col, "").strip()
-                risk   = row.get(risk_col, "").strip()
-                if vendor and risk in ("紅", "黃"):
-                    result[vendor] = risk
-        logger.info(f"Watchlist loaded: {len(result)} vendors (risk_col='{risk_col}')")
+                _apply_watchlist_row(row, vendor_col, signal_col, result)
+
+        logger.info(f"Watchlist loaded: {len(result)} vendors")
     except Exception as e:
         logger.warning(f"Watchlist load error: {e}")
     return result
+
+
+def _apply_watchlist_row(row: dict, vendor_col: str, signal_col: str,
+                         result: dict[str, str]) -> None:
+    vendor = (row.get(vendor_col) or "").strip()
+    signal = (row.get(signal_col) or "").strip()
+    if not vendor:
+        return
+    if "紅" in signal:
+        risk = "紅"
+    elif "黃" in signal:
+        risk = "黃"
+    else:
+        return  # 綠燈 or unknown → skip
+    # Keep worst risk if vendor appears multiple times
+    if result.get(vendor) != "紅":
+        result[vendor] = risk
 
 
 # ── Main aggregator (parallel fetch) ─────────────────────────────────────────
