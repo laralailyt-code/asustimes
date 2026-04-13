@@ -663,6 +663,25 @@ async function loadNews() {
     if (data.loading)
       document.getElementById('lastUpdate').textContent = '⟳ 抓取中…';
 
+    // Update tab counts from this response (filtered by source+date, not category)
+    if (data.cat_counts) {
+      const grandTotal = Object.values(data.cat_counts).reduce((s,v)=>s+v, 0);
+      document.getElementById('cnt-全部').textContent = grandTotal;
+      CATS.forEach(cat => {
+        const el = document.getElementById('cnt-' + cat);
+        if (el) el.textContent = data.cat_counts[cat] || 0;
+      });
+    }
+    // Update source stats bar
+    if (data.src_counts) {
+      const grandTotal = Object.values(data.src_counts).reduce((s,v)=>s+v, 0);
+      document.getElementById('statTotal').textContent     = grandTotal;
+      document.getElementById('statDigitimes').textContent = data.src_counts['Digitimes']     || 0;
+      document.getElementById('statCtee').textContent      = data.src_counts['工商時報']       || 0;
+      document.getElementById('statTechnews').textContent  = data.src_counts['科技新報']       || 0;
+      document.getElementById('statToms').textContent      = data.src_counts["Tom's Hardware"] || 0;
+    }
+
     // Update filtered result count
     const isFiltered = state.categories.length > 0 || state.source !== '全部'
                     || state.q || state.dateFilter;

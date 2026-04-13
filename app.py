@@ -139,16 +139,6 @@ def api_news():
         last_updated = _cache["last_updated"]
         loading = _cache["loading"]
 
-    # Category filter
-    selected_cats = []
-    if cats_param:
-        selected_cats = [c.strip() for c in cats_param.split(",") if c.strip()]
-    elif cat_param and cat_param != "全部":
-        selected_cats = [cat_param]
-
-    if selected_cats:
-        articles = [a for a in articles if a.get("category") in selected_cats]
-
     # Source filter
     if source and source != "全部":
         articles = [a for a in articles if a.get("source") == source]
@@ -177,6 +167,25 @@ def api_news():
             if ql in a.get("title", "").lower() or ql in a.get("summary", "").lower()
         ]
 
+    # Category counts BEFORE category filter (so tabs always show correct numbers)
+    cat_counts: dict[str, int] = {}
+    src_counts: dict[str, int] = {}
+    for a in articles:
+        cat = a.get("category", "")
+        src = a.get("source", "")
+        cat_counts[cat] = cat_counts.get(cat, 0) + 1
+        src_counts[src] = src_counts.get(src, 0) + 1
+
+    # Category filter (applied AFTER counting)
+    selected_cats = []
+    if cats_param:
+        selected_cats = [c.strip() for c in cats_param.split(",") if c.strip()]
+    elif cat_param and cat_param != "全部":
+        selected_cats = [cat_param]
+
+    if selected_cats:
+        articles = [a for a in articles if a.get("category") in selected_cats]
+
     total = len(articles)
     start = (page - 1) * per_page
     paged = articles[start: start + per_page]
@@ -188,6 +197,8 @@ def api_news():
         "per_page":     per_page,
         "last_updated": last_updated,
         "loading":      loading,
+        "cat_counts":   cat_counts,
+        "src_counts":   src_counts,
     })
 
 
