@@ -54,6 +54,44 @@ def background_refresh_loop():
         refresh_news()
 
 
+def daily_digest_loop():
+    """Send digest email every day at DIGEST_HOUR (UTC)."""
+    sent_date = None
+    while True:
+        time.sleep(60)
+        now = datetime.utcnow()
+        digest_hour = int(os.environ.get("DIGEST_HOUR", "0"))
+        today_str = now.strftime("%Y-%m-%d")
+        if now.hour == digest_hour and sent_date != today_str:
+            recipients_raw = os.environ.get("DIGEST_RECIPIENTS", "")
+            recipients = [r.strip() for r in recipients_raw.split(",") if r.strip()]
+            if recipients:
+                with _cache_lock:
+                    articles = list(_cache["articles"])
+                    last_updated = _cache["last_updated"]
+                api_key = os.environ.get("RESEND_API_KEY", "")
+                if api_key and articles:
+                    html_body = _build_digest_html(articles, last_updated)
+                    for r in recipients:
+                        try:
+                            req_lib.post(
+                                "https://api.resend.com/emails",
+                                headers={"Authorization": f"Bearer {api_key}",
+                                         "Content-Type": "application/json"},
+                                json={
+                                    "from": "ASUSTIMES <onboarding@resend.dev>",
+                                    "to": [r],
+                                    "subject": f"ASUSTIMES 科技摘要 {today_str}",
+                                    "html": html_body,
+                                },
+                                timeout=15,
+                            )
+                            logger.info(f"Daily digest sent to {r}")
+                        except Exception as e:
+                            logger.error(f"Daily digest error for {r}: {e}")
+            sent_date = today_str
+
+
 # ── Background thread: starts on first request (gunicorn-compatible) ───────────
 _bg_started = False
 _bg_lock = threading.Lock()
@@ -67,7 +105,9 @@ def _ensure_bg_running():
                 _bg_started = True
                 t = threading.Thread(target=background_refresh_loop, daemon=True)
                 t.start()
-                logger.info("Background refresh thread started in worker")
+                td = threading.Thread(target=daily_digest_loop, daemon=True)
+                td.start()
+                logger.info("Background threads started in worker")
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
