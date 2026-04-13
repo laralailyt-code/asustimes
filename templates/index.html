@@ -571,19 +571,6 @@
   <div class="pagination" id="pagination"></div>
 </main>
 
-<!-- ── Email modal ───────────────────────────────────────── -->
-<div class="modal-overlay" id="emailModal">
-  <div class="modal-box">
-    <div class="modal-title">📧 發送科技新聞摘要</div>
-    <div class="modal-desc">輸入 Email，立即收到今日 ASUSTIMES 各類別精選新聞摘要。</div>
-    <input class="modal-input" id="emailInput" type="email" placeholder="your@email.com" />
-    <div class="modal-actions">
-      <button class="modal-send-btn" id="sendDigestBtn" onclick="sendDigest()">📤 立即發送</button>
-      <button class="modal-cancel-btn" onclick="closeEmailModal()">取消</button>
-    </div>
-    <div class="modal-status" id="emailStatus"></div>
-  </div>
-</div>
 
 <div class="toast" id="toast"></div>
 
@@ -880,41 +867,6 @@ async function pollUntilDone() {
   }
 }
 
-// ── Email modal ────────────────────────────────────────────
-document.getElementById('emailBtn').addEventListener('click', () => {
-  document.getElementById('emailModal').classList.add('open');
-  document.getElementById('emailStatus').textContent = '';
-  document.getElementById('emailInput').value = '';
-  document.getElementById('sendDigestBtn').disabled = false;
-});
-document.getElementById('emailModal').addEventListener('click', e => {
-  if (e.target === e.currentTarget) closeEmailModal();
-});
-function closeEmailModal() {
-  document.getElementById('emailModal').classList.remove('open');
-}
-async function sendDigest() {
-  const email = document.getElementById('emailInput').value.trim();
-  const status = document.getElementById('emailStatus');
-  const btn = document.getElementById('sendDigestBtn');
-  if (!email) { status.textContent = '請輸入 Email 地址'; return; }
-  btn.disabled = true;
-  status.textContent = '⏳ 發送中…';
-  try {
-    const res = await fetch('/api/send-digest', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({recipient: email}),
-    });
-    const d = await res.json();
-    status.textContent = d.message || (d.ok ? '✅ 已發送！' : '❌ 發送失敗');
-    if (d.ok) setTimeout(closeEmailModal, 2500);
-  } catch {
-    status.textContent = '❌ 網路錯誤，請稍後再試';
-  } finally {
-    btn.disabled = false;
-  }
-}
 
 // ── Toast ──────────────────────────────────────────────────
 let toastT;
