@@ -322,10 +322,13 @@ def fetch_all_news() -> list[dict]:
     logger.info("ASUSTIMES: starting parallel fetch…")
     results: list[dict] = []
 
-    # Build dynamic feeds for watchlist vendors (red/yellow only)
+    # Build dynamic feeds for watchlist vendors (紅燈 first, cap at 20)
     watchlist = load_watchlist()
+    red_vendors    = [(v, r) for v, r in watchlist.items() if r == "紅"]
+    yellow_vendors = [(v, r) for v, r in watchlist.items() if r == "黃"]
+    priority_vendors = (red_vendors + yellow_vendors)[:20]
     vendor_feeds = []
-    for vendor, risk in watchlist.items():
+    for vendor, risk in priority_vendors:
         vendor_feeds.append({
             "url": GN + vendor,
             "source": "Google News",
@@ -333,7 +336,7 @@ def fetch_all_news() -> list[dict]:
             "_watchlist_vendor": vendor,
             "_watchlist_risk": risk,
         })
-    logger.info(f"Watchlist: adding {len(vendor_feeds)} vendor-specific feeds")
+    logger.info(f"Watchlist: adding {len(vendor_feeds)} vendor feeds ({len(red_vendors)} 紅, {len(yellow_vendors)} 黃, capped at 20)")
 
     all_feeds = FEEDS + vendor_feeds
 
