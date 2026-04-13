@@ -7,11 +7,9 @@ Auto-refreshes every 30 minutes in background.
 import os
 import threading
 import time
-import smtplib
 import logging
+import requests as req_lib
 from datetime import datetime, date as date_cls, timedelta
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from flask import Flask, jsonify, render_template, request
 from scraper import fetch_all_news, CATEGORY_KEYWORDS
 
@@ -230,13 +228,9 @@ def api_send_digest():
     if not recipient or "@" not in recipient:
         return jsonify({"ok": False, "message": "請輸入有效的 Email 地址"}), 400
 
-    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
-    smtp_user = os.environ.get("SMTP_USER", "")
-    smtp_pass = os.environ.get("SMTP_PASS", "")
-
-    if not smtp_user or not smtp_pass:
-        return jsonify({"ok": False, "message": "❌ 伺服器尚未設定 SMTP，請聯絡管理員設定環境變數"}), 503
+    api_key = os.environ.get("RESEND_API_KEY", "")
+    if not api_key:
+        return jsonify({"ok": False, "message": "❌ 伺服器尚未設定 RESEND_API_KEY"}), 503
 
     with _cache_lock:
         articles = list(_cache["articles"])
@@ -247,19 +241,23 @@ def api_send_digest():
 
     try:
         html_body = _build_digest_html(articles, last_updated)
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"ASUSTIMES 科技摘要 {datetime.now().strftime('%Y-%m-%d')}"
-        msg["From"]    = smtp_user
-        msg["To"]      = recipient
-        msg.attach(MIMEText(html_body, "html", "utf-8"))
-
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as s:
-            s.starttls()
-            s.login(smtp_user, smtp_pass)
-            s.sendmail(smtp_user, [recipient], msg.as_string())
-
-        logger.info(f"Digest sent to {recipient}")
-        return jsonify({"ok": True, "message": f"✅ 摘要已發送至 {recipient}"})
+        resp = req_lib.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "from": "ASUSTIMES <onboarding@resend.dev>",
+                "to": [recipient],
+                "subject": f"ASUSTIMES 科技摘要 {datetime.now().strftime('%Y-%m-%d')}",
+                "html": html_body,
+            },
+            timeout=15,
+        )
+        if resp.status_code in (200, 201):
+            logger.info(f"Digest sent to {recipient}")
+            return jsonify({"ok": True, "message": f"✅ 摘要已發送至 {recipient}"})
+        else:
+            logger.error(f"Resend error: {resp.status_code} {resp.text}")
+            return jsonify({"ok": False, "message": f"❌ 發送失敗：{resp.text}"}), 500
     except Exception as e:
         logger.error(f"send_digest error: {e}")
         return jsonify({"ok": False, "message": f"❌ 發送失敗：{e}"}), 500
