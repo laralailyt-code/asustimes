@@ -322,11 +322,33 @@ def fetch_all_news() -> list[dict]:
     logger.info("ASUSTIMES: starting parallel fetch…")
     results: list[dict] = []
 
+    # Build dynamic feeds for watchlist vendors (red/yellow only)
+    watchlist = load_watchlist()
+    vendor_feeds = []
+    for vendor, risk in watchlist.items():
+        vendor_feeds.append({
+            "url": GN + vendor,
+            "source": "Google News",
+            "hint": "財務風險",
+            "_watchlist_vendor": vendor,
+            "_watchlist_risk": risk,
+        })
+    logger.info(f"Watchlist: adding {len(vendor_feeds)} vendor-specific feeds")
+
+    all_feeds = FEEDS + vendor_feeds
+
     def _fetch(feed):
-        return parse_rss(feed["url"], feed["source"], feed.get("hint", ""))
+        articles = parse_rss(feed["url"], feed["source"], feed.get("hint", ""))
+        # Tag articles from vendor-specific feeds directly
+        if feed.get("_watchlist_vendor"):
+            for a in articles:
+                a["watchlist_vendor"] = feed["_watchlist_vendor"]
+                a["watchlist_risk"]   = feed["_watchlist_risk"]
+                a["category"]         = "財務風險"
+        return articles
 
     with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = {executor.submit(_fetch, feed): feed for feed in FEEDS}
+        futures = {executor.submit(_fetch, feed): feed for feed in all_feeds}
         for future in as_completed(futures, timeout=60):
             try:
                 results.extend(future.result())
@@ -344,8 +366,7 @@ def fetch_all_news() -> list[dict]:
 
     unique.sort(key=lambda a: a.get("published", "") or a.get("fetched_at", ""), reverse=True)
 
-    # Watchlist tagging: override category to 財務風險 + attach vendor/risk metadata
-    watchlist = load_watchlist()
+    # Watchlist tagging: also scan all articles for vendor name mentions
     if watchlist:
         for article in unique:
             text = f"{article['title']} {article.get('summary', '')}"
