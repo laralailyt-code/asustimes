@@ -681,7 +681,8 @@ async function loadNews() {
 
 async function loadStats() {
   try {
-    const res  = await fetch('/api/stats');
+    const p = new URLSearchParams({ source: state.source, date_filter: state.dateFilter });
+    const res  = await fetch('/api/stats?' + p);
     const data = await res.json();
     document.getElementById('statTotal').textContent     = data.total;
     document.getElementById('statDigitimes').textContent = data.sources['Digitimes']     || 0;
@@ -888,6 +889,7 @@ const poller = setInterval(async()=>{
     if(d.total>0){ clearInterval(poller); loadNews(); loadStats(); }
   } catch {}
 }, 3000);
+
 </script>
 </body>
 </html>

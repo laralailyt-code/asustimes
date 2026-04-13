@@ -200,9 +200,27 @@ def api_refresh():
 
 @app.route("/api/stats")
 def api_stats():
+    source      = request.args.get("source", "").strip()
+    date_filter = request.args.get("date_filter", "").strip()
+
     with _cache_lock:
-        articles = _cache["articles"]
+        articles = list(_cache["articles"])
         last_updated = _cache["last_updated"]
+
+    if source and source != "全部":
+        articles = [a for a in articles if a.get("source") == source]
+
+    if date_filter:
+        today = date_cls.today()
+        if date_filter == "today":
+            cutoff = today.strftime("%Y-%m-%d")
+            articles = [a for a in articles if (a.get("published") or a.get("fetched_at", ""))[:10] == cutoff]
+        elif date_filter == "yesterday":
+            cutoff = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+            articles = [a for a in articles if (a.get("published") or a.get("fetched_at", ""))[:10] == cutoff]
+        elif date_filter == "3days":
+            cutoff = (today - timedelta(days=3)).strftime("%Y-%m-%d")
+            articles = [a for a in articles if (a.get("published") or a.get("fetched_at", ""))[:10] >= cutoff]
 
     categories: dict[str, int] = {}
     sources: dict[str, int] = {}

@@ -211,8 +211,9 @@ GN_EN = "https://news.google.com/rss/search?hl=en-US&gl=US&ceid=US:en&q="
 
 FEEDS = [
     # ── 台灣科技媒體 ────────────────────────────────────────────────────────
-    {"url": GN + "site:digitimes.com.tw",   "source": "Digitimes",   "hint": ""},
-    {"url": GN + "site:ctee.com.tw+科技",   "source": "工商時報",    "hint": ""},
+    {"url": GN + "site:digitimes.com.tw",          "source": "Digitimes", "hint": ""},
+    {"url": GN + "site:digitimes.com.tw+筆電+PC",  "source": "Digitimes", "hint": "PC / NB"},
+    {"url": GN + "site:ctee.com.tw+科技",          "source": "工商時報",  "hint": ""},
     {"url": GN + "site:technews.tw",        "source": "科技新報",    "hint": "AI 產業"},
     {"url": GN + "site:ithome.com.tw",      "source": "iThome",      "hint": "AI 產業"},
     {"url": GN + "site:cool3c.com",         "source": "電腦王",      "hint": "電競/ROG"},
