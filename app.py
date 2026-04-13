@@ -9,7 +9,7 @@ import threading
 import time
 import logging
 import requests as req_lib
-from datetime import datetime, date as date_cls, timedelta
+from datetime import datetime, date as date_cls, timedelta, timezone
 from flask import Flask, jsonify, render_template, request
 from scraper import fetch_all_news, CATEGORY_KEYWORDS
 
@@ -38,7 +38,7 @@ def refresh_news():
         articles = fetch_all_news()
         with _cache_lock:
             _cache["articles"] = articles
-            _cache["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            _cache["last_updated"] = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
             _cache["loading"] = False
         logger.info(f"Cache refreshed: {len(articles)} articles")
     except Exception as e:
