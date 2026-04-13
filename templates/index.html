@@ -194,13 +194,12 @@
   }
 
   /* ── Category tabs (multi-select) ── */
+  .tabs-wrap { margin-bottom: 0.6rem; }
   .tabs {
-    display: flex; gap: 0.2rem; margin-bottom: 0.6rem;
+    display: flex; flex-wrap: wrap; gap: 0.2rem;
     background: var(--bg-card); border: 1px solid var(--border);
     border-radius: 12px; padding: 0.28rem;
-    overflow-x: auto; scrollbar-width: none;
   }
-  .tabs::-webkit-scrollbar { display: none; }
   .tab {
     padding: 0.38rem 0.85rem; border-radius: 8px;
     font-size: 0.8rem; font-weight: 500; cursor: pointer;
@@ -538,6 +537,7 @@
   </div>
 
   <!-- Category tabs (multi-select) -->
+  <div class="tabs-wrap">
   <div class="tabs" id="categoryTabs">
     <button class="tab active" data-cat="全部">全部 <span class="tab-count" id="cnt-全部">0</span></button>
     <button class="tab" data-cat="AI 產業">🤖 AI 產業 <span class="tab-count" id="cnt-AI 產業">0</span></button>
@@ -550,6 +550,7 @@
     <button class="tab" data-cat="供應鏈/關稅">📦 供應鏈/關稅 <span class="tab-count" id="cnt-供應鏈/關稅">0</span></button>
     <button class="tab" data-cat="財報/法說">📊 財報/法說 <span class="tab-count" id="cnt-財報/法說">0</span></button>
     <button class="tab" data-cat="財務風險">⚠️ 財務風險 <span class="tab-count" id="cnt-財務風險">0</span></button>
+  </div>
   </div>
   <div class="multi-hint" id="multiHint" style="display:none">💡 可同時選多個類別</div>
 
