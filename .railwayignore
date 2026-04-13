@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.exe
+*.pkl
+*.log
+*.txt
+*.bat
+*.png
+*.jpg
+*.xlsx

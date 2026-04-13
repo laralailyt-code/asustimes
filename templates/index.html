@@ -302,6 +302,17 @@
   .cat-gaming  { color: #f87171; background: rgba(248,113,113,0.12); }
   .cat-supply  { color: #94a3b8; background: rgba(148,163,184,0.12); }
   .cat-fin     { color: #34d399; background: rgba(52,211,153,0.12);  }
+  .cat-risk    { color: #f87171; background: rgba(248,113,113,0.12); }
+
+  /* Watchlist risk badges */
+  .risk-badge {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 0.63rem; font-weight: 700;
+    padding: 2px 6px; border-radius: 4px;
+    letter-spacing: 0.02em; white-space: nowrap;
+  }
+  .risk-red    { background: rgba(239,68,68,0.18);  color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+  .risk-yellow { background: rgba(234,179,8,0.15);  color: #eab308; border: 1px solid rgba(234,179,8,0.3); }
 
   .card-title {
     font-size: 0.88rem; font-weight: 600; line-height: 1.5;
@@ -538,6 +549,7 @@
     <button class="tab" data-cat="電競/ROG">🎮 電競/ROG <span class="tab-count" id="cnt-電競/ROG">0</span></button>
     <button class="tab" data-cat="供應鏈/關稅">📦 供應鏈/關稅 <span class="tab-count" id="cnt-供應鏈/關稅">0</span></button>
     <button class="tab" data-cat="財報/法說">📊 財報/法說 <span class="tab-count" id="cnt-財報/法說">0</span></button>
+    <button class="tab" data-cat="財務風險">⚠️ 財務風險 <span class="tab-count" id="cnt-財務風險">0</span></button>
   </div>
   <div class="multi-hint" id="multiHint" style="display:none">💡 可同時選多個類別</div>
 
@@ -611,9 +623,10 @@ const CAT_CLASS = {
   '電競/ROG':   'cat-gaming',
   '供應鏈/關稅': 'cat-supply',
   '財報/法說':   'cat-fin',
+  '財務風險':    'cat-risk',
 };
 
-const CATS = ['AI 產業','記憶體/儲存','半導體','PC / NB','伺服器/雲端','面板/顯示','電競/ROG','供應鏈/關稅','財報/法說'];
+const CATS = ['AI 產業','記憶體/儲存','半導體','PC / NB','伺服器/雲端','面板/顯示','電競/ROG','供應鏈/關稅','財報/法說','財務風險'];
 
 // ── Theme ──────────────────────────────────────────────────
 let dark = true;
@@ -761,12 +774,16 @@ function renderCards(articles) {
     const dateDisp = a.published
       ? a.published.slice(0, 16)
       : (a.fetched_at || '').slice(0, 16);
+    const riskHtml = a.watchlist_risk
+      ? `<span class="risk-badge ${a.watchlist_risk === '紅' ? 'risk-red' : 'risk-yellow'}">${a.watchlist_risk === '紅' ? '🔴' : '🟡'} ${esc(a.watchlist_vendor)}</span>`
+      : '';
 
     html += `
     <a class="news-card" href="${esc(a.source_url)}" target="_blank" rel="noopener noreferrer">
       <div class="card-header">
         <span class="source-badge ${srcCls}">${esc(a.source)}</span>
         <span class="cat-tag ${catCls}">${esc(a.category)}</span>
+        ${riskHtml}
       </div>
       <h3 class="card-title">${esc(a.title)}</h3>
       ${sumHtml}

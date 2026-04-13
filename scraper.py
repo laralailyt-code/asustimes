@@ -4,7 +4,9 @@ Only tech-industry news relevant to ASUS executives.
 Categories: AI產業 / 記憶體儲存 / 半導體 / PC_NB / 伺服器雲端 / 面板顯示 / 電競ROG / 供應鏈關稅 / 財報法說
 """
 
+import os
 import re
+import csv
 import html
 import logging
 import requests
@@ -82,6 +84,15 @@ CATEGORY_KEYWORDS = {
         "ODM", "OEM", "代工", "制裁", "禁令", "entity list", "晶片禁令",
         "移轉", "遷廠", "越南", "印度", "墨西哥", "轉單", "去中化",
         "產能利用率",
+    ],
+    "財務風險": [
+        "破產", "倒閉", "違約", "財務危機", "流動性危機", "債務重整", "欠款",
+        "應收帳款", "呆帳", "信用評等下調", "評等調降", "停工", "停產",
+        "大規模裁員", "財務困難", "週轉不靈", "跳票", "資金缺口", "資金周轉困難",
+        "債務違約", "清算", "重整", "接管", "強制執行",
+        "bankruptcy", "default", "liquidity crisis", "debt restructuring",
+        "receivership", "insolvency", "financial distress", "credit downgrade",
+        "mass layoffs", "shutdown", "seized",
     ],
     "財報/法說": [
         "財報", "法說會", "法說", "月營收", "季報", "年報", "EPS", "每股盈餘",
@@ -240,6 +251,48 @@ FEEDS = [
 ]
 
 
+# ── Vendor watchlist ──────────────────────────────────────────────────────────
+_WATCHLIST_PATH = os.path.join(os.path.dirname(__file__), "watchlist.csv")
+
+
+def load_watchlist() -> dict[str, str]:
+    """Return {vendor_name: risk_level} from watchlist.csv.
+    risk_level is '紅' or '黃'.
+    Supports both simplified format (廠商,股票代號,風險等級)
+    and the full quarterly report format (with 報告Risk column).
+    """
+    result: dict[str, str] = {}
+    if not os.path.exists(_WATCHLIST_PATH):
+        return result
+    try:
+        with open(_WATCHLIST_PATH, encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            headers = reader.fieldnames or []
+            # Find risk column: prefer 風險等級, then any header containing Risk/風險
+            risk_col = "風險等級"
+            if risk_col not in headers:
+                for h in headers:
+                    if "Risk" in h or "風險" in h:
+                        risk_col = h
+                        break
+            # Find vendor column: prefer 廠商
+            vendor_col = "廠商"
+            if vendor_col not in headers:
+                for h in headers:
+                    if "廠商" in h:
+                        vendor_col = h
+                        break
+            for row in reader:
+                vendor = row.get(vendor_col, "").strip()
+                risk   = row.get(risk_col, "").strip()
+                if vendor and risk in ("紅", "黃"):
+                    result[vendor] = risk
+        logger.info(f"Watchlist loaded: {len(result)} vendors (risk_col='{risk_col}')")
+    except Exception as e:
+        logger.warning(f"Watchlist load error: {e}")
+    return result
+
+
 # ── Main aggregator (parallel fetch) ─────────────────────────────────────────
 def fetch_all_news() -> list[dict]:
     logger.info("ASUSTIMES: starting parallel fetch…")
@@ -266,5 +319,18 @@ def fetch_all_news() -> list[dict]:
             unique.append(item)
 
     unique.sort(key=lambda a: a.get("published", "") or a.get("fetched_at", ""), reverse=True)
+
+    # Watchlist tagging: override category to 財務風險 + attach vendor/risk metadata
+    watchlist = load_watchlist()
+    if watchlist:
+        for article in unique:
+            text = f"{article['title']} {article.get('summary', '')}"
+            for vendor, risk in watchlist.items():
+                if vendor in text:
+                    article["watchlist_vendor"] = vendor
+                    article["watchlist_risk"]   = risk
+                    article["category"]         = "財務風險"
+                    break
+
     logger.info(f"ASUSTIMES: {len(unique)} tech articles ready")
     return unique
