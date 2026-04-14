@@ -26,7 +26,7 @@ HEADERS = {
     ),
     "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
 }
-TIMEOUT = 8
+TIMEOUT = 4
 
 # ── ASUS-relevant categories ─────────────────────────────────────────────────
 CATEGORY_KEYWORDS = {
@@ -101,6 +101,17 @@ CATEGORY_KEYWORDS = {
         "Q1", "Q2", "Q3", "Q4", "業績", "財測", "展望", "營收",
         "revenue", "earnings", "profit", "guidance", "quarterly",
         "年成長", "創高", "創新低", "庫存", "去庫存",
+    ],
+    "ESG永續": [
+        "ESG", "永續", "碳中和", "碳排放", "碳足跡", "淨零", "net zero",
+        "再生能源", "綠能", "太陽能", "風電", "綠電", "RE100",
+        "碳交易", "碳權", "碳費", "減碳", "溫室氣體",
+        "企業社會責任", "CSR", "社會責任",
+        "供應鏈碳排", "Scope 3", "永續報告書",
+        "循環經濟", "廢棄物", "用水", "生物多樣性",
+        "董事會多元", "獨立董事", "公司治理", "資訊揭露",
+        "sustainability", "carbon neutral", "renewable", "green",
+        "climate", "emission", "ESG report", "diversity",
     ],
 }
 

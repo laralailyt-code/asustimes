@@ -424,6 +424,111 @@
   .modal-cancel-btn:hover { border-color: var(--accent); color: var(--text-primary); }
   .modal-status { font-size: 0.78rem; margin-top: 0.7rem; min-height: 1.2em; color: var(--text-secondary); }
 
+  /* ── Page nav bar ── */
+  .page-nav-bar {
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    padding: 0 1.5rem;
+  }
+  .page-nav { display: flex; gap: 0; }
+  .page-nav-btn {
+    padding: 0.6rem 1.2rem; border: none; border-bottom: 2px solid transparent;
+    font-size: 0.88rem; font-weight: 600; cursor: pointer;
+    background: transparent; color: var(--text-secondary);
+    font-family: inherit; transition: all 0.18s;
+  }
+  .page-nav-btn:hover { color: var(--text-primary); }
+  .page-nav-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── Market dashboard ── */
+  #marketPage { display: none; }
+  .market-layout { display: flex; gap: 1.2rem; align-items: flex-start; }
+  .market-sidebar {
+    width: 200px; flex-shrink: 0;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 0.6rem; position: sticky; top: 75px;
+  }
+  .market-sidebar-title {
+    font-size: 0.7rem; font-weight: 700; color: var(--text-muted);
+    letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 0.3rem 0.5rem 0.5rem;
+  }
+  .mcat-btn {
+    display: block; width: 100%; text-align: left;
+    padding: 0.38rem 0.6rem; border-radius: 7px; border: none;
+    font-size: 0.82rem; font-weight: 500; cursor: pointer;
+    background: transparent; color: var(--text-secondary);
+    font-family: inherit; transition: all 0.15s; margin-bottom: 2px;
+  }
+  .mcat-btn:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+  .mcat-btn.active { background: rgba(20,100,246,0.15); color: var(--accent-2); font-weight: 600; }
+  .market-main { flex: 1; min-width: 0; }
+  .market-toolbar {
+    display: flex; align-items: center; gap: 0.5rem;
+    margin-bottom: 1rem; flex-wrap: wrap;
+  }
+  .market-item-btns { display: flex; gap: 0.3rem; flex-wrap: wrap; flex: 1; }
+  .mitem-btn {
+    padding: 0.28rem 0.7rem; border-radius: 6px; border: 1px solid var(--border);
+    font-size: 0.76rem; cursor: pointer; background: var(--bg-card);
+    color: var(--text-secondary); font-family: inherit; transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .mitem-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+  .mitem-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+  .time-btns { display: flex; gap: 0.3rem; flex-shrink: 0; }
+  .time-btn {
+    padding: 0.28rem 0.65rem; border-radius: 6px; border: 1px solid var(--border);
+    font-size: 0.76rem; cursor: pointer; background: transparent;
+    color: var(--text-secondary); font-family: inherit; transition: all 0.15s;
+  }
+  .time-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+  .chart-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.2rem; margin-bottom: 1rem;
+  }
+  .chart-title {
+    font-size: 0.95rem; font-weight: 700; color: var(--text-primary);
+    margin-bottom: 0.3rem;
+  }
+  .chart-meta { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem; }
+  .chart-latest {
+    font-size: 1.5rem; font-weight: 800; color: var(--text-primary);
+    margin-bottom: 0.2rem;
+  }
+  .chart-change-up   { color: #34d399; font-size: 0.85rem; font-weight: 600; }
+  .chart-change-down { color: #f87171; font-size: 0.85rem; font-weight: 600; }
+  .chart-wrap { position: relative; height: 280px; }
+  .custom-range-row {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.4rem 0; margin-bottom: 0.5rem; flex-wrap: wrap;
+  }
+  .range-input {
+    padding: 0.25rem 0.5rem; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--bg-card);
+    color: var(--text-primary); font-size: 0.78rem; font-family: inherit;
+  }
+  .range-apply-btn {
+    padding: 0.25rem 0.8rem; border-radius: 6px;
+    border: 1px solid var(--accent); background: var(--accent);
+    color: white; font-size: 0.78rem; cursor: pointer; font-family: inherit;
+  }
+  .market-news-title {
+    font-size: 0.8rem; font-weight: 700; color: var(--text-muted);
+    letter-spacing: 0.06em; text-transform: uppercase;
+    margin: 1.2rem 0 0.6rem;
+  }
+  .market-news-list { display: flex; flex-direction: column; gap: 0.5rem; }
+  .market-news-item {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 0.65rem 0.9rem;
+    display: flex; gap: 0.8rem; align-items: flex-start;
+    text-decoration: none; transition: border-color 0.15s;
+  }
+  .market-news-item:hover { border-color: var(--border-hover); }
+  .market-news-item-title { font-size: 0.83rem; color: var(--text-primary); line-height: 1.45; }
+  .market-news-item-meta  { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+
   /* ── Responsive ── */
   @media (max-width: 640px) {
     .header-inner { padding: 0 1rem; gap: 0.7rem; }
@@ -432,6 +537,8 @@
     .news-grid { grid-template-columns: 1fr; }
     .stats-bar { gap: 0.6rem; }
     .stat-sep { display: none; }
+    .market-layout { flex-direction: column; }
+    .market-sidebar { width: 100%; position: static; }
   }
   @media (min-width: 641px) {
     .btn-search-mobile { display: none !important; }
@@ -468,6 +575,14 @@
     </div>
   </div>
 </header>
+
+<!-- Page nav bar -->
+<div class="page-nav-bar">
+  <nav class="page-nav">
+    <button class="page-nav-btn active" id="navNews" onclick="switchPage('news')">📰 新聞</button>
+    <button class="page-nav-btn" id="navMarket" onclick="switchPage('market')">📈 市場</button>
+  </nav>
+</div>
 
 <!-- Mobile search bar -->
 <div class="mobile-search-bar" id="mobileSearchBar">
@@ -550,6 +665,7 @@
     <button class="tab" data-cat="供應鏈/關稅">📦 供應鏈/關稅 <span class="tab-count" id="cnt-供應鏈/關稅">0</span></button>
     <button class="tab" data-cat="財報/法說">📊 財報/法說 <span class="tab-count" id="cnt-財報/法說">0</span></button>
     <button class="tab" data-cat="財務風險">⚠️ 財務風險 <span class="tab-count" id="cnt-財務風險">0</span></button>
+    <button class="tab" data-cat="ESG永續">♻️ ESG永續 <span class="tab-count" id="cnt-ESG永續">0</span></button>
   </div>
   </div>
   <div class="multi-hint" id="multiHint" style="display:none">💡 可同時選多個類別</div>
@@ -584,9 +700,70 @@
   <div class="pagination" id="pagination"></div>
 </main>
 
+<!-- ── Market Dashboard ───────────────────────────────────── -->
+<main class="main" id="marketPage">
+  <div class="market-layout">
+    <!-- Sidebar: categories -->
+    <div class="market-sidebar">
+      <div class="market-sidebar-title">分類</div>
+      <button class="mcat-btn active" data-mcat="金屬">🔩 金屬</button>
+      <button class="mcat-btn" data-mcat="貴金屬">✨ 貴金屬</button>
+      <button class="mcat-btn" data-mcat="能源">🛢 能源</button>
+      <button class="mcat-btn" data-mcat="原物料">🧪 原物料</button>
+      <button class="mcat-btn" data-mcat="匯率">💱 匯率</button>
+    </div>
+    <!-- Main area -->
+    <div class="market-main">
+      <!-- Item selector + time range -->
+      <div class="market-toolbar">
+        <div class="market-item-btns" id="marketItemBtns"></div>
+        <div class="time-btns" id="timeBtns">
+          <button class="time-btn active" data-days="30">1月</button>
+          <button class="time-btn" data-days="90">1季</button>
+          <button class="time-btn" data-days="180">半年</button>
+          <button class="time-btn" data-days="365">1年</button>
+          <button class="time-btn" data-days="0">全部</button>
+          <button class="time-btn" data-days="-1">自訂</button>
+        </div>
+      </div>
+      <div class="custom-range-row" id="customRangeRow" style="display:none">
+        <input type="date" id="rangeFrom" class="range-input" />
+        <span style="color:var(--text-muted);font-size:0.8rem">至</span>
+        <input type="date" id="rangeTo" class="range-input" />
+        <button class="range-apply-btn" onclick="applyCustomRange()">套用</button>
+      </div>
+      <!-- Chart -->
+      <div class="chart-card">
+        <div class="chart-title" id="chartTitle">—</div>
+        <div class="chart-meta" id="chartMeta"></div>
+        <div class="chart-latest" id="chartLatest">—</div>
+        <div id="chartChange"></div>
+        <div class="chart-wrap"><canvas id="marketChart"></canvas></div>
+      </div>
+      <!-- Related news -->
+      <div class="market-news-title" id="marketNewsTitle">相關新聞</div>
+      <div class="market-news-list" id="marketNewsList"></div>
+    </div>
+  </div>
+</main>
+
 
 <div class="toast" id="toast"></div>
 
+<!-- Floating tooltip for chart news-annotation dots -->
+<div id="annotTooltip" style="
+  position:fixed; display:none; z-index:9999;
+  background:var(--bg-card); border:1px solid #f59e0b;
+  border-radius:8px; padding:0.55rem 0.8rem; max-width:290px;
+  box-shadow:0 4px 18px rgba(0,0,0,0.35); pointer-events:none;
+">
+  <div id="annotTooltipDate" style="font-size:0.72rem;color:#f59e0b;margin-bottom:0.25rem;font-weight:600"></div>
+  <div id="annotTooltipTitle" style="font-size:0.82rem;color:var(--text-primary);line-height:1.4"></div>
+  <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.3rem">點擊開啟新聞</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 <script>
 // ── State ──────────────────────────────────────────────────
 const state = {
@@ -668,6 +845,7 @@ async function loadNews() {
     const res  = await fetch('/api/news?' + p);
     const data = await res.json();
     state.total = data.total;
+    if (data.articles) window._newsCache = (window._newsCache||[]).concat(data.articles).slice(-500);
     renderCards(data.articles);
     renderPagination(data.total, data.page, data.per_page);
 
@@ -926,6 +1104,381 @@ const poller = setInterval(async()=>{
     if(d.total>0){ clearInterval(poller); loadNews(); loadStats(); }
   } catch {}
 }, 3000);
+
+// ── Page switcher ──────────────────────────────────────────
+function switchPage(page) {
+  const newsPage   = document.querySelector('main.main:not(#marketPage)');
+  const marketPage = document.getElementById('marketPage');
+  const mobileBar  = document.getElementById('mobileSearchBar');
+  if (page === 'market') {
+    newsPage.style.display   = 'none';
+    mobileBar.style.display  = 'none';
+    marketPage.style.display = 'block';
+    document.getElementById('navNews').classList.remove('active');
+    document.getElementById('navMarket').classList.add('active');
+    if (!window._marketLoaded) { loadMarket(); window._marketLoaded = true; }
+  } else {
+    newsPage.style.display   = '';
+    marketPage.style.display = 'none';
+    mobileBar.style.display  = '';
+    document.getElementById('navNews').classList.add('active');
+    document.getElementById('navMarket').classList.remove('active');
+  }
+}
+
+// ── Market dashboard ───────────────────────────────────────
+let _marketData      = [];
+let _activeCat       = '金屬';
+let _activeItem      = null;
+let _activeDays      = 30;
+let _customStart     = null;
+let _customEnd       = null;
+let _newsArticles    = [];   // {date, title, url} for chart annotation dots
+let _chartInst       = null;
+let _annotPixels     = [];   // [{x, y, article}] pixel positions of annotation dots
+let _canvasHandlers  = null; // stored so we can remove/re-add on chart rebuild
+
+// Local date string (avoids UTC shift showing yesterday in Taiwan timezone)
+function toLocalDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+// Return {start, end} ISO strings for current range selection
+function getCurrentRange() {
+  if (_activeDays === -1 && _customStart) {
+    return { start: _customStart, end: _customEnd || toLocalDateStr(new Date()) };
+  }
+  if (_activeDays === 0) return { start: null, end: null };
+  const end   = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - _activeDays);
+  return { start: toLocalDateStr(start), end: toLocalDateStr(end) };
+}
+
+function applyCustomRange() {
+  _customStart = document.getElementById('rangeFrom').value;
+  _customEnd   = document.getElementById('rangeTo').value;
+  if (_customStart) { renderChart(); renderMarketNews(); }
+}
+
+async function loadMarket() {
+  const wrap = document.getElementById('marketItemBtns');
+  wrap.innerHTML = '<span style="color:var(--text-muted);font-size:0.82rem">載入中…</span>';
+  document.getElementById('chartTitle').textContent = '載入中…';
+  try {
+    const res  = await fetch('/api/commodities');
+    const data = await res.json();
+    _marketData = data.items || [];
+    if (!_marketData.length) {
+      wrap.innerHTML = '<span style="color:var(--text-muted);font-size:0.82rem">⚠️ 無原物料資料，請確認 CSV 檔案已上傳</span>';
+      document.getElementById('chartTitle').textContent = '—';
+      return;
+    }
+    renderMarketSidebar();
+    renderMarketItems();
+  } catch(e) {
+    console.error('market load error', e);
+    wrap.innerHTML = '<span style="color:#f87171;font-size:0.82rem">❌ 載入失敗</span>';
+    document.getElementById('chartTitle').textContent = '—';
+  }
+}
+
+function renderMarketSidebar() {
+  document.querySelectorAll('.mcat-btn').forEach(btn =>
+    btn.classList.toggle('active', btn.dataset.mcat === _activeCat)
+  );
+}
+
+function renderMarketItems() {
+  const items = _marketData.filter(d => d.category === _activeCat);
+  const wrap  = document.getElementById('marketItemBtns');
+  wrap.innerHTML = items.map(d =>
+    `<button class="mitem-btn${d.name===_activeItem?' active':''}" onclick="selectMarketItem('${esc(d.name)}')">${esc(shortName(d.name))}</button>`
+  ).join('');
+  if (items.length && (!_activeItem || !items.find(d=>d.name===_activeItem))) {
+    selectMarketItem(items[0].name);
+  } else if (_activeItem) {
+    renderChart();
+    renderMarketNews();
+  }
+}
+
+function shortName(name) {
+  return name
+    .replace(/\s*\([^)]*\)\s*/g, ' ')
+    .replace(/\s*(US\$|CNY\$|USD)\/.*$/, '')
+    .replace(/\s+/g, ' ').trim();
+}
+
+function selectMarketItem(name) {
+  _activeItem = name;
+  _newsArticles = [];
+  document.querySelectorAll('.mitem-btn').forEach(b =>
+    b.classList.toggle('active', b.textContent.trim() === shortName(name))
+  );
+  renderChart();
+  renderMarketNews();
+}
+
+function filterByRange(dates, values) {
+  const { start, end } = getCurrentRange();
+  if (!start) return { dates, values };
+  const fd = [], fv = [];
+  dates.forEach((d, i) => {
+    if (d >= start && d <= end) { fd.push(d); fv.push(values[i]); }
+  });
+  return { dates: fd, values: fv };
+}
+
+function buildAnnotations(chartDates, chartValues) {
+  const annotations = {};
+  _newsArticles.forEach((article, i) => {
+    const nd = article.date;
+    let idx = chartDates.indexOf(nd);
+    if (idx < 0) idx = chartDates.findIndex(d => d >= nd);
+    if (idx < 0) return;
+    let yVal = null, yIdx = idx;
+    for (let k = idx; k < chartValues.length; k++) {
+      if (chartValues[k] !== null) { yVal = chartValues[k]; yIdx = k; break; }
+    }
+    if (yVal === null) return;
+    annotations[`news_${i}`] = {
+      type: 'point',
+      xValue: chartDates[yIdx],
+      yValue: yVal,
+      radius: 8,
+      backgroundColor: 'rgba(251,191,36,0.9)',
+      borderColor: '#f59e0b',
+      borderWidth: 2,
+    };
+  });
+  return annotations;
+}
+
+// Calculate canvas pixel positions of all annotation dots (for mouse hit-testing)
+function _updateAnnotPixels() {
+  _annotPixels = [];
+  if (!_chartInst) return;
+  const ann    = _chartInst.options.plugins.annotation.annotations || {};
+  const xScale = _chartInst.scales.x;
+  const yScale = _chartInst.scales.y;
+  const labels = _chartInst.data.labels;
+  Object.entries(ann).forEach(([key, a]) => {
+    const idx     = parseInt(key.replace('news_', ''));
+    const article = _newsArticles[idx];
+    if (!article) return;
+    // category scale requires numeric index
+    const labelIdx = labels.indexOf(a.xValue);
+    if (labelIdx < 0) return;
+    const xPixel = xScale.getPixelForValue(labelIdx);
+    const yPixel = yScale.getPixelForValue(a.yValue);
+    if (!isFinite(xPixel) || !isFinite(yPixel)) return;
+    _annotPixels.push({ x: xPixel, y: yPixel, article });
+  });
+}
+
+// Attach mousemove / click handlers directly on the canvas for annotation interactivity
+function _setupCanvasAnnotEvents() {
+  const canvas = document.getElementById('marketChart');
+  if (_canvasHandlers) {
+    canvas.removeEventListener('mousemove',  _canvasHandlers.move);
+    canvas.removeEventListener('mouseleave', _canvasHandlers.leave);
+    canvas.removeEventListener('click',      _canvasHandlers.click);
+  }
+  const tt = document.getElementById('annotTooltip');
+
+  const onMove = e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    let found = null;
+    for (const p of _annotPixels) {
+      if ((mx-p.x)**2 + (my-p.y)**2 < 144) { found = p; break; } // 12px radius
+    }
+    if (found) {
+      document.getElementById('annotTooltipDate').textContent  = found.article.date;
+      document.getElementById('annotTooltipTitle').textContent = found.article.title;
+      tt.style.display = 'block';
+      const vw = window.innerWidth, vh = window.innerHeight;
+      let lx = e.clientX + 14, ly = e.clientY + 14;
+      if (lx + 305 > vw) lx = e.clientX - 315;
+      if (ly + 95  > vh) ly = e.clientY - 105;
+      tt.style.left = lx + 'px';
+      tt.style.top  = ly + 'px';
+      canvas.style.cursor = 'pointer';
+    } else {
+      tt.style.display = 'none';
+      canvas.style.cursor = '';
+    }
+  };
+  const onLeave = () => { tt.style.display = 'none'; canvas.style.cursor = ''; };
+  const onClick  = e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    for (const p of _annotPixels) {
+      if ((mx-p.x)**2 + (my-p.y)**2 < 144 && p.article.url) {
+        window.open(p.article.url, '_blank', 'noopener'); break;
+      }
+    }
+  };
+  canvas.addEventListener('mousemove',  onMove);
+  canvas.addEventListener('mouseleave', onLeave);
+  canvas.addEventListener('click',      onClick);
+  _canvasHandlers = { move: onMove, leave: onLeave, click: onClick };
+}
+
+function renderChart() {
+  const item = _marketData.find(d => d.name === _activeItem);
+  if (!item) return;
+
+  const { dates, values } = filterByRange(item.dates, item.values);
+  const displayName = shortName(item.name);
+  document.getElementById('chartTitle').textContent = displayName;
+  document.getElementById('chartMeta').textContent  = item.unit || '';
+
+  // Latest value display
+  const latestVal = [...values].reverse().find(v => v !== null);
+  document.getElementById('chartLatest').textContent =
+    latestVal != null ? latestVal.toLocaleString() + (item.unit ? '  ' + item.unit : '') : '—';
+
+  // Range-based change: compare first vs last non-null value in selected range
+  const chEl    = document.getElementById('chartChange');
+  const nonNull = values.map((v,i) => v!==null ? {v,d:dates[i]} : null).filter(Boolean);
+  if (nonNull.length >= 2) {
+    const first = nonNull[0], last = nonNull[nonNull.length - 1];
+    const pct   = ((last.v - first.v) / first.v * 100).toFixed(2);
+    const isUp  = parseFloat(pct) >= 0;
+    chEl.className   = isUp ? 'chart-change-up' : 'chart-change-down';
+    chEl.style.color = '';
+    chEl.textContent = `${isUp ? '▲ +' : '▼ '}${pct}%（${first.d} → ${last.d}）`;
+  } else {
+    chEl.textContent = ''; chEl.className = '';
+  }
+
+  // No data
+  if (!nonNull.length) {
+    if (_chartInst) { _chartInst.destroy(); _chartInst = null; }
+    document.getElementById('marketChart').getContext('2d')
+      .clearRect(0, 0, 9999, 9999);
+    chEl.textContent = '此品項暫無歷史資料';
+    chEl.style.color = 'var(--text-muted)';
+    chEl.style.fontSize = '0.8rem';
+    return;
+  }
+
+  const isDark    = document.documentElement.getAttribute('data-theme') !== 'light';
+  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  const textColor = isDark ? '#8892aa' : '#64748b';
+  const ctx       = document.getElementById('marketChart').getContext('2d');
+
+  if (_chartInst) _chartInst.destroy();
+  _chartInst = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: [{
+        data: values,
+        borderColor: '#1464f6',
+        backgroundColor: 'rgba(20,100,246,0.08)',
+        borderWidth: 2,
+        pointRadius: dates.length > 60 ? 0 : 3,
+        pointHoverRadius: 5,
+        fill: true, tension: 0.3, spanGaps: true,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: { label: c => c.parsed.y != null ? c.parsed.y.toLocaleString() + ' ' + (item.unit||'') : '—' }
+        },
+        annotation: { annotations: buildAnnotations(dates, values) }
+      },
+      scales: {
+        x: { ticks: { color: textColor, maxTicksLimit: 8 }, grid: { color: gridColor } },
+        y: { ticks: { color: textColor }, grid: { color: gridColor } }
+      }
+    }
+  });
+  // Set up canvas mouse-hit detection for annotation dots
+  setTimeout(() => { _updateAnnotPixels(); _setupCanvasAnnotEvents(); }, 60);
+}
+
+async function renderMarketNews() {
+  if (!_activeItem) return;
+  const kw  = shortName(_activeItem);
+  const { start, end } = getCurrentRange();
+  const wrap = document.getElementById('marketNewsList');
+  const rangeLabel = start ? `${start} ～ ${end || '今天'}` : '全部';
+  document.getElementById('marketNewsTitle').textContent = `相關新聞（${rangeLabel}）`;
+  wrap.innerHTML = `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">🔍 搜尋中…</div>`;
+
+  let q = kw + ' 價格';
+  if (start) q += ` after:${start}`;
+  if (end)   q += ` before:${end}`;
+
+  try {
+    const res  = await fetch('/api/commodity-news?q=' + encodeURIComponent(q));
+    const data = await res.json();
+    const articles = data.articles || [];
+
+    // Extract article data for chart annotation dots (hover tooltip + click)
+    _newsArticles = articles
+      .map(a => {
+        try {
+          return { date: new Date(a.published).toISOString().slice(0,10), title: a.title, url: a.source_url };
+        } catch { return null; }
+      })
+      .filter(Boolean);
+
+    // Re-render chart with annotations
+    if (_chartInst && _newsArticles.length) {
+      _chartInst.options.plugins.annotation.annotations =
+        buildAnnotations(_chartInst.data.labels, _chartInst.data.datasets[0].data);
+      _chartInst.update('none');
+      setTimeout(_updateAnnotPixels, 60); // refresh hit-test positions
+    }
+
+    if (!articles.length) {
+      wrap.innerHTML = `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">此區間無相關新聞</div>`;
+      return;
+    }
+    wrap.innerHTML = articles.map(a => {
+      const dateStr = (() => { try { return new Date(a.published).toISOString().slice(0,10); } catch { return ''; } })();
+      return `
+      <a class="market-news-item" href="${esc(a.source_url)}" target="_blank" rel="noopener">
+        <div>
+          <div class="market-news-item-title">${esc(a.title)}</div>
+          <div class="market-news-item-meta">${esc(a.source)} · ${esc(dateStr)}</div>
+        </div>
+      </a>`;
+    }).join('');
+  } catch(e) {
+    wrap.innerHTML = `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">無法載入新聞</div>`;
+  }
+}
+
+// Sidebar category click
+document.querySelectorAll('.mcat-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    _activeCat = btn.dataset.mcat; _activeItem = null;
+    _newsArticles = [];
+    renderMarketSidebar(); renderMarketItems();
+  });
+});
+
+// Time range click
+document.getElementById('timeBtns').addEventListener('click', e => {
+  const btn = e.target.closest('.time-btn');
+  if (!btn) return;
+  document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  _activeDays = parseInt(btn.dataset.days);
+  const customRow = document.getElementById('customRangeRow');
+  customRow.style.display = _activeDays === -1 ? 'flex' : 'none';
+  if (_activeDays !== -1) { renderChart(); renderMarketNews(); }
+});
+
 
 </script>
 </body>
