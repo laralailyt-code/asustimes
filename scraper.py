@@ -26,7 +26,7 @@ HEADERS = {
     ),
     "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
 }
-TIMEOUT = 4
+TIMEOUT = 10
 
 # ── ASUS-relevant categories ─────────────────────────────────────────────────
 CATEGORY_KEYWORDS = {
@@ -233,8 +233,17 @@ GN_EN = "https://news.google.com/rss/search?hl=en-US&gl=US&ceid=US:en&q="
 
 FEEDS = [
     # ── 台灣科技媒體 ────────────────────────────────────────────────────────
-    {"url": GN + "site:digitimes.com.tw",          "source": "Digitimes", "hint": ""},
-    {"url": GN + "site:digitimes.com.tw+筆電+PC",  "source": "Digitimes", "hint": "PC / NB"},
+    {"url": GN + "site:digitimes.com.tw",                   "source": "Digitimes", "hint": "AI 產業"},
+    {"url": GN + "site:digitimes.com.tw+AI+人工智慧",        "source": "Digitimes", "hint": "AI 產業"},
+    {"url": GN + "site:digitimes.com.tw+半導體+晶片",        "source": "Digitimes", "hint": "半導體"},
+    {"url": GN + "site:digitimes.com.tw+台積電+TSMC",        "source": "Digitimes", "hint": "半導體"},
+    {"url": GN + "site:digitimes.com.tw+筆電+PC",            "source": "Digitimes", "hint": "PC / NB"},
+    {"url": GN + "site:digitimes.com.tw+伺服器+資料中心",    "source": "Digitimes", "hint": "伺服器/雲端"},
+    {"url": GN + "site:digitimes.com.tw+記憶體+DRAM+HBM",   "source": "Digitimes", "hint": "記憶體/儲存"},
+    {"url": GN + "site:digitimes.com.tw+面板+OLED+LCD",     "source": "Digitimes", "hint": "面板/顯示"},
+    {"url": GN + "site:digitimes.com.tw+供應鏈+關稅",        "source": "Digitimes", "hint": "供應鏈/關稅"},
+    {"url": GN + "site:digitimes.com.tw+財報+營收+法說",     "source": "Digitimes", "hint": "財報/法說"},
+    {"url": GN_EN + "site:digitimes.com",                   "source": "Digitimes", "hint": "AI 產業"},
     {"url": GN + "site:ctee.com.tw+科技",          "source": "工商時報",  "hint": ""},
     {"url": GN + "site:technews.tw",        "source": "科技新報",    "hint": "AI 產業"},
     {"url": GN + "site:ithome.com.tw",      "source": "iThome",      "hint": "AI 產業"},
@@ -373,7 +382,7 @@ def fetch_all_news() -> list[dict]:
     seen: set[str] = set()
     unique: list[dict] = []
     for item in results:
-        key = re.sub(r"\W+", "", item["title"])[:28]
+        key = re.sub(r"\W+", "", item["title"])[:40]
         if key and key not in seen:
             seen.add(key)
             unique.append(item)

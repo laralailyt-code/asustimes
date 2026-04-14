@@ -5,6 +5,7 @@ Auto-refreshes every 30 minutes in background.
 """
 
 import os
+import csv
 import threading
 import time
 import logging
@@ -12,6 +13,13 @@ import requests as req_lib
 from datetime import datetime, date as date_cls, timedelta, timezone
 from flask import Flask, jsonify, render_template, request
 from scraper import fetch_all_news, CATEGORY_KEYWORDS
+
+try:
+    import yfinance as yf
+    _YF_AVAILABLE = True
+except ImportError:
+    _YF_AVAILABLE = False
+    logging.getLogger(__name__).warning("yfinance not installed – live commodity prices disabled")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -107,6 +115,8 @@ def _ensure_bg_running():
                 t.start()
                 td = threading.Thread(target=daily_digest_loop, daemon=True)
                 td.start()
+                tl = threading.Thread(target=_live_price_loop, daemon=True)
+                tl.start()
                 logger.info("Background threads started in worker")
 
 
@@ -330,6 +340,411 @@ def api_send_digest():
     except Exception as e:
         logger.error(f"send_digest error: {e}")
         return jsonify({"ok": False, "message": f"❌ 發送失敗：{e}"}), 500
+
+
+# ── Live commodity price fetching ─────────────────────────────────────────────
+
+# yfinance symbol → (exact CSV item name, price multiplier to match CSV unit)
+_LIVE_COMMODITY_SYMBOLS = {
+    "GC=F":  ("金 (gold) US$/盎司",            1.0),       # Gold $/oz
+    "SI=F":  ("銀 (silver) US$/盎司",          1.0),       # Silver $/oz
+    "CL=F":  ("石油 西德州 ( US$/桶)",          1.0),       # WTI $/barrel
+    "BZ=F":  ("石油 北海布蘭特 (US$/桶)",       1.0),       # Brent $/barrel
+    "HG=F":  ("銅 (copper) US$/tonne",         2204.62),   # Copper $/lb → $/tonne
+    "ALI=F": ("鋁 (aluminum) US$/tonne",       1.0),       # COMEX Aluminum $/tonne
+}
+
+# Free ExchangeRate-API code → exact CSV item name
+_LIVE_FX_CODES = {
+    "TWD": "美元 / 台幣",
+    "CNY": "美元 / 人民幣",
+    "JPY": "美元 / 日圓",
+    "EUR": "美元 / 歐元",          # stored as EUR/USD (how many EUR per 1 USD)
+    "BRL": "美元 / 巴西里爾(巴西幣)",
+    "KRW": "美元 / 韓圜",
+    "IDR": "美元 / 印尼盾",
+    "INR": "美元 / 印度幣",
+}
+
+_live_commodity_cache: dict = {}   # {csv_item_name: [(date_str, value)]}
+_live_cache_lock = threading.Lock()
+
+# bot.com.tw BCD API code → (csv_item_name, price_multiplier)
+# API: https://fund.bot.com.tw/Z/ZH/ZHG/CZHG.djbcd?A=<code>
+# Response format: "date1,date2,...,dateN,val1,val2,...,valN"
+_BOT_BCD_CODES = {
+    "130041": ("ABS聚合物(注塑) 中國到岸價 US$/tonne", 1.0),   # ABS China CIF ✓ confirmed
+}
+
+# Trading Economics slug → (csv_item_name, price_multiplier)
+# Prices are scraped from tradingeconomics.com/commodity/<slug>
+_TE_SLUGS = {
+    "tin":        ("錫 (tin) US$/tonne",         1.0),       # TE in USD/tonne ✓
+    "nickel":     ("鎳 (nickel)  US$/tonne",     1.0),       # TE in USD/tonne ✓
+    "zinc":       ("鋅 (zinc)  US$/tonne",       1.0),       # TE in USD/tonne ✓
+    "cobalt":     ("鈷 (cobalt) US$/tonne",      1.0),       # TE in USD/tonne ✓
+    "lithium":    ("鋰 (Lithium) CNY$/tonne",    1.0),       # TE in CNY/tonne ✓
+    "phosphorus": ("黃磷 CNY$/tonne",            29.4274),   # TE in CNY/百kg → CNY/tonne
+}
+
+
+def _fetch_bot_bcd_price(code: str) -> float | None:
+    """Fetch latest price from bot.com.tw BCD API.
+    Response format: 'YYYY/MM/DD,YYYY/MM/DD,...,YYYY/MM/DD VAL,VAL,...,VAL'
+    Dates and values are separated by a space.
+    """
+    import re as _re
+    try:
+        url = f"https://fund.bot.com.tw/Z/ZH/ZHG/CZHG.djbcd?A={code}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+            "Referer": "https://fund.bot.com.tw/",
+        }
+        r = req_lib.get(url, headers=headers, timeout=12, verify=False)
+        data = r.text.strip()
+        if not data or len(data) < 20:
+            return None
+        # Find the last date and split at the space after it
+        m = _re.search(r'(\d{4}/\d{2}/\d{2})\s+([\d.,]+)$', data)
+        if m:
+            # Get the value after the last date-space separator
+            vals_str = data[m.start(2):]
+            vals = [v.strip() for v in vals_str.split(",") if v.strip()]
+            for v in reversed(vals):
+                return float(v)
+        # Fallback: find all values (numbers) after the last date
+        all_dates = _re.findall(r'\d{4}/\d{2}/\d{2}', data)
+        if all_dates:
+            last_date = all_dates[-1]
+            after_dates = data[data.rfind(last_date) + len(last_date):]
+            vals = [v.strip() for v in after_dates.split(",") if v.strip()]
+            for v in reversed(vals):
+                try:
+                    return float(v)
+                except ValueError:
+                    continue
+    except Exception as e:
+        logger.warning(f"bot.com.tw BCD {code}: {e}")
+    return None
+
+
+def _fetch_buyplas_price(product_key: str) -> float | None:
+    """Fetch plastic price from buyplas.com.
+    product_key: 'PC_SABIC' or 'PC_ABS_SABIC'
+    """
+    import re as _re
+    try:
+        url = "https://www.buyplas.com/spot/1003-PP-PE-PVC-ABS-PS.html"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+            "Accept-Language": "zh-CN,zh;q=0.9",
+        }
+        r = req_lib.get(url, headers=headers, timeout=15)
+        text = r.text
+        if product_key == "PC_SABIC":
+            # PC 1000R SABIC
+            m = _re.search(r'SABIC[^<]*1000R[^<]*?(\d[\d,]+)', text, _re.IGNORECASE)
+            if not m:
+                m = _re.search(r'1000R[^<]*?(\d[\d,]+)', text, _re.IGNORECASE)
+        elif product_key == "PC_ABS_SABIC":
+            # PC/ABS C6600-111 SABIC
+            m = _re.search(r'C6600[^<]*?(\d[\d,]+)', text, _re.IGNORECASE)
+            if not m:
+                m = _re.search(r'SABIC[^<]*?C6600[^<]*?(\d[\d,]+)', text, _re.IGNORECASE)
+        else:
+            return None
+        if m:
+            return float(m.group(1).replace(",", ""))
+    except Exception as e:
+        logger.warning(f"buyplas.com {product_key}: {e}")
+    return None
+
+
+def _fetch_te_price(slug: str) -> float | None:
+    """Scrape latest price from tradingeconomics.com/commodity/<slug>."""
+    import re
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        r = req_lib.get(f"https://tradingeconomics.com/commodity/{slug}",
+                        headers=headers, timeout=12)
+        m = re.search(r'"last":"?([\d.]+)', r.text)
+        if m:
+            return float(m.group(1))
+    except Exception as e:
+        logger.warning(f"TE scrape {slug}: {e}")
+    return None
+
+
+def _refresh_live_prices():
+    """Fetch latest commodity & FX prices. Called once on startup and then daily."""
+    today = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
+    fresh: dict = {}
+
+    # 1. Commodity prices via yfinance
+    if _YF_AVAILABLE:
+        try:
+            syms = list(_LIVE_COMMODITY_SYMBOLS.keys())
+            raw  = yf.download(syms, period="5d", interval="1d",
+                               auto_adjust=True, progress=False)
+            close = raw["Close"] if "Close" in raw.columns.get_level_values(0) else raw
+            for sym, (csv_name, mult) in _LIVE_COMMODITY_SYMBOLS.items():
+                try:
+                    col = close[sym] if sym in close.columns else close
+                    series = col.dropna()
+                    if series.empty:
+                        continue
+                    price = round(float(series.iloc[-1]) * mult, 2)
+                    date  = str(series.index[-1])[:10]
+                    fresh.setdefault(csv_name, []).append((date, price))
+                    logger.info(f"yfinance: {csv_name} = {price} on {date}")
+                except Exception as e:
+                    logger.warning(f"yfinance parse {sym}: {e}")
+        except Exception as e:
+            logger.warning(f"yfinance download error: {e}")
+
+    # 2. bot.com.tw BCD API (ABS and future items)
+    for code, (csv_name, mult) in _BOT_BCD_CODES.items():
+        price = _fetch_bot_bcd_price(code)
+        if price is not None:
+            val = round(price * mult, 2)
+            fresh[csv_name] = [(today, val)]
+            logger.info(f"bot.com.tw BCD {code}: {csv_name} = {val}")
+
+    # 3. buyplas.com plastic prices
+    _BUYPLAS_ITEMS = {
+        "PC_SABIC":     "PC塑料 (SABIC) CNY$/tonne",
+        "PC_ABS_SABIC": "PC/ABS塑料 (SABIC) CNY$/tonne",
+    }
+
+    for key, csv_name in _BUYPLAS_ITEMS.items():
+        price = _fetch_buyplas_price(key)
+        if price is not None:
+            fresh[csv_name] = [(today, price)]
+            logger.info(f"buyplas.com {key}: {csv_name} = {price}")
+        else:
+            logger.warning(f"buyplas.com {key}: no price found")
+
+    # 4. LME metals + lithium + phosphorus via Trading Economics scrape
+    for slug, (csv_name, mult) in _TE_SLUGS.items():
+        price = _fetch_te_price(slug)
+        if price is not None:
+            val = round(price * mult, 2)
+            fresh[csv_name] = [(today, val)]
+            logger.info(f"TradingEconomics: {csv_name} = {val}")
+
+    # 5. FX rates via free ExchangeRate-API
+    try:
+        resp  = req_lib.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=10)
+        rates = resp.json().get("rates", {})
+        for code, csv_name in _LIVE_FX_CODES.items():
+            if code == "EUR":
+                val = round(1.0 / rates["EUR"], 4) if rates.get("EUR") else None
+            else:
+                val = rates.get(code)
+            if val is not None:
+                fresh[csv_name] = [(today, float(val))]
+    except Exception as e:
+        logger.warning(f"FX rate fetch error: {e}")
+
+    with _live_cache_lock:
+        _live_commodity_cache.update(fresh)
+    logger.info(f"Live prices updated: {len(fresh)} items")
+
+
+def _live_price_loop():
+    _refresh_live_prices()
+    while True:
+        time.sleep(24 * 60 * 60)
+        _refresh_live_prices()
+
+
+# ── Commodity dashboard ────────────────────────────────────────────────────────
+_COMMODITY_CSV = os.path.join(os.path.dirname(__file__), "2026 Raw material trend history.csv")
+
+# Category mapping for each item
+_COMMODITY_CATEGORIES = {
+    "金屬": ["銅", "錫", "鋁", "鎳", "鋅", "鈷"],
+    "貴金屬": ["金", "銀"],
+    "能源": ["石油 西德州", "石油 杜拜", "石油 北海布蘭特"],
+    "原物料": ["黃磷", "ABS聚合物", "PC塑料", "PC/ABS塑料", "NOREXECO 長纖紙漿", "NOREXECO 短纖紙漿", "鋰"],
+    "匯率": ["美元 / 台幣", "美元 / 人民幣", "美元 / 日圓", "美元 / 歐元",
+              "美元 / 巴西里爾", "美元 / 韓圜", "美元 / 印尼盾", "美元 / 印度幣"],
+}
+
+def _parse_commodity_csv() -> dict:
+    """Parse wide-format CSV into {item_name: {dates:[], values:[], unit, category}}."""
+    result = {}
+    if not os.path.exists(_COMMODITY_CSV):
+        return result
+    try:
+        with open(_COMMODITY_CSV, encoding="utf-8-sig") as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+
+        if not rows:
+            return result
+
+        # Row 0: header — first cell is "項目", rest are dates
+        # Supports both old M/D format and new YYYY/M/D format
+        header = rows[0]
+        raw_dates = header[1:]
+
+        today = datetime.now()
+        dates = []
+        prev_month = None
+        year = today.year
+        for d in raw_dates:
+            d = d.strip()
+            if not d:
+                dates.append(None)
+                continue
+            try:
+                parts = d.split("/")
+                if len(parts) == 3:
+                    # Full date: YYYY/M/D
+                    y, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+                    dates.append(f"{y}-{month:02d}-{day:02d}")
+                elif len(parts) == 2:
+                    # Legacy M/D format — infer year from boundary
+                    month, day = int(parts[0]), int(parts[1])
+                    if prev_month is not None and month < prev_month and prev_month >= 10:
+                        year = today.year
+                    if month == 12 and prev_month is None:
+                        year = today.year - 1
+                    prev_month = month
+                    dates.append(f"{year}-{month:02d}-{day:02d}")
+                else:
+                    dates.append(None)
+            except Exception:
+                dates.append(None)
+
+        # Build category lookup
+        item_to_cat = {}
+        for cat, items in _COMMODITY_CATEGORIES.items():
+            for item in items:
+                item_to_cat[item] = cat
+
+        # Parse each data row
+        for row in rows[1:]:
+            if not row or not row[0].strip():
+                continue
+            name = row[0].strip()
+            if not name:
+                continue
+
+            # Extract unit from name (e.g. "US$/tonne")
+            unit = ""
+            for u in ["US$/tonne", "CNY$/tonne", "US$/盎司", "US$/桶", "USD/T", "CNY$/tonne"]:
+                if u in name:
+                    unit = u
+                    break
+
+            # Determine category
+            cat = "其他"
+            for key, c in item_to_cat.items():
+                if key in name:
+                    cat = c
+                    break
+
+            values = []
+            for i, v in enumerate(row[1:]):
+                v = v.strip()
+                if v in ("", "N/A", "-", "[object Object]") or v is None:
+                    values.append(None)
+                else:
+                    try:
+                        values.append(float(v.replace(",", "")))
+                    except Exception:
+                        values.append(None)
+
+            # Pair dates with values, skip None dates
+            paired = [(d, v) for d, v in zip(dates, values) if d is not None]
+
+            result[name] = {
+                "unit":     unit,
+                "category": cat,
+                "dates":    [p[0] for p in paired],
+                "values":   [p[1] for p in paired],
+            }
+
+    except Exception as e:
+        logger.error(f"Commodity CSV parse error: {e}")
+
+    # Merge live prices (only append new dates not already in CSV)
+    with _live_cache_lock:
+        for csv_name, live_points in _live_commodity_cache.items():
+            if csv_name in result:
+                existing = set(result[csv_name]["dates"])
+                for date, val in live_points:
+                    if date not in existing:
+                        result[csv_name]["dates"].append(date)
+                        result[csv_name]["values"].append(val)
+                        existing.add(date)
+
+    return result
+
+
+@app.route("/api/commodity-news")
+def api_commodity_news():
+    """Search Google News for commodity-related articles."""
+    import xml.etree.ElementTree as ET
+    from urllib.parse import quote
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"articles": []})
+    url = f"https://news.google.com/rss/search?q={quote(q)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant&num=10"
+    try:
+        resp = req_lib.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        root = ET.fromstring(resp.content)
+        articles = []
+        for item in root.findall(".//item")[:8]:
+            title = item.findtext("title") or ""
+            link  = item.findtext("link") or ""
+            pub   = item.findtext("pubDate") or ""
+            articles.append({"title": title, "source_url": link,
+                             "published": pub, "source": "Google News"})
+        return jsonify({"articles": articles})
+    except Exception as e:
+        logger.warning(f"commodity news fetch error '{q}': {e}")
+        return jsonify({"articles": []})
+
+
+@app.route("/api/commodities/refresh", methods=["POST"])
+def api_commodities_refresh():
+    t = threading.Thread(target=_refresh_live_prices, daemon=True)
+    t.start()
+    return jsonify({"status": "refreshing"})
+
+
+@app.route("/api/commodities")
+def api_commodities():
+    # If live cache is empty (first load), fetch synchronously before serving
+    with _live_cache_lock:
+        cache_empty = not _live_commodity_cache
+    if cache_empty:
+        _refresh_live_prices()
+    data = _parse_commodity_csv()
+    # Return items list with latest value for overview
+    items = []
+    for name, d in data.items():
+        # Latest non-null value
+        latest = next((v for v in reversed(d["values"]) if v is not None), None)
+        prev   = next((v for v in reversed(d["values"][:-1]) if v is not None), None)
+        change = round(((latest - prev) / prev * 100), 2) if latest and prev and prev != 0 else None
+        items.append({
+            "name":     name,
+            "unit":     d["unit"],
+            "category": d["category"],
+            "latest":   latest,
+            "change":   change,
+            "dates":    d["dates"],
+            "values":   d["values"],
+        })
+    categories = list(_COMMODITY_CATEGORIES.keys())
+    return jsonify({"items": items, "categories": categories})
 
 
 if __name__ == "__main__":
