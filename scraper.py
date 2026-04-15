@@ -13,7 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 from email.utils import parsedate_to_datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -84,6 +84,7 @@ CATEGORY_KEYWORDS = {
         "ODM", "OEM", "代工", "制裁", "禁令", "entity list", "晶片禁令",
         "移轉", "遷廠", "越南", "印度", "墨西哥", "轉單", "去中化",
         "產能利用率",
+        "CCL", "PCB", "玻纖布", "銅箔", "覆銅板", "基板", "ABF", "載板",
     ],
     "財務風險": [
         "破產", "倒閉", "違約", "財務危機", "流動性危機", "債務重整", "欠款",
@@ -372,11 +373,14 @@ def fetch_all_news() -> list[dict]:
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = {executor.submit(_fetch, feed): feed for feed in all_feeds}
-        for future in as_completed(futures, timeout=60):
-            try:
-                results.extend(future.result())
-            except Exception as e:
-                logger.warning(f"Feed failed: {e}")
+        try:
+            for future in as_completed(futures, timeout=90):
+                try:
+                    results.extend(future.result())
+                except Exception as e:
+                    logger.warning(f"Feed failed: {e}")
+        except FuturesTimeoutError:
+            logger.warning(f"Fetch timeout — returning {len(results)} partial results")
 
     # Deduplicate by normalised title prefix
     seen: set[str] = set()
