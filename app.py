@@ -21,6 +21,12 @@ except ImportError:
     _YF_AVAILABLE = False
     logging.getLogger(__name__).warning("yfinance not installed – live commodity prices disabled")
 
+try:
+    import anthropic as _anthropic_lib
+    _ANTHROPIC_AVAILABLE = True
+except ImportError:
+    _ANTHROPIC_AVAILABLE = False
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -217,6 +223,104 @@ def api_refresh():
     t = threading.Thread(target=refresh_news, daemon=True)
     t.start()
     return jsonify({"status": "refreshing"})
+
+
+# ── Category digest (AI-powered summary) ───────────────────────────────────────
+_digest_cache: dict = {}
+_digest_lock = threading.Lock()
+
+
+@app.route("/api/digest")
+def api_digest():
+    category = request.args.get("category", "").strip()
+    if not category or category == "全部":
+        return jsonify({"error": "select a category"}), 400
+
+    today = date_cls.today().isoformat()
+
+    with _digest_lock:
+        cached = _digest_cache.get(category)
+        if cached and cached.get("date") == today:
+            return jsonify(cached)
+
+    with _cache_lock:
+        all_articles = list(_cache["articles"])
+
+    # Prefer today's articles; fall back to latest
+    cat_articles = [
+        a for a in all_articles
+        if a.get("category") == category
+        and (a.get("published") or a.get("fetched_at", ""))[:10] == today
+    ]
+    if len(cat_articles) < 3:
+        cat_articles = [a for a in all_articles if a.get("category") == category][:12]
+
+    if not cat_articles:
+        return jsonify({"category": category, "points": [], "articles": [], "ai_powered": False})
+
+    top = cat_articles[:10]
+    article_links = [
+        {
+            "title":     a["title"],
+            "url":       a.get("source_url", ""),
+            "source":    a.get("source", ""),
+            "published": (a.get("published") or "")[:10],
+        }
+        for a in cat_articles[:6]
+    ]
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    points: list[str] = []
+    ai_powered = False
+
+    if api_key and _ANTHROPIC_AVAILABLE:
+        try:
+            articles_text = "\n".join([
+                f"{i+1}. {a['title']}：{a.get('summary', '')}"
+                for i, a in enumerate(top)
+            ])
+            client = _anthropic_lib.Anthropic(api_key=api_key)
+            msg = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=600,
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"以下是「{category}」類別的最新科技新聞：\n\n{articles_text}\n\n"
+                        "請用繁體中文，條列出4-5條今日最重要的新聞重點。\n"
+                        "要求：每條重點用一句話（30-60字）說明核心資訊與產業意義；"
+                        "聚焦不同主題，避免重複；每條前加「•」；只輸出條列內容，不要標題或說明。"
+                    ),
+                }],
+            )
+            raw = msg.content[0].text.strip()
+            points = [
+                line.strip().lstrip("•·▪▸►→- ").strip()
+                for line in raw.split("\n")
+                if line.strip() and len(line.strip()) > 8
+            ]
+            ai_powered = True
+        except Exception as e:
+            logger.warning(f"Digest AI error: {e}")
+
+    # Fallback: extract first sentence from each article summary
+    if not points:
+        for a in top[:5]:
+            summary = (a.get("summary") or "").strip()
+            first = summary.split("。")[0] if "。" in summary else summary[:80]
+            points.append(f"{a['title']}　{first}" if first and len(first) > 5 else a["title"])
+
+    result = {
+        "date":       today,
+        "category":   category,
+        "points":     points[:5],
+        "articles":   article_links,
+        "ai_powered": ai_powered,
+    }
+    with _digest_lock:
+        _digest_cache[category] = result
+
+    return jsonify(result)
 
 
 @app.route("/api/stats")
