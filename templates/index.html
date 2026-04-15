@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-TW" data-theme="dark">
+<html lang="zh-TW" data-theme="light">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -641,7 +641,7 @@
     <div class="header-actions">
       <!-- Mobile search toggle -->
       <button class="btn-icon btn-search-mobile" id="searchToggle" title="搜尋">🔍</button>
-      <button class="btn-icon" id="themeToggle" title="切換主題">🌙</button>
+      <button class="btn-icon" id="themeToggle" title="切換主題">☀️</button>
       <button class="refresh-btn" id="refreshBtn" onclick="triggerRefresh()">
         <span id="refreshIcon">↻</span> 更新
       </button>
@@ -879,7 +879,7 @@ const CAT_CLASS = {
 const CATS = ['AI 產業','記憶體/儲存','半導體','PC / NB','伺服器/雲端','面板/顯示','電競/ROG','供應鏈/關稅','財報/法說','財務風險','ESG永續'];
 
 // ── Theme ──────────────────────────────────────────────────
-let dark = true;
+let dark = false;
 document.getElementById('themeToggle').addEventListener('click', () => {
   dark = !dark;
   document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
