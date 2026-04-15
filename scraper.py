@@ -11,8 +11,10 @@ import html
 import logging
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
+
+TW_TZ = timezone(timedelta(hours=8))
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 
 logging.basicConfig(level=logging.INFO)
@@ -166,7 +168,7 @@ def parse_date(raw: str) -> str:
     if not raw:
         return ""
     try:
-        dt = parsedate_to_datetime(raw)
+        dt = parsedate_to_datetime(raw).astimezone(TW_TZ)
         return dt.strftime("%Y-%m-%d %H:%M")
     except Exception:
         return raw[:16] if len(raw) > 16 else raw
