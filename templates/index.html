@@ -544,6 +544,79 @@
     .btn-search-mobile { display: none !important; }
     .mobile-search-bar { display: none !important; }
   }
+
+  /* ── Category Digest Panel ── */
+  .digest-panel {
+    background: linear-gradient(135deg, rgba(20,100,246,0.07) 0%, rgba(14,165,233,0.04) 100%);
+    border: 1px solid rgba(20,100,246,0.22);
+    border-radius: 12px;
+    padding: 1.1rem 1.4rem 0.9rem;
+    margin-bottom: 1rem;
+    display: none;
+    animation: fadeSlideIn 0.25s ease;
+  }
+  .digest-panel.visible { display: block; }
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .digest-header {
+    display: flex; align-items: center; gap: 0.45rem;
+    margin-bottom: 0.75rem;
+  }
+  .digest-header-icon { font-size: 1rem; }
+  .digest-header-title {
+    font-size: 0.88rem; font-weight: 700;
+    color: var(--text-primary); flex: 1;
+  }
+  .digest-ai-badge {
+    font-size: 0.67rem; color: var(--accent-light);
+    background: rgba(20,100,246,0.12);
+    border: 1px solid rgba(20,100,246,0.2);
+    border-radius: 4px; padding: 1px 6px;
+    letter-spacing: 0.03em;
+  }
+  .digest-points {
+    display: flex; flex-direction: column; gap: 0.5rem;
+    margin-bottom: 0.9rem;
+  }
+  .digest-point {
+    display: flex; gap: 0.55rem; align-items: flex-start;
+    font-size: 0.855rem; line-height: 1.58;
+    color: var(--text-primary);
+  }
+  .digest-bullet { color: var(--accent-2); font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+  .digest-divider { border: none; border-top: 1px solid var(--border); margin: 0.6rem 0; }
+  .digest-links-title {
+    font-size: 0.72rem; font-weight: 600; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.35rem;
+  }
+  .digest-links { display: flex; flex-direction: column; gap: 0.28rem; }
+  .digest-link {
+    font-size: 0.79rem; color: var(--text-secondary);
+    text-decoration: none;
+    display: flex; gap: 0.45rem; align-items: baseline;
+    padding: 0.15rem 0; transition: color 0.15s;
+    overflow: hidden;
+  }
+  .digest-link:hover { color: var(--accent-light); }
+  .digest-link-icon { flex-shrink: 0; font-size: 0.7rem; color: var(--text-muted); }
+  .digest-link-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .digest-link-src { flex-shrink: 0; font-size: 0.69rem; color: var(--text-muted); }
+  .digest-loading {
+    text-align: center; padding: 1rem;
+    color: var(--text-muted); font-size: 0.84rem;
+    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  }
+  .digest-spinner {
+    width: 15px; height: 15px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -580,7 +653,7 @@
 <div class="page-nav-bar">
   <nav class="page-nav">
     <button class="page-nav-btn active" id="navNews" onclick="switchPage('news')">📰 新聞</button>
-    <button class="page-nav-btn" id="navMarket" onclick="switchPage('market')" style="display:none">📈 原物料匯率行情</button>
+    <button class="page-nav-btn" id="navMarket" onclick="switchPage('market')">📈 原物料匯率行情</button>
   </nav>
 </div>
 
@@ -598,12 +671,6 @@
 
   <!-- Stats bar -->
   <div class="stats-bar">
-    <div class="stat-item">
-      <div class="stat-dot" style="background:#1464f6"></div>
-      <span class="stat-label">科技新聞</span>
-      <span class="stat-value" id="statTotal">—</span>
-    </div>
-    <div class="stat-sep"></div>
     <div class="stat-item">
       <div class="stat-dot" style="background:#60a5fa"></div>
       <span class="stat-label">Digitimes</span>
@@ -669,6 +736,11 @@
   </div>
   </div>
   <div class="multi-hint" id="multiHint" style="display:none">💡 可同時選多個類別</div>
+
+  <!-- Category Digest Panel -->
+  <div class="digest-panel" id="digestPanel">
+    <div id="digestContent"></div>
+  </div>
 
   <!-- Result count -->
   <div class="result-bar">
@@ -1030,7 +1102,72 @@ document.getElementById('categoryTabs').addEventListener('click', e => {
   }
   state.page = 1;
   loadNews();
+  // Show digest for single-category selection
+  if (state.categories.length === 1) {
+    fetchDigest(state.categories[0]);
+  } else {
+    document.getElementById('digestPanel').classList.remove('visible');
+  }
 });
+
+// ── Category Digest ────────────────────────────────────────
+const CAT_ICON = {
+  'AI 產業':'🤖','記憶體/儲存':'💾','半導體':'⚙️','PC / NB':'💻',
+  '伺服器/雲端':'🖥','面板/顯示':'📺','電競/ROG':'🎮',
+  '供應鏈/關稅':'📦','財報/法說':'📊','財務風險':'⚠️','ESG永續':'♻️'
+};
+let _digestAbort = null;
+
+function fetchDigest(category) {
+  const panel   = document.getElementById('digestPanel');
+  const content = document.getElementById('digestContent');
+  if (!category) { panel.classList.remove('visible'); return; }
+
+  panel.classList.add('visible');
+  content.innerHTML = `<div class="digest-loading"><div class="digest-spinner"></div>正在整理今日焦點…</div>`;
+
+  if (_digestAbort) _digestAbort.abort();
+  _digestAbort = new AbortController();
+
+  fetch('/api/digest?category=' + encodeURIComponent(category), { signal: _digestAbort.signal })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.points || data.points.length === 0) {
+        panel.classList.remove('visible'); return;
+      }
+      const icon = CAT_ICON[category] || '📌';
+      const badge = data.ai_powered
+        ? `<span class="digest-ai-badge">✦ AI 摘要</span>` : '';
+
+      const pointsHtml = data.points.map(p =>
+        `<div class="digest-point"><span class="digest-bullet">▸</span><span>${esc(p)}</span></div>`
+      ).join('');
+
+      let linksHtml = '';
+      if (data.articles && data.articles.length) {
+        linksHtml = `<hr class="digest-divider">
+          <div class="digest-links-title">相關文章</div>
+          <div class="digest-links">` +
+          data.articles.map(a =>
+            `<a class="digest-link" href="${esc(a.url)}" target="_blank" rel="noopener">
+              <span class="digest-link-icon">↗</span>
+              <span class="digest-link-title">${esc(a.title)}</span>
+              <span class="digest-link-src">${esc(a.source)}</span>
+            </a>`
+          ).join('') + `</div>`;
+      }
+
+      content.innerHTML = `
+        <div class="digest-header">
+          <span class="digest-header-icon">${icon}</span>
+          <span class="digest-header-title">${esc(category)} 今日焦點</span>
+          ${badge}
+        </div>
+        <div class="digest-points">${pointsHtml}</div>
+        ${linksHtml}`;
+    })
+    .catch(e => { if (e.name !== 'AbortError') panel.classList.remove('visible'); });
+}
 
 // ── Date filter ────────────────────────────────────────────
 document.querySelectorAll('.date-pill').forEach(pill => {
