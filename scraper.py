@@ -249,8 +249,7 @@ FEEDS = [
     {"url": GN + "site:digitimes.com.tw+CCL+PCB+玻纖布+銅箔", "source": "Digitimes", "hint": "供應鏈/關稅"},
     {"url": GN_EN + "site:digitimes.com",                   "source": "Digitimes", "hint": "AI 產業"},
     {"url": GN + "site:ctee.com.tw+科技",          "source": "工商時報",  "hint": ""},
-    {"url": GN + "site:technews.tw",        "source": "科技新報",    "hint": "AI 產業"},
-    {"url": GN + "site:ithome.com.tw",      "source": "iThome",      "hint": "AI 產業"},
+    {"url": GN + "site:ithome.com.tw",      "source": "iThome",      "hint": ""},
     {"url": GN + "site:cool3c.com",         "source": "電腦王",      "hint": "電競/ROG"},
 
     # ── 主題精選 ────────────────────────────────────────────────────────────
