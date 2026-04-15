@@ -938,8 +938,6 @@ async function loadNews() {
     }
     // Update source stats bar
     if (data.src_counts) {
-      const grandTotal = Object.values(data.src_counts).reduce((s,v)=>s+v, 0);
-      document.getElementById('statTotal').textContent     = grandTotal;
       document.getElementById('statDigitimes').textContent = data.src_counts['Digitimes']     || 0;
       document.getElementById('statCtee').textContent      = data.src_counts['工商時報']       || 0;
       document.getElementById('statTechnews').textContent  = data.src_counts['科技新報']       || 0;
@@ -967,7 +965,6 @@ async function loadStats() {
     const p = new URLSearchParams({ source: state.source, date_filter: state.dateFilter });
     const res  = await fetch('/api/stats?' + p);
     const data = await res.json();
-    document.getElementById('statTotal').textContent     = data.total;
     document.getElementById('statDigitimes').textContent = data.sources['Digitimes']     || 0;
     document.getElementById('statCtee').textContent      = data.sources['工商時報']       || 0;
     document.getElementById('statTechnews').textContent  = data.sources['科技新報']       || 0;
