@@ -380,7 +380,7 @@ def _fetch_snippet(url: str, max_chars: int = 160) -> str:
         return ""
     try:
         actual_url = _resolve_google_news_url(url)
-        r = requests.get(actual_url, headers=HEADERS, timeout=5, allow_redirects=True)
+        r = requests.get(actual_url, headers=HEADERS, timeout=4, allow_redirects=True)
         soup = BeautifulSoup(r.content, "html.parser")
         for tag in soup(["script", "style", "nav", "header", "footer", "aside", "figure"]):
             tag.decompose()
@@ -464,26 +464,27 @@ def fetch_all_news() -> list[dict]:
                     article["category"]         = "財務風險"
                     break
 
-    # Enrich summaries: fetch article snippet for top 40 articles where RSS gave only the title
+    # Enrich summaries: fetch article snippet for top 25 articles where RSS gave only the title
     to_enrich = [
-        a for a in unique[:40]
+        a for a in unique[:25]
         if _summary_is_empty(a["title"], a.get("summary", "")) and a.get("source_url")
     ]
     if to_enrich:
         logger.info(f"Enriching summaries for {len(to_enrich)} articles…")
-        with ThreadPoolExecutor(max_workers=10) as ex:
+        with ThreadPoolExecutor(max_workers=8) as ex:
             futs = {ex.submit(_fetch_snippet, a["source_url"]): a for a in to_enrich}
             try:
-                for fut in as_completed(futs, timeout=6):
+                for fut in as_completed(futs, timeout=25):
                     art = futs[fut]
                     try:
                         snippet = fut.result()
                         if snippet:
                             art["summary"] = snippet
+                            logger.info(f"Enriched: {art['title'][:40]}")
                     except Exception:
                         pass
             except FuturesTimeoutError:
-                pass
+                logger.warning("Snippet enrichment timed out (25s)")
         logger.info("Summary enrichment done")
 
     logger.info(f"ASUSTIMES: {len(unique)} tech articles ready")
