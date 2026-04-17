@@ -151,12 +151,32 @@ def debug_snippets():
         gurl = a.get("source_url", "")
         if gurl and "news.google.com" in gurl:
             try:
-                resp = req_lib.get(gurl, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "text/html"}, timeout=5, allow_redirects=True)
+                import re as _re
+                resp = req_lib.get(gurl, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "text/html"}, timeout=8, allow_redirects=True)
+                text = resp.text
+                total_len = len(text)
+                # Search for any http URLs in the page that aren't google.com
+                non_google_urls = _re.findall(r'https?://(?!(?:www\.)?google\.com)[^\s"\'<>]{20,}', text)
+                # Look for common redirect patterns
+                patterns_found = {}
+                for pat_name, pat in [
+                    ("window.location", r'window\.location[^;]{0,60}https?://[^"\']{20,}'),
+                    ("meta_refresh", r'http-equiv=["\']?refresh[^\>]+url=[^\s"\']{10,}'),
+                    ("json_url", r'"url"\s*:\s*"(https?://[^"]{20,})"'),
+                    ("data_n", r'data-n-[a-z]+="(https?://[^"]{20,})"'),
+                    ("href_external", r'href="(https?://(?!(?:www\.)?google\.com)[^"]{20,})"'),
+                ]:
+                    m = _re.search(pat, text, _re.IGNORECASE)
+                    if m:
+                        patterns_found[pat_name] = m.group(0)[:120]
                 redirect_test = {
                     "status": resp.status_code,
                     "final_url": resp.url[:120],
                     "still_google": "news.google.com" in resp.url,
-                    "html_preview": resp.text[:600],
+                    "total_html_len": total_len,
+                    "non_google_urls": non_google_urls[:5],
+                    "patterns_found": patterns_found,
+                    "body_sample": text[600:1400],
                 }
             except Exception as e:
                 redirect_test = {"error": str(e)[:100]}
