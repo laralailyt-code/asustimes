@@ -138,6 +138,28 @@ def api_ping():
     return jsonify({"ok": True})
 
 
+@app.route("/api/debug-snippets")
+def debug_snippets():
+    """Diagnose snippet fetching on this server."""
+    from scraper import _resolve_google_news_url, _fetch_snippet, _summary_is_empty
+    with _cache_lock:
+        articles = list(_cache.get("articles", []))
+    results = []
+    for a in articles[:6]:
+        url = a.get("source_url", "")
+        resolved = _resolve_google_news_url(url) if url else ""
+        snippet = _fetch_snippet(url) if url else ""
+        results.append({
+            "title": a["title"][:60],
+            "current_summary": a.get("summary", "")[:60],
+            "needs_enrich": _summary_is_empty(a["title"], a.get("summary", "")),
+            "source_url_prefix": url[:80],
+            "resolved_url": resolved[:100],
+            "snippet": snippet[:120] if snippet else "",
+        })
+    return jsonify({"server": "render", "count": len(articles), "sample": results})
+
+
 @app.route("/api/news")
 def api_news():
     # Multi-category support: comma-separated ?categories=AI%20產業,半導體
