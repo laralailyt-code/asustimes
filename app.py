@@ -230,6 +230,38 @@ _digest_cache: dict = {}
 _digest_lock = threading.Lock()
 
 
+def _fetch_article_snippet(url: str, max_chars: int = 150) -> str:
+    """Follow article URL and extract a short text snippet for digest fallback."""
+    if not url:
+        return ""
+    try:
+        from bs4 import BeautifulSoup as _BS
+        r = req_lib.get(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+                "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
+            },
+            timeout=6,
+            allow_redirects=True,
+        )
+        soup = _BS(r.content, "html.parser")
+        for tag in soup(["script", "style", "nav", "header", "footer", "aside", "figure"]):
+            tag.decompose()
+        for sel in [
+            "article p", ".article-content p", ".article-body p",
+            ".entry-content p", ".post-content p", ".news-content p",
+            "main p", ".content p", "p",
+        ]:
+            for p in soup.select(sel):
+                text = p.get_text(strip=True)
+                if len(text) > 40:
+                    return text[:max_chars] + ("…" if len(text) > max_chars else "")
+    except Exception:
+        pass
+    return ""
+
+
 @app.route("/api/digest")
 def api_digest():
     category = request.args.get("category", "").strip()
@@ -303,12 +335,48 @@ def api_digest():
         except Exception as e:
             logger.warning(f"Digest AI error: {e}")
 
-    # Fallback: extract first sentence from each article summary
+    # Fallback: clean RSS summary (often just title+source), fetch snippet if still empty
     if not points:
+        import re as _re
+        from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _ac
+
+        def _clean_rss_summary(title: str, raw: str) -> str:
+            """Remove title/source repetition common in Google News RSS descriptions."""
+            s = raw.strip()
+            # Strip leading title repetition
+            if s.lower().startswith(title.lower()):
+                s = s[len(title):].lstrip(" -–—\t")
+            # Strip trailing "- Source Name" suffix (e.g. "- DIGITIMES")
+            s = _re.sub(r'\s*[-–—]\s*\S[\w\s]{1,30}$', '', s).strip()
+            return s
+
+        candidates: list[tuple] = []  # (article, title, snippet)
         for a in top[:5]:
-            summary = (a.get("summary") or "").strip()
-            first = summary.split("。")[0] if "。" in summary else summary[:80]
-            points.append(f"{a['title']}　{first}" if first and len(first) > 5 else a["title"])
+            title = a["title"]
+            snippet = _clean_rss_summary(title, a.get("summary") or "")
+            candidates.append((a, title, snippet))
+
+        # Fetch article snippets in parallel for items with no useful summary
+        needs_fetch = [(i, a) for i, (a, title, snippet) in enumerate(candidates) if len(snippet) < 20]
+        if needs_fetch:
+            with _TPE(max_workers=min(len(needs_fetch), 5)) as ex:
+                futs = {ex.submit(_fetch_article_snippet, a.get("source_url", "")): i
+                        for i, a in needs_fetch if a.get("source_url")}
+                for fut in _ac(futs, timeout=12):
+                    idx = futs[fut]
+                    try:
+                        fetched = fut.result()
+                        if fetched:
+                            a, title, _ = candidates[idx]
+                            candidates[idx] = (a, title, fetched)
+                    except Exception:
+                        pass
+
+        for a, title, snippet in candidates:
+            if snippet and len(snippet) > 15:
+                points.append(f"{title}　{snippet}")
+            else:
+                points.append(title)
 
     result = {
         "date":       today,
@@ -478,6 +546,12 @@ _live_cache_lock = threading.Lock()
 # Response format: "date1,date2,...,dateN,val1,val2,...,valN"
 _BOT_BCD_CODES = {
     "130041": ("ABS聚合物(注塑) 中國到岸價 US$/tonne", 1.0),   # ABS China CIF ✓ confirmed
+    "190020": ("NOREXECO 長纖紙漿  USD/T",             1.0),   # Long-fiber pulp ✓ bot.com.tw
+}
+
+# Codes that need full historical data (not just latest point)
+_BOT_BCD_HISTORY_CODES = {
+    "190060": ("瓦楞芯紙 CNY$/tonne", 1.0),   # Corrugated paper — full history
 }
 
 # Trading Economics slug → (csv_item_name, price_multiplier)
@@ -530,6 +604,45 @@ def _fetch_bot_bcd_price(code: str) -> float | None:
     except Exception as e:
         logger.warning(f"bot.com.tw BCD {code}: {e}")
     return None
+
+
+def _fetch_bot_bcd_history(code: str) -> list:
+    """Fetch full price history from bot.com.tw BCD API.
+    Response format: 'YYYY/MM/DD,YYYY/MM/DD,...,YYYY/MM/DD<space>val1,val2,...,valN'
+    Returns list of (YYYY-MM-DD, float) pairs sorted oldest to newest.
+    """
+    import re as _re
+    try:
+        url = f"https://fund.bot.com.tw/Z/ZH/ZHG/CZHG.djbcd?A={code}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+            "Referer": "https://fund.bot.com.tw/",
+        }
+        r = req_lib.get(url, headers=headers, timeout=12, verify=False)
+        data = r.text.strip()
+        if not data or len(data) < 20:
+            return []
+        # Split at the space between last date and first value
+        # Format: "D1,D2,...,DN VAL1,VAL2,...,VALN"
+        split_m = _re.search(r'(\d{4}/\d{2}/\d{2})\s+(\d)', data)
+        if not split_m:
+            return []
+        dates_str = data[:split_m.start(2)].strip().rstrip(' ')
+        vals_str  = data[split_m.start(2):]
+        dates = [d.strip() for d in dates_str.split(',') if _re.match(r'\d{4}/\d{2}/\d{2}$', d.strip())]
+        vals  = []
+        for v in vals_str.split(','):
+            v = v.strip()
+            try:
+                vals.append(float(v))
+            except ValueError:
+                break
+        pairs = [(d.replace('/', '-'), round(v, 2)) for d, v in zip(dates, vals)]
+        logger.info(f"bot.com.tw BCD history {code}: {len(pairs)} points")
+        return pairs
+    except Exception as e:
+        logger.warning(f"bot.com.tw BCD history {code}: {e}")
+    return []
 
 
 def _fetch_buyplas_price(product_key: str) -> float | None:
@@ -587,35 +700,43 @@ def _refresh_live_prices():
     today = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
     fresh: dict = {}
 
-    # 1. Commodity prices via yfinance
+    # 1. Commodity prices via yfinance (per-symbol to avoid bulk rate limiting)
     if _YF_AVAILABLE:
-        try:
-            syms = list(_LIVE_COMMODITY_SYMBOLS.keys())
-            raw  = yf.download(syms, period="5d", interval="1d",
-                               auto_adjust=True, progress=False)
-            close = raw["Close"] if "Close" in raw.columns.get_level_values(0) else raw
-            for sym, (csv_name, mult) in _LIVE_COMMODITY_SYMBOLS.items():
+        for sym, (csv_name, mult) in _LIVE_COMMODITY_SYMBOLS.items():
+            for attempt in range(2):
                 try:
-                    col = close[sym] if sym in close.columns else close
-                    series = col.dropna()
+                    hist = yf.Ticker(sym).history(period="5d", interval="1d", auto_adjust=True)
+                    series = hist["Close"].dropna() if "Close" in hist.columns else hist.dropna()
                     if series.empty:
-                        continue
+                        break
                     price = round(float(series.iloc[-1]) * mult, 2)
-                    date  = str(series.index[-1])[:10]
+                    date  = str(series.index[-1].date())
                     fresh.setdefault(csv_name, []).append((date, price))
-                    logger.info(f"yfinance: {csv_name} = {price} on {date}")
+                    logger.info(f"yfinance {sym}: {csv_name} = {price} on {date}")
+                    break
                 except Exception as e:
-                    logger.warning(f"yfinance parse {sym}: {e}")
-        except Exception as e:
-            logger.warning(f"yfinance download error: {e}")
+                    if attempt == 0 and "RateLimit" in type(e).__name__:
+                        logger.warning(f"yfinance {sym} rate limited, retrying in 15s")
+                        time.sleep(15)
+                    else:
+                        logger.warning(f"yfinance {sym}: {e}")
+                        break
+            time.sleep(1)  # 1s between symbols to avoid rate limiting
 
-    # 2. bot.com.tw BCD API (ABS and future items)
+    # 2. bot.com.tw BCD API (latest price only)
     for code, (csv_name, mult) in _BOT_BCD_CODES.items():
         price = _fetch_bot_bcd_price(code)
         if price is not None:
             val = round(price * mult, 2)
             fresh[csv_name] = [(today, val)]
             logger.info(f"bot.com.tw BCD {code}: {csv_name} = {val}")
+
+    # 2b. bot.com.tw BCD API (full historical series)
+    for code, (csv_name, mult) in _BOT_BCD_HISTORY_CODES.items():
+        history = _fetch_bot_bcd_history(code)
+        if history:
+            fresh[csv_name] = [(d, round(v * mult, 2)) for d, v in history]
+            logger.info(f"bot.com.tw BCD history {code}: {csv_name}, {len(history)} pts")
 
     # 3. buyplas.com plastic prices
     _BUYPLAS_ITEMS = {
@@ -660,9 +781,19 @@ def _refresh_live_prices():
 
 def _live_price_loop():
     _refresh_live_prices()
+    # Refresh at 08:00, 12:00, 15:00 Taiwan time (UTC+8) every day
+    _REFRESH_HOURS = {8, 12, 15}
+    last_run_hour: set = set()
     while True:
-        time.sleep(24 * 60 * 60)
-        _refresh_live_prices()
+        time.sleep(60)
+        now_tw = datetime.now(timezone(timedelta(hours=8)))
+        key = (now_tw.date(), now_tw.hour)
+        if now_tw.hour in _REFRESH_HOURS and key not in last_run_hour:
+            last_run_hour.add(key)
+            # Keep only today's keys to avoid unbounded growth
+            today = now_tw.date()
+            last_run_hour = {k for k in last_run_hour if k[0] == today}
+            _refresh_live_prices()
 
 
 # ── Commodity dashboard ────────────────────────────────────────────────────────
@@ -670,10 +801,10 @@ _COMMODITY_CSV = os.path.join(os.path.dirname(__file__), "2026 Raw material tren
 
 # Category mapping for each item
 _COMMODITY_CATEGORIES = {
-    "金屬": ["銅", "錫", "鋁", "鎳", "鋅", "鈷"],
+    "金屬": ["銅", "錫", "鋁", "鎳", "鋅", "鈷", "鋰"],
     "貴金屬": ["金", "銀"],
     "能源": ["石油 西德州", "石油 杜拜", "石油 北海布蘭特"],
-    "原物料": ["黃磷", "ABS聚合物", "PC塑料", "PC/ABS塑料", "NOREXECO 長纖紙漿", "NOREXECO 短纖紙漿", "鋰"],
+    "原物料": ["黃磷", "ABS聚合物", "PC塑料", "PC/ABS塑料", "NOREXECO 長纖紙漿", "瓦楞芯紙"],
     "匯率": ["美元 / 台幣", "美元 / 人民幣", "美元 / 日圓", "美元 / 歐元",
               "美元 / 巴西里爾", "美元 / 韓圜", "美元 / 印尼盾", "美元 / 印度幣"],
 }
@@ -777,7 +908,12 @@ def _parse_commodity_csv() -> dict:
     except Exception as e:
         logger.error(f"Commodity CSV parse error: {e}")
 
-    # Merge live prices (only append new dates not already in CSV)
+    # Merge live prices (append new dates; also create entry for live-only items)
+    item_to_cat = {}
+    for cat, items in _COMMODITY_CATEGORIES.items():
+        for item in items:
+            item_to_cat[item] = cat
+
     with _live_cache_lock:
         for csv_name, live_points in _live_commodity_cache.items():
             if csv_name in result:
@@ -787,6 +923,24 @@ def _parse_commodity_csv() -> dict:
                         result[csv_name]["dates"].append(date)
                         result[csv_name]["values"].append(val)
                         existing.add(date)
+            else:
+                # Item only exists in live cache (no CSV history) — create entry
+                unit = ""
+                for u in ["US$/tonne", "CNY$/tonne", "US$/盎司", "US$/桶", "USD/T"]:
+                    if u in csv_name:
+                        unit = u
+                        break
+                cat = "其他"
+                for key, c in item_to_cat.items():
+                    if key in csv_name:
+                        cat = c
+                        break
+                result[csv_name] = {
+                    "unit":     unit,
+                    "category": cat,
+                    "dates":    [p[0] for p in live_points],
+                    "values":   [p[1] for p in live_points],
+                }
 
     return result
 
