@@ -355,25 +355,53 @@ def _summary_is_empty(title: str, summary: str) -> bool:
 
 
 def _resolve_google_news_url(url: str) -> str:
-    """Decode Google News redirect URL (CBMi...) to get the actual article URL."""
+    """Decode Google News redirect URL (CBMi...) to get the actual article URL.
+
+    Method 1: base64 decode the token and scan for a plain-text URL (works for
+              older token formats where the URL is stored as ASCII in the binary).
+    Method 2: fetch the Google News page and parse the JavaScript / meta redirect
+              (required for the newer CBMi protobuf token format used since 2024).
+    """
     if "news.google.com" not in url:
         return url
+
+    # Method 1: base64 decode
     try:
         import base64 as _b64
         m = re.search(r"/articles/([A-Za-z0-9_=-]+)", url)
-        if not m:
-            return url
-        encoded = m.group(1)
-        padding = (4 - len(encoded) % 4) % 4
-        decoded = _b64.urlsafe_b64decode(encoded + "=" * padding)
-        found = re.findall(rb"https?://[^\x00-\x1f\s<>\"']+", decoded)
-        # Skip Google's own URLs; take first external article URL
-        for candidate_bytes in found:
-            candidate = candidate_bytes.decode("utf-8", errors="ignore").rstrip(".,)")
-            if "google.com" not in candidate and len(candidate) > 20:
-                return candidate
+        if m:
+            encoded = m.group(1)
+            padding = (4 - len(encoded) % 4) % 4
+            decoded = _b64.urlsafe_b64decode(encoded + "=" * padding)
+            found = re.findall(rb"https?://[^\x00-\x1f\s<>\"']+", decoded)
+            for candidate_bytes in found:
+                candidate = candidate_bytes.decode("utf-8", errors="ignore").rstrip(".,)")
+                if "google.com" not in candidate and len(candidate) > 20:
+                    return candidate
     except Exception:
         pass
+
+    # Method 2: fetch the page and parse JS / meta redirect
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=6, allow_redirects=True)
+        if r.status_code < 400:
+            # If HTTP redirect already moved us off Google, we're done
+            if "news.google.com" not in r.url and "google.com" not in r.url:
+                return r.url
+            text = r.text
+            for pattern in [
+                r'window\.location\.(?:href|replace)\s*[=\(]\s*["\']([^"\']{20,})["\']',
+                r'<meta[^>]+http-equiv=["\']?refresh["\']?[^>]+content=[^>]+url=([^"\'>\s&]+)',
+                r'"url"\s*:\s*"(https?://[^"]{20,})"',
+            ]:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    candidate = match.group(1).strip()
+                    if candidate.startswith("http") and "google.com" not in candidate:
+                        return candidate
+    except Exception:
+        pass
+
     return url
 
 
