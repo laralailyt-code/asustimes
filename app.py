@@ -145,39 +145,32 @@ def debug_snippets():
     with _cache_lock:
         articles = list(_cache.get("articles", []))
 
-    # Test: inspect the Google News page HTML for JS redirect patterns
+    # Test: decode CBMi token bytes to find where the URL is hidden
     redirect_test = {}
     for a in articles[:15]:
         gurl = a.get("source_url", "")
         if gurl and "news.google.com" in gurl:
             try:
-                import re as _re
-                resp = req_lib.get(gurl, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "text/html"}, timeout=8, allow_redirects=True)
-                text = resp.text
-                total_len = len(text)
-                # Search for any http URLs in the page that aren't google.com
-                non_google_urls = _re.findall(r'https?://(?!(?:www\.)?google\.com)[^\s"\'<>]{20,}', text)
-                # Look for common redirect patterns
-                patterns_found = {}
-                for pat_name, pat in [
-                    ("window.location", r'window\.location[^;]{0,60}https?://[^"\']{20,}'),
-                    ("meta_refresh", r'http-equiv=["\']?refresh[^\>]+url=[^\s"\']{10,}'),
-                    ("json_url", r'"url"\s*:\s*"(https?://[^"]{20,})"'),
-                    ("data_n", r'data-n-[a-z]+="(https?://[^"]{20,})"'),
-                    ("href_external", r'href="(https?://(?!(?:www\.)?google\.com)[^"]{20,})"'),
-                ]:
-                    m = _re.search(pat, text, _re.IGNORECASE)
-                    if m:
-                        patterns_found[pat_name] = m.group(0)[:120]
-                redirect_test = {
-                    "status": resp.status_code,
-                    "final_url": resp.url[:120],
-                    "still_google": "news.google.com" in resp.url,
-                    "total_html_len": total_len,
-                    "non_google_urls": non_google_urls[:5],
-                    "patterns_found": patterns_found,
-                    "body_sample": text[600:1400],
-                }
+                import re as _re, base64 as _b64
+                m = _re.search(r"/articles/([A-Za-z0-9_=-]+)", gurl)
+                token_analysis = {}
+                if m:
+                    encoded = m.group(1)
+                    padding = (4 - len(encoded) % 4) % 4
+                    decoded = _b64.urlsafe_b64decode(encoded + "=" * padding)
+                    # Show first 40 bytes in hex so we can see protobuf structure
+                    hex_prefix = decoded[:40].hex()
+                    # Does https:// appear anywhere in the raw bytes?
+                    has_https = b"https://" in decoded
+                    # Try all non-null printable substrings >= 20 chars
+                    printable_strings = _re.findall(rb'[ -~]{20,}', decoded)
+                    token_analysis = {
+                        "decoded_len": len(decoded),
+                        "hex_prefix_40": hex_prefix,
+                        "has_https_literal": has_https,
+                        "printable_strings": [s.decode("latin-1")[:120] for s in printable_strings[:5]],
+                    }
+                redirect_test = {"token_analysis": token_analysis}
             except Exception as e:
                 redirect_test = {"error": str(e)[:100]}
             break
