@@ -145,7 +145,7 @@ def debug_snippets():
     with _cache_lock:
         articles = list(_cache.get("articles", []))
 
-    # Test: does HTTP redirect from a Google News URL reach the real article?
+    # Test: inspect the Google News page HTML for JS redirect patterns
     redirect_test = {}
     for a in articles[:15]:
         gurl = a.get("source_url", "")
@@ -153,10 +153,10 @@ def debug_snippets():
             try:
                 resp = req_lib.get(gurl, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "text/html"}, timeout=5, allow_redirects=True)
                 redirect_test = {
-                    "input": gurl[:80],
-                    "final_url": resp.url[:120],
                     "status": resp.status_code,
+                    "final_url": resp.url[:120],
                     "still_google": "news.google.com" in resp.url,
+                    "html_preview": resp.text[:600],
                 }
             except Exception as e:
                 redirect_test = {"error": str(e)[:100]}
