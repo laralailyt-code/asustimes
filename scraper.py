@@ -196,7 +196,7 @@ def parse_rss(url: str, source_name: str, hint: str = "") -> list[dict]:
             summary  = clean(desc_el.get_text() if desc_el else "")[:220]
             pub_date = parse_date(date_el.get_text() if date_el else "")
 
-            if len(title) < 4:
+            if len(title) < 8:
                 continue
 
             # Strip source name suffix (e.g., "Article Title - Digitimes")
@@ -206,7 +206,7 @@ def parse_rss(url: str, source_name: str, hint: str = "") -> list[dict]:
                 if len(stripped) >= 4:
                     title = stripped
 
-            if len(title) < 4:
+            if len(title) < 8:
                 continue
 
             category = classify_category(title, summary, hint)
