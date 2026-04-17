@@ -144,6 +144,24 @@ def debug_snippets():
     from scraper import _resolve_google_news_url, _fetch_snippet, _summary_is_empty
     with _cache_lock:
         articles = list(_cache.get("articles", []))
+
+    # Test: does HTTP redirect from a Google News URL reach the real article?
+    redirect_test = {}
+    for a in articles[:15]:
+        gurl = a.get("source_url", "")
+        if gurl and "news.google.com" in gurl:
+            try:
+                resp = req_lib.get(gurl, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "text/html"}, timeout=5, allow_redirects=True)
+                redirect_test = {
+                    "input": gurl[:80],
+                    "final_url": resp.url[:120],
+                    "status": resp.status_code,
+                    "still_google": "news.google.com" in resp.url,
+                }
+            except Exception as e:
+                redirect_test = {"error": str(e)[:100]}
+            break
+
     results = []
     for a in articles[:6]:
         url = a.get("source_url", "")
@@ -151,13 +169,12 @@ def debug_snippets():
         snippet = _fetch_snippet(url) if url else ""
         results.append({
             "title": a["title"][:60],
-            "current_summary": a.get("summary", "")[:60],
             "needs_enrich": _summary_is_empty(a["title"], a.get("summary", "")),
-            "source_url_prefix": url[:80],
+            "resolved_changed": resolved != url,
             "resolved_url": resolved[:100],
             "snippet": snippet[:120] if snippet else "",
         })
-    return jsonify({"server": "render", "count": len(articles), "sample": results})
+    return jsonify({"server": "render", "count": len(articles), "redirect_test": redirect_test, "sample": results})
 
 
 @app.route("/api/news")

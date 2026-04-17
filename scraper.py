@@ -383,10 +383,15 @@ def _fetch_snippet(url: str, max_chars: int = 160) -> str:
         return ""
     try:
         actual_url = _resolve_google_news_url(url)
-        if "news.google.com" in actual_url:
-            return ""  # decode failed, skip
-        r = requests.get(actual_url, headers=HEADERS, timeout=4, allow_redirects=True)
+        # Always fetch with allow_redirects=True:
+        # - If base64 decode succeeded, actual_url is the real article URL → fetch it
+        # - If decode failed, actual_url is still news.google.com → HTTP redirect will
+        #   carry us to the real article; r.url tells us the final destination
+        r = requests.get(actual_url, headers=HEADERS, timeout=5, allow_redirects=True)
         if r.status_code >= 400:
+            return ""
+        # If we still ended up on a Google page, no article content available
+        if "news.google.com" in r.url or "google.com/sorry" in r.url:
             return ""
         soup = BeautifulSoup(r.content, "html.parser")
 
