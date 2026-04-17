@@ -145,34 +145,70 @@ def debug_snippets():
     with _cache_lock:
         articles = list(_cache.get("articles", []))
 
-    # Test: decode CBMi token bytes to find where the URL is hidden
+    # Test: two-level protobuf decode of CBMi token
     redirect_test = {}
     for a in articles[:15]:
         gurl = a.get("source_url", "")
         if gurl and "news.google.com" in gurl:
             try:
                 import re as _re, base64 as _b64
+
+                def _parse_proto(data):
+                    """Minimal protobuf parser: varint + length-delimited only."""
+                    fields = {}
+                    pos = 0
+                    while pos < len(data):
+                        tag_byte = data[pos]; pos += 1
+                        field_num = tag_byte >> 3
+                        wire_type = tag_byte & 0x7
+                        if wire_type == 0:  # varint
+                            val = 0; shift = 0
+                            while pos < len(data):
+                                b = data[pos]; pos += 1
+                                val |= (b & 0x7F) << shift
+                                if not (b & 0x80): break
+                                shift += 7
+                            fields[field_num] = val
+                        elif wire_type == 2:  # length-delimited
+                            ln = data[pos]; pos += 1
+                            fields[field_num] = data[pos:pos + ln]; pos += ln
+                        else:
+                            break
+                    return fields
+
                 m = _re.search(r"/articles/([A-Za-z0-9_=-]+)", gurl)
-                token_analysis = {}
+                analysis = {}
                 if m:
-                    encoded = m.group(1)
-                    padding = (4 - len(encoded) % 4) % 4
-                    decoded = _b64.urlsafe_b64decode(encoded + "=" * padding)
-                    # Show first 40 bytes in hex so we can see protobuf structure
-                    hex_prefix = decoded[:40].hex()
-                    # Does https:// appear anywhere in the raw bytes?
-                    has_https = b"https://" in decoded
-                    # Try all non-null printable substrings >= 20 chars
-                    printable_strings = _re.findall(rb'[ -~]{20,}', decoded)
-                    token_analysis = {
-                        "decoded_len": len(decoded),
-                        "hex_prefix_40": hex_prefix,
-                        "has_https_literal": has_https,
-                        "printable_strings": [s.decode("latin-1")[:120] for s in printable_strings[:5]],
-                    }
-                redirect_test = {"token_analysis": token_analysis}
+                    enc = m.group(1)
+                    pad = (4 - len(enc) % 4) % 4
+                    outer_bytes = _b64.urlsafe_b64decode(enc + "=" * pad)
+                    outer = _parse_proto(outer_bytes)
+                    analysis["outer_fields"] = {k: v.hex() if isinstance(v, bytes) else v
+                                                for k, v in outer.items()}
+                    # Field 4 should be inner base64 string
+                    inner_result = {}
+                    if 4 in outer:
+                        inner_b64 = outer[4].decode("ascii", errors="ignore")
+                        inner_pad = (4 - len(inner_b64) % 4) % 4
+                        inner_bytes = _b64.urlsafe_b64decode(inner_b64 + "=" * inner_pad)
+                        inner_result["len"] = len(inner_bytes)
+                        inner_result["hex_40"] = inner_bytes[:40].hex()
+                        inner_result["has_https"] = b"https://" in inner_bytes
+                        inner_result["printable"] = [
+                            s.decode("latin-1")[:200]
+                            for s in _re.findall(rb'[ -~]{15,}', inner_bytes)
+                        ][:5]
+                        # Try parsing as protobuf too
+                        inner_proto = _parse_proto(inner_bytes)
+                        for fk, fv in inner_proto.items():
+                            if isinstance(fv, bytes):
+                                txt = fv.decode("utf-8", errors="ignore")
+                                if txt.startswith("http"):
+                                    inner_result["url_found"] = txt[:200]
+                    analysis["inner_field4"] = inner_result
+                redirect_test = {"analysis": analysis}
             except Exception as e:
-                redirect_test = {"error": str(e)[:100]}
+                redirect_test = {"error": str(e)[:200]}
             break
 
     results = []
