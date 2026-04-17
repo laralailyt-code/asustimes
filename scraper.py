@@ -367,21 +367,42 @@ def _resolve_google_news_url(url: str) -> str:
         padding = (4 - len(encoded) % 4) % 4
         decoded = _b64.urlsafe_b64decode(encoded + "=" * padding)
         found = re.findall(rb"https?://[^\x00-\x1f\s<>\"']+", decoded)
-        if found:
-            return found[0].decode("utf-8", errors="ignore").rstrip(".,)")
+        # Skip Google's own URLs; take first external article URL
+        for candidate_bytes in found:
+            candidate = candidate_bytes.decode("utf-8", errors="ignore").rstrip(".,)")
+            if "google.com" not in candidate and len(candidate) > 20:
+                return candidate
     except Exception:
         pass
     return url
 
 
 def _fetch_snippet(url: str, max_chars: int = 160) -> str:
-    """Resolve Google News redirect, then extract the first meaningful paragraph."""
+    """Resolve Google News redirect, then extract article summary via OG tags or first paragraph."""
     if not url:
         return ""
     try:
         actual_url = _resolve_google_news_url(url)
+        if "news.google.com" in actual_url:
+            return ""  # decode failed, skip
         r = requests.get(actual_url, headers=HEADERS, timeout=4, allow_redirects=True)
+        if r.status_code >= 400:
+            return ""
         soup = BeautifulSoup(r.content, "html.parser")
+
+        # 1. Try OG / meta description first (in <head>, fast and clean)
+        for attr_name, attr_val in [
+            ("property", "og:description"),
+            ("name", "description"),
+            ("name", "twitter:description"),
+        ]:
+            tag = soup.find("meta", {attr_name: attr_val})
+            if tag:
+                text = html.unescape((tag.get("content") or "").strip())
+                if len(text) > 40:
+                    return text[:max_chars] + ("…" if len(text) > max_chars else "")
+
+        # 2. Fall back to first meaningful paragraph in article body
         for tag in soup(["script", "style", "nav", "header", "footer", "aside", "figure"]):
             tag.decompose()
         for sel in [
@@ -393,8 +414,8 @@ def _fetch_snippet(url: str, max_chars: int = 160) -> str:
                 text = p.get_text(strip=True)
                 if len(text) > 40:
                     return text[:max_chars] + ("…" if len(text) > max_chars else "")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"_fetch_snippet failed ({url[:60]}): {e}")
     return ""
 
 
