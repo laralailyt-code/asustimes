@@ -354,12 +354,33 @@ def _summary_is_empty(title: str, summary: str) -> bool:
     return s_n.startswith(t_n) or s_n == t_n
 
 
+def _resolve_google_news_url(url: str) -> str:
+    """Decode Google News redirect URL (CBMi...) to get the actual article URL."""
+    if "news.google.com" not in url:
+        return url
+    try:
+        import base64 as _b64
+        m = re.search(r"/articles/([A-Za-z0-9_=-]+)", url)
+        if not m:
+            return url
+        encoded = m.group(1)
+        padding = (4 - len(encoded) % 4) % 4
+        decoded = _b64.urlsafe_b64decode(encoded + "=" * padding)
+        found = re.findall(rb"https?://[^\x00-\x1f\s<>\"']+", decoded)
+        if found:
+            return found[0].decode("utf-8", errors="ignore").rstrip(".,)")
+    except Exception:
+        pass
+    return url
+
+
 def _fetch_snippet(url: str, max_chars: int = 160) -> str:
-    """Follow article URL and extract the first meaningful paragraph."""
+    """Resolve Google News redirect, then extract the first meaningful paragraph."""
     if not url:
         return ""
     try:
-        r = requests.get(url, headers=HEADERS, timeout=4, allow_redirects=True)
+        actual_url = _resolve_google_news_url(url)
+        r = requests.get(actual_url, headers=HEADERS, timeout=5, allow_redirects=True)
         soup = BeautifulSoup(r.content, "html.parser")
         for tag in soup(["script", "style", "nav", "header", "footer", "aside", "figure"]):
             tag.decompose()

@@ -230,14 +230,35 @@ _digest_cache: dict = {}
 _digest_lock = threading.Lock()
 
 
+def _resolve_google_news_url(url: str) -> str:
+    """Decode Google News redirect URL (CBMi...) to get the actual article URL."""
+    if "news.google.com" not in url:
+        return url
+    try:
+        import base64 as _b64, re as _re
+        m = _re.search(r"/articles/([A-Za-z0-9_=-]+)", url)
+        if not m:
+            return url
+        encoded = m.group(1)
+        padding = (4 - len(encoded) % 4) % 4
+        decoded = _b64.urlsafe_b64decode(encoded + "=" * padding)
+        found = _re.findall(rb"https?://[^\x00-\x1f\s<>\"']+", decoded)
+        if found:
+            return found[0].decode("utf-8", errors="ignore").rstrip(".,)")
+    except Exception:
+        pass
+    return url
+
+
 def _fetch_article_snippet(url: str, max_chars: int = 150) -> str:
-    """Follow article URL and extract a short text snippet for digest fallback."""
+    """Resolve Google News redirect, then extract a short text snippet."""
     if not url:
         return ""
     try:
         from bs4 import BeautifulSoup as _BS
+        actual_url = _resolve_google_news_url(url)
         r = req_lib.get(
-            url,
+            actual_url,
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
                 "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
