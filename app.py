@@ -340,13 +340,24 @@ def api_digest():
         import re as _re
         from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _ac
 
+        def _norm(t: str) -> str:
+            """Normalize for comparison: remove dashes/spaces/punctuation, lowercase."""
+            return _re.sub(r'[\s\-–—·|·•]+', '', t).lower()
+
         def _clean_rss_summary(title: str, raw: str) -> str:
             """Remove title/source repetition common in Google News RSS descriptions."""
             s = raw.strip()
-            # Strip leading title repetition
-            if s.lower().startswith(title.lower()):
-                s = s[len(title):].lstrip(" -–—\t")
-            # Strip trailing "- Source Name" suffix (e.g. "- DIGITIMES")
+            if not s:
+                return ""
+            # Normalized comparison handles "Title - Source" vs "Title Source" variants
+            t_norm = _norm(title)
+            s_norm = _norm(s)
+            if s_norm.startswith(t_norm) or s_norm == t_norm:
+                # Discard the title-equivalent portion from the start
+                s = s[len(title):].lstrip(" -–—\t").strip() if len(s) > len(title) else ""
+            elif s.lower().startswith(title.lower()):
+                s = s[len(title):].lstrip(" -–—\t").strip()
+            # Strip trailing source suffix like "- DIGITIMES" or "TechNews 科技新報"
             s = _re.sub(r'\s*[-–—]\s*\S[\w\s]{1,30}$', '', s).strip()
             return s
 
@@ -357,7 +368,7 @@ def api_digest():
             candidates.append((a, title, snippet))
 
         # Fetch article snippets in parallel for items with no useful summary
-        needs_fetch = [(i, a) for i, (a, title, snippet) in enumerate(candidates) if len(snippet) < 20]
+        needs_fetch = [(i, a) for i, (a, title, snippet) in enumerate(candidates) if len(snippet) < 25]
         if needs_fetch:
             with _TPE(max_workers=min(len(needs_fetch), 5)) as ex:
                 futs = {ex.submit(_fetch_article_snippet, a.get("source_url", "")): i
@@ -373,7 +384,7 @@ def api_digest():
                         pass
 
         for a, title, snippet in candidates:
-            if snippet and len(snippet) > 15:
+            if snippet and len(snippet) > 25:
                 points.append(f"{title}　{snippet}")
             else:
                 points.append(title)

@@ -341,6 +341,42 @@ def _apply_watchlist_row(row: dict, vendor_col: str, signal_col: str,
         result[vendor] = risk
 
 
+# ── Article snippet enrichment ────────────────────────────────────────────────
+def _summary_is_empty(title: str, summary: str) -> bool:
+    """Return True if summary adds no meaningful content beyond the title."""
+    if not summary or len(summary) < 25:
+        return True
+    # Normalize: remove dashes/spaces/punctuation for comparison
+    def _norm(t):
+        return re.sub(r'[\s\-–—·|·•]+', '', t).lower()
+    t_n = _norm(title)
+    s_n = _norm(summary)
+    return s_n.startswith(t_n) or s_n == t_n
+
+
+def _fetch_snippet(url: str, max_chars: int = 160) -> str:
+    """Follow article URL and extract the first meaningful paragraph."""
+    if not url:
+        return ""
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=4, allow_redirects=True)
+        soup = BeautifulSoup(r.content, "html.parser")
+        for tag in soup(["script", "style", "nav", "header", "footer", "aside", "figure"]):
+            tag.decompose()
+        for sel in [
+            "article p", ".article-content p", ".article-body p",
+            ".entry-content p", ".post-content p", ".news-content p",
+            "main p", ".content p", "p",
+        ]:
+            for p in soup.select(sel):
+                text = p.get_text(strip=True)
+                if len(text) > 40:
+                    return text[:max_chars] + ("…" if len(text) > max_chars else "")
+    except Exception:
+        pass
+    return ""
+
+
 # ── Main aggregator (parallel fetch) ─────────────────────────────────────────
 def fetch_all_news() -> list[dict]:
     logger.info("ASUSTIMES: starting parallel fetch…")
@@ -406,6 +442,28 @@ def fetch_all_news() -> list[dict]:
                     article["watchlist_risk"]   = risk
                     article["category"]         = "財務風險"
                     break
+
+    # Enrich summaries: fetch article snippet for top 40 articles where RSS gave only the title
+    to_enrich = [
+        a for a in unique[:40]
+        if _summary_is_empty(a["title"], a.get("summary", "")) and a.get("source_url")
+    ]
+    if to_enrich:
+        logger.info(f"Enriching summaries for {len(to_enrich)} articles…")
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            futs = {ex.submit(_fetch_snippet, a["source_url"]): a for a in to_enrich}
+            try:
+                for fut in as_completed(futs, timeout=6):
+                    art = futs[fut]
+                    try:
+                        snippet = fut.result()
+                        if snippet:
+                            art["summary"] = snippet
+                    except Exception:
+                        pass
+            except FuturesTimeoutError:
+                pass
+        logger.info("Summary enrichment done")
 
     logger.info(f"ASUSTIMES: {len(unique)} tech articles ready")
     return unique
