@@ -235,43 +235,43 @@ GN = "https://news.google.com/rss/search?hl=zh-TW&gl=TW&ceid=TW:zh-Hant&q="
 GN_EN = "https://news.google.com/rss/search?hl=en-US&gl=US&ceid=US:en&q="
 
 FEEDS = [
-    # ── 台灣科技媒體 ────────────────────────────────────────────────────────
-    {"url": GN + "site:digitimes.com.tw",                   "source": "Digitimes", "hint": "AI 產業"},
-    {"url": GN + "site:digitimes.com.tw+AI+人工智慧",        "source": "Digitimes", "hint": "AI 產業"},
-    {"url": GN + "site:digitimes.com.tw+半導體+晶片",        "source": "Digitimes", "hint": "半導體"},
-    {"url": GN + "site:digitimes.com.tw+台積電+TSMC",        "source": "Digitimes", "hint": "半導體"},
-    {"url": GN + "site:digitimes.com.tw+筆電+PC",            "source": "Digitimes", "hint": "PC / NB"},
-    {"url": GN + "site:digitimes.com.tw+伺服器+資料中心",    "source": "Digitimes", "hint": "伺服器/雲端"},
-    {"url": GN + "site:digitimes.com.tw+記憶體+DRAM+HBM",   "source": "Digitimes", "hint": "記憶體/儲存"},
-    {"url": GN + "site:digitimes.com.tw+面板+OLED+LCD",     "source": "Digitimes", "hint": "面板/顯示"},
-    {"url": GN + "site:digitimes.com.tw+供應鏈+關稅",        "source": "Digitimes", "hint": "供應鏈/關稅"},
-    {"url": GN + "site:digitimes.com.tw+財報+營收+法說",     "source": "Digitimes", "hint": "財報/法說"},
-    {"url": GN + "site:digitimes.com.tw+CCL+PCB+玻纖布+銅箔", "source": "Digitimes", "hint": "供應鏈/關稅"},
-    {"url": GN_EN + "site:digitimes.com",                   "source": "Digitimes", "hint": "AI 產業"},
-    {"url": GN + "site:technews.tw",         "source": "科技新報",    "hint": "AI 產業"},
-    {"url": GN + "site:ctee.com.tw+科技",          "source": "工商時報",  "hint": ""},
-    {"url": GN + "site:ithome.com.tw",      "source": "iThome",      "hint": ""},
-    {"url": GN + "site:cool3c.com",         "source": "電腦王",      "hint": "電競/ROG"},
+    # ── 直接 RSS（有真實文章 URL，可抓摘要）──────────────────────────────
+    {"url": "https://technews.tw/feed/",                      "source": "科技新報",    "hint": "AI 產業"},
+    {"url": "https://www.ithome.com.tw/rss",                  "source": "iThome",      "hint": ""},
+    {"url": "https://feeds.feedburner.com/cool3c-all",        "source": "電腦王",      "hint": "電競/ROG"},
+    {"url": "https://tw.news.yahoo.com/rss/finance",          "source": "Yahoo財經",   "hint": "財報/法說"},
+    {"url": "https://www.ctee.com.tw/rss.xml",                "source": "工商時報",    "hint": ""},
 
-    # ── 主題精選 ────────────────────────────────────────────────────────────
-    {"url": GN + "AI+伺服器+台灣",          "source": "Google News", "hint": "伺服器/雲端"},
-    {"url": GN + "HBM+記憶體+AI",           "source": "Google News", "hint": "記憶體/儲存"},
-    {"url": GN + "台積電+先進製程",         "source": "Google News", "hint": "半導體"},
-    {"url": GN + "電競+顯卡+RTX",           "source": "Google News", "hint": "電競/ROG"},
-    {"url": GN + "筆電+出貨+PC市場",        "source": "Google News", "hint": "PC / NB"},
-    {"url": GN + "關稅+科技+供應鏈",        "source": "Google News", "hint": "供應鏈/關稅"},
-    {"url": GN + "OLED+面板+顯示器",        "source": "Google News", "hint": "面板/顯示"},
-    {"url": GN + "法說會+營收+科技",        "source": "Google News", "hint": "財報/法說"},
-    {"url": GN + "財報+EPS+毛利率",         "source": "Google News", "hint": "財報/法說"},
-
-    # ── 英文科技媒體 ────────────────────────────────────────────────────────
-    {"url": GN_EN + "site:tomshardware.com",  "source": "Tom's Hardware", "hint": "電競/ROG"},
-    {"url": GN_EN + "TSMC+semiconductor+AI",  "source": "Global Tech",    "hint": "半導體"},
-    {"url": GN_EN + "NVIDIA+GPU+data+center", "source": "Global Tech",    "hint": "AI 產業"},
-    {"url": GN_EN + "earnings+semiconductor+quarterly", "source": "Global Tech", "hint": "財報/法說"},
-
-    # ── Yahoo財經 ────────────────────────────────────────────────────────────
-    {"url": "https://tw.news.yahoo.com/rss/finance", "source": "Yahoo財經", "hint": "財報/法說"},
+    # ── Google News 主題精選（仍保留作為補充來源）───────────────────────
+    {"url": GN + "site:digitimes.com.tw",                    "source": "Digitimes",   "hint": "AI 產業"},
+    {"url": GN + "site:digitimes.com.tw+AI+人工智慧",         "source": "Digitimes",   "hint": "AI 產業"},
+    {"url": GN + "site:digitimes.com.tw+半導體+晶片",         "source": "Digitimes",   "hint": "半導體"},
+    {"url": GN + "site:digitimes.com.tw+台積電+TSMC",         "source": "Digitimes",   "hint": "半導體"},
+    {"url": GN + "site:digitimes.com.tw+筆電+PC",             "source": "Digitimes",   "hint": "PC / NB"},
+    {"url": GN + "site:digitimes.com.tw+伺服器+資料中心",     "source": "Digitimes",   "hint": "伺服器/雲端"},
+    {"url": GN + "site:digitimes.com.tw+記憶體+DRAM+HBM",    "source": "Digitimes",   "hint": "記憶體/儲存"},
+    {"url": GN + "site:digitimes.com.tw+面板+OLED+LCD",      "source": "Digitimes",   "hint": "面板/顯示"},
+    {"url": GN + "site:digitimes.com.tw+供應鏈+關稅",         "source": "Digitimes",   "hint": "供應鏈/關稅"},
+    {"url": GN + "site:digitimes.com.tw+財報+營收+法說",      "source": "Digitimes",   "hint": "財報/法說"},
+    {"url": GN + "site:digitimes.com.tw+CCL+PCB+玻纖布+銅箔","source": "Digitimes",   "hint": "供應鏈/關稅"},
+    {"url": GN_EN + "site:digitimes.com",                    "source": "Digitimes",   "hint": "AI 產業"},
+    {"url": GN + "site:technews.tw",                         "source": "科技新報",    "hint": "AI 產業"},
+    {"url": GN + "site:ctee.com.tw+科技",                    "source": "工商時報",    "hint": ""},
+    {"url": GN + "site:ithome.com.tw",                       "source": "iThome",      "hint": ""},
+    {"url": GN + "site:cool3c.com",                          "source": "電腦王",      "hint": "電競/ROG"},
+    {"url": GN + "AI+伺服器+台灣",                           "source": "Google News", "hint": "伺服器/雲端"},
+    {"url": GN + "HBM+記憶體+AI",                            "source": "Google News", "hint": "記憶體/儲存"},
+    {"url": GN + "台積電+先進製程",                          "source": "Google News", "hint": "半導體"},
+    {"url": GN + "電競+顯卡+RTX",                            "source": "Google News", "hint": "電競/ROG"},
+    {"url": GN + "筆電+出貨+PC市場",                         "source": "Google News", "hint": "PC / NB"},
+    {"url": GN + "關稅+科技+供應鏈",                         "source": "Google News", "hint": "供應鏈/關稅"},
+    {"url": GN + "OLED+面板+顯示器",                         "source": "Google News", "hint": "面板/顯示"},
+    {"url": GN + "法說會+營收+科技",                         "source": "Google News", "hint": "財報/法說"},
+    {"url": GN + "財報+EPS+毛利率",                          "source": "Google News", "hint": "財報/法說"},
+    {"url": GN_EN + "site:tomshardware.com",                 "source": "Tom's Hardware","hint": "電競/ROG"},
+    {"url": GN_EN + "TSMC+semiconductor+AI",                 "source": "Global Tech", "hint": "半導體"},
+    {"url": GN_EN + "NVIDIA+GPU+data+center",                "source": "Global Tech", "hint": "AI 產業"},
+    {"url": GN_EN + "earnings+semiconductor+quarterly",      "source": "Global Tech", "hint": "財報/法說"},
 ]
 
 
@@ -518,10 +518,12 @@ def fetch_all_news() -> list[dict]:
                     article["category"]         = "財務風險"
                     break
 
-    # Enrich summaries: fetch article snippet for top 25 articles where RSS gave only the title
+    # Enrich summaries: only for articles with a real (non-Google) URL
     to_enrich = [
         a for a in unique[:25]
-        if _summary_is_empty(a["title"], a.get("summary", "")) and a.get("source_url")
+        if _summary_is_empty(a["title"], a.get("summary", ""))
+        and a.get("source_url")
+        and "news.google.com" not in a.get("source_url", "")
     ]
     if to_enrich:
         logger.info(f"Enriching summaries for {len(to_enrich)} articles…")
