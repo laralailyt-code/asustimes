@@ -180,17 +180,22 @@
   }
 
   /* ── Source pills ── */
-  .source-filters { display: flex; gap: 0.4rem; margin-bottom: 0.9rem; flex-wrap: wrap; }
-  .source-pill {
-    padding: 0.27rem 0.75rem; border-radius: 20px;
-    border: 1px solid var(--border); background: var(--bg-card);
-    font-size: 0.73rem; cursor: pointer; transition: all 0.18s;
-    color: var(--text-secondary); font-family: inherit; font-weight: 500;
+  .source-filters {
+    display: flex; gap: 0.2rem; margin-bottom: 0.9rem; flex-wrap: wrap;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 0.28rem;
   }
-  .source-pill:hover { border-color: var(--accent); color: var(--accent-2); }
+  .source-pill {
+    padding: 0.38rem 0.85rem; border-radius: 8px;
+    border: none; background: transparent;
+    font-size: 0.8rem; cursor: pointer; transition: all 0.18s;
+    color: var(--text-secondary); font-family: inherit; font-weight: 500;
+    white-space: nowrap; user-select: none;
+  }
+  .source-pill:hover { color: var(--text-primary); background: var(--bg-card-hover); }
   .source-pill.active {
-    background: var(--accent); border-color: var(--accent);
-    color: white; box-shadow: 0 0 10px var(--glow);
+    background: var(--accent);
+    color: white; box-shadow: 0 2px 10px var(--glow);
   }
 
   /* ── Category tabs (multi-select) ── */
@@ -545,7 +550,7 @@
     .last-update { width: 100%; margin-left: 0; margin-top: 0.1rem; }
     /* Date/source/category filters: all horizontal scroll on mobile */
     .date-filters, .source-filters {
-      flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px;
+      flex-wrap: nowrap; overflow-x: auto;
       -webkit-overflow-scrolling: touch; scrollbar-width: none;
     }
     .date-filters::-webkit-scrollbar, .source-filters::-webkit-scrollbar { display: none; }
@@ -579,11 +584,13 @@
     .mcat-btn { width: auto; white-space: nowrap; flex-shrink: 0; display: inline-block; }
     /* Main area: fill remaining height */
     .market-main { flex: 1; overflow: hidden; display: flex; flex-direction: column; gap: 0.4rem; min-height: 0; }
-    .market-toolbar { flex-wrap: nowrap; overflow-x: auto; flex-shrink: 0;
+    .market-toolbar { flex-direction: column; gap: 0.35rem; overflow: visible; flex-shrink: 0; flex-wrap: nowrap; }
+    .market-item-btns { flex-wrap: nowrap; overflow-x: auto; width: 100%;
       -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-    .market-toolbar::-webkit-scrollbar { display: none; }
-    .market-item-btns { flex-wrap: nowrap; }
-    .time-btns { flex-shrink: 0; }
+    .market-item-btns::-webkit-scrollbar { display: none; }
+    .time-btns { flex-shrink: 0; width: 100%; overflow-x: auto;
+      -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .time-btns::-webkit-scrollbar { display: none; }
     /* Chart card: fill remaining space */
     .chart-card { flex: 1; overflow: hidden; display: flex; flex-direction: column;
       padding: 0.75rem; margin-bottom: 0; min-height: 0; }
