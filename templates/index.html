@@ -503,7 +503,13 @@
   }
   .chart-change-up   { color: #34d399; font-size: 0.85rem; font-weight: 600; }
   .chart-change-down { color: #f87171; font-size: 0.85rem; font-weight: 600; }
-  #chartAvg { font-size: 0.78rem; color: #f59e0b; font-weight: 600; margin-top: 0.12rem; margin-bottom: 0.4rem; }
+  #chartSource { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.35rem; }
+  #chartSource a { color: var(--text-muted); text-decoration: underline; text-underline-offset: 2px; }
+  #chartSource a:hover { color: var(--accent); }
+  #chartAvg { font-size: 0.78rem; color: #f59e0b; font-weight: 600; margin-top: 0.12rem; margin-bottom: 0.15rem; }
+  #chartHighLow { font-size: 0.78rem; font-weight: 600; margin-bottom: 0.4rem; display: flex; gap: 1rem; }
+  #chartHighLow .hl-high { color: #f87171; }
+  #chartHighLow .hl-low  { color: #34d399; }
   .chart-wrap { position: relative; height: 280px; }
   .custom-range-row {
     display: flex; align-items: center; gap: 0.5rem;
@@ -859,9 +865,11 @@
       <div class="chart-card">
         <div class="chart-title" id="chartTitle">—</div>
         <div class="chart-meta" id="chartMeta"></div>
+        <div id="chartSource"></div>
         <div class="chart-latest" id="chartLatest">—</div>
         <div id="chartChange"></div>
         <div id="chartAvg"></div>
+        <div id="chartHighLow"></div>
         <div class="chart-wrap"><canvas id="marketChart"></canvas></div>
       </div>
       <!-- Related news -->
@@ -1523,6 +1531,16 @@ function renderChart() {
   document.getElementById('chartTitle').textContent = displayName;
   document.getElementById('chartMeta').textContent  = item.unit || '';
 
+  // Data source link
+  const srcEl = document.getElementById('chartSource');
+  if (item.source_label && item.source_url) {
+    srcEl.innerHTML = `資料來源：<a href="${esc(item.source_url)}" target="_blank" rel="noopener">${esc(item.source_label)}</a>`;
+  } else if (item.source_label) {
+    srcEl.textContent = `資料來源：${item.source_label}`;
+  } else {
+    srcEl.textContent = '';
+  }
+
   // Latest value display
   const latestVal = [...values].reverse().find(v => v !== null);
   document.getElementById('chartLatest').textContent =
@@ -1542,13 +1560,24 @@ function renderChart() {
     chEl.textContent = ''; chEl.className = '';
   }
 
-  // Average price for selected range
+  // Average / High / Low price for selected range
   const avg    = nonNull.length ? nonNull.reduce((s, x) => s + x.v, 0) / nonNull.length : null;
+  const hiObj  = nonNull.length ? nonNull.reduce((a, b) => b.v > a.v ? b : a) : null;
+  const loObj  = nonNull.length ? nonNull.reduce((a, b) => b.v < a.v ? b : a) : null;
+  const unit   = item.unit ? '  ' + item.unit : '';
   const avgEl  = document.getElementById('chartAvg');
+  const hlEl   = document.getElementById('chartHighLow');
   if (avg !== null) {
-    avgEl.textContent = `區間均價  ${avg.toLocaleString(undefined, {maximumFractionDigits: 2})}${item.unit ? '  ' + item.unit : ''}`;
+    avgEl.textContent = `區間均價  ${avg.toLocaleString(undefined, {maximumFractionDigits: 2})}${unit}`;
   } else {
     avgEl.textContent = '';
+  }
+  if (hiObj && loObj) {
+    hlEl.innerHTML =
+      `<span class="hl-high">▲ 最高  ${hiObj.v.toLocaleString(undefined, {maximumFractionDigits: 2})}${unit}</span>` +
+      `<span class="hl-low">▼ 最低  ${loObj.v.toLocaleString(undefined, {maximumFractionDigits: 2})}${unit}</span>`;
+  } else {
+    hlEl.innerHTML = '';
   }
 
   // No data
@@ -1567,7 +1596,7 @@ function renderChart() {
   const textColor = isDark ? '#8892aa' : '#64748b';
   const ctx       = document.getElementById('marketChart').getContext('2d');
 
-  // Build annotations: news dots + average line
+  // Build annotations: news dots + average / high / low lines
   const annotations = buildAnnotations(dates, values);
   if (avg !== null) {
     annotations['avgLine'] = {
@@ -1587,37 +1616,87 @@ function renderChart() {
       }
     };
   }
-
-  if (_chartInst) _chartInst.destroy();
-  _chartInst = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: dates,
-      datasets: [{
-        data: values,
-        borderColor: '#1464f6',
-        backgroundColor: 'rgba(20,100,246,0.08)',
-        borderWidth: 2,
-        pointRadius: dates.length > 60 ? 0 : 3,
-        pointHoverRadius: 5,
-        fill: true, tension: 0.3, spanGaps: true,
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: { label: c => c.parsed.y != null ? c.parsed.y.toLocaleString() + ' ' + (item.unit||'') : '—' }
-        },
-        annotation: { annotations }
-      },
-      scales: {
-        x: { ticks: { color: textColor, maxTicksLimit: 8 }, grid: { color: gridColor } },
-        y: { ticks: { color: textColor }, grid: { color: gridColor } }
+  if (hiObj) {
+    annotations['hiLine'] = {
+      type: 'line',
+      yMin: hiObj.v, yMax: hiObj.v,
+      borderColor: 'rgba(248, 113, 113, 0.6)',
+      borderWidth: 1,
+      borderDash: [4, 4],
+      label: {
+        display: true,
+        content: `高 ${hiObj.v.toLocaleString(undefined, {maximumFractionDigits: 1})}`,
+        position: 'start',
+        color: '#f87171',
+        font: { size: 10, weight: '600' },
+        backgroundColor: 'transparent',
+        padding: 4,
       }
-    }
-  });
+    };
+  }
+  if (loObj) {
+    annotations['loLine'] = {
+      type: 'line',
+      yMin: loObj.v, yMax: loObj.v,
+      borderColor: 'rgba(52, 211, 153, 0.6)',
+      borderWidth: 1,
+      borderDash: [4, 4],
+      label: {
+        display: true,
+        content: `低 ${loObj.v.toLocaleString(undefined, {maximumFractionDigits: 1})}`,
+        position: 'start',
+        color: '#34d399',
+        font: { size: 10, weight: '600' },
+        backgroundColor: 'transparent',
+        padding: 4,
+      }
+    };
+  }
+
+  const ptRadius = dates.length > 60 ? 0 : 3;
+  const tooltipLabel = c => c.parsed.y != null ? c.parsed.y.toLocaleString() + ' ' + (item.unit||'') : '—';
+
+  if (_chartInst) {
+    // Update data in place — much faster than destroy/recreate
+    _chartInst.data.labels = dates;
+    _chartInst.data.datasets[0].data        = values;
+    _chartInst.data.datasets[0].pointRadius = ptRadius;
+    _chartInst.options.plugins.annotation.annotations              = annotations;
+    _chartInst.options.plugins.tooltip.callbacks.label             = tooltipLabel;
+    _chartInst.options.scales.x.ticks.color  = textColor;
+    _chartInst.options.scales.y.ticks.color  = textColor;
+    _chartInst.options.scales.x.grid.color   = gridColor;
+    _chartInst.options.scales.y.grid.color   = gridColor;
+    _chartInst.update('none');
+  } else {
+    _chartInst = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: dates,
+        datasets: [{
+          data: values,
+          borderColor: '#1464f6',
+          backgroundColor: 'rgba(20,100,246,0.08)',
+          borderWidth: 2,
+          pointRadius: ptRadius,
+          pointHoverRadius: 5,
+          fill: true, tension: 0.3, spanGaps: true,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: tooltipLabel } },
+          annotation: { annotations }
+        },
+        scales: {
+          x: { ticks: { color: textColor, maxTicksLimit: 8 }, grid: { color: gridColor } },
+          y: { ticks: { color: textColor }, grid: { color: gridColor } }
+        }
+      }
+    });
+  }
   // Set up canvas mouse-hit detection for annotation dots
   setTimeout(() => { _updateAnnotPixels(); _setupCanvasAnnotEvents(); }, 60);
 }
@@ -1654,8 +1733,12 @@ async function renderMarketNews() {
       if (_chartInst && _newsArticles.length) {
         const existing = _chartInst.options.plugins.annotation.annotations || {};
         const avgLine  = existing['avgLine'];
+        const hiLine   = existing['hiLine'];
+        const loLine   = existing['loLine'];
         const merged   = buildAnnotations(_chartInst.data.labels, _chartInst.data.datasets[0].data);
         if (avgLine) merged['avgLine'] = avgLine;
+        if (hiLine)  merged['hiLine']  = hiLine;
+        if (loLine)  merged['loLine']  = loLine;
         _chartInst.options.plugins.annotation.annotations = merged;
         _chartInst.update('none');
         setTimeout(_updateAnnotPixels, 60);

@@ -560,32 +560,41 @@ _LIVE_COMMODITY_SYMBOLS = {
     "ALI=F": ("鋁 (aluminum) US$/tonne",       1.0),       # COMEX Aluminum $/tonne
 }
 
-# Free ExchangeRate-API code → exact CSV item name
-_LIVE_FX_CODES = {
-    "TWD": "美元 / 台幣",
-    "CNY": "美元 / 人民幣",
-    "JPY": "美元 / 日圓",
-    "EUR": "美元 / 歐元",          # stored as EUR/USD (how many EUR per 1 USD)
-    "BRL": "美元 / 巴西里爾(巴西幣)",
-    "KRW": "美元 / 韓圜",
-    "IDR": "美元 / 印尼盾",
-    "INR": "美元 / 印度幣",
+# yfinance FX tickers → (exact CSV item name, multiplier)
+# All return "foreign currency per 1 USD" — matches CSV convention "美元 / XXX"
+_LIVE_FX_YF_SYMBOLS = {
+    "TWD=X": ("美元 / 台幣",            1.0),
+    "CNY=X": ("美元 / 人民幣",          1.0),
+    "JPY=X": ("美元 / 日圓",            1.0),
+    "EUR=X": ("美元 / 歐元",            1.0),   # EUR per USD ≈ 0.92, no inversion
+    "BRL=X": ("美元 / 巴西里爾(巴西幣)", 1.0),
+    "KRW=X": ("美元 / 韓圜",            1.0),
+    "IDR=X": ("美元 / 印尼盾",          1.0),
+    "INR=X": ("美元 / 印度幣",          1.0),
 }
 
 _live_commodity_cache: dict = {}   # {csv_item_name: [(date_str, value)]}
 _live_cache_lock = threading.Lock()
 
-# bot.com.tw BCD API code → (csv_item_name, price_multiplier)
-# API: https://fund.bot.com.tw/Z/ZH/ZHG/CZHG.djbcd?A=<code>
-# Response format: "date1,date2,...,dateN,val1,val2,...,valN"
+# Source URL per item name (populated during price refresh)
+_item_sources: dict = {}   # {csv_item_name: {"label": str, "url": str}}
+_item_sources_lock = threading.Lock()
+
+# Parsed CSV cache (invalidated on live price update)
+_csv_parse_cache: dict = {"data": None, "ts": 0.0}
+_csv_parse_lock = threading.Lock()
+
+# bot.com.tw BCD API code → (csv_item_name, price_multiplier) — all use history fetch
 _BOT_BCD_CODES = {
-    "130041": ("ABS聚合物(注塑) 中國到岸價 US$/tonne", 1.0),   # ABS China CIF ✓ confirmed
-    "190020": ("NOREXECO 長纖紙漿  USD/T",             1.0),   # Long-fiber pulp ✓ bot.com.tw
+    "130041": ("ABS聚合物(注塑) 中國到岸價 US$/tonne", 1.0),   # ABS China CIF
+    "190020": ("NOREXECO 長纖紙漿  USD/T",             1.0),   # Long-fiber pulp
+    "190060": ("瓦楞芯紙 CNY$/tonne",                  1.0),   # Corrugated paper
 }
 
-# Codes that need full historical data (not just latest point)
-_BOT_BCD_HISTORY_CODES = {
-    "190060": ("瓦楞芯紙 CNY$/tonne", 1.0),   # Corrugated paper — full history
+# buyplas.com plastic prices (latest only, no history available)
+_BUYPLAS_ITEMS = {
+    "PC_SABIC":     "PC塑料 (SABIC) CNY$/tonne",
+    "PC_ABS_SABIC": "PC/ABS塑料 (SABIC) CNY$/tonne",
 }
 
 # Trading Economics slug → (csv_item_name, price_multiplier)
@@ -730,86 +739,93 @@ def _fetch_te_price(slug: str) -> float | None:
 
 
 def _refresh_live_prices():
-    """Fetch latest commodity & FX prices. Called once on startup and then daily."""
+    """Fetch commodity & FX prices with 1-year history. Called on startup and periodically."""
     today = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
     fresh: dict = {}
+    sources: dict = {}
 
-    # 1. Commodity prices via yfinance (per-symbol to avoid bulk rate limiting)
+    # 1. yfinance: commodities + FX — 1-year daily history
     if _YF_AVAILABLE:
-        for sym, (csv_name, mult) in _LIVE_COMMODITY_SYMBOLS.items():
+        all_yf_syms: dict = {}
+        all_yf_syms.update(_LIVE_COMMODITY_SYMBOLS)
+        all_yf_syms.update(_LIVE_FX_YF_SYMBOLS)
+
+        for sym, (csv_name, mult) in all_yf_syms.items():
             for attempt in range(2):
                 try:
-                    hist = yf.Ticker(sym).history(period="5d", interval="1d", auto_adjust=True)
+                    hist   = yf.Ticker(sym).history(period="1y", interval="1d", auto_adjust=True)
                     series = hist["Close"].dropna() if "Close" in hist.columns else hist.dropna()
                     if series.empty:
                         break
-                    price = round(float(series.iloc[-1]) * mult, 2)
-                    date  = str(series.index[-1].date())
-                    fresh.setdefault(csv_name, []).append((date, price))
-                    logger.info(f"yfinance {sym}: {csv_name} = {price} on {date}")
+                    points = [(str(ts.date()), round(float(v) * mult, 4)) for ts, v in series.items()]
+                    if points:
+                        fresh[csv_name]   = points
+                        sources[csv_name] = {"label": "Yahoo Finance",
+                                             "url":   f"https://finance.yahoo.com/quote/{sym}"}
+                        logger.info(f"yfinance {sym}: {csv_name}, {len(points)} pts, latest={points[-1][1]}")
                     break
                 except Exception as e:
                     if attempt == 0 and "RateLimit" in type(e).__name__:
-                        logger.warning(f"yfinance {sym} rate limited, retrying in 15s")
+                        logger.warning(f"yfinance {sym} rate limited, retrying 15s")
                         time.sleep(15)
                     else:
                         logger.warning(f"yfinance {sym}: {e}")
                         break
-            time.sleep(1)  # 1s between symbols to avoid rate limiting
+            time.sleep(1)
 
-    # 2. bot.com.tw BCD API (latest price only)
+    # 2. bot.com.tw BCD API — full history for all codes
     for code, (csv_name, mult) in _BOT_BCD_CODES.items():
-        price = _fetch_bot_bcd_price(code)
-        if price is not None:
-            val = round(price * mult, 2)
-            fresh[csv_name] = [(today, val)]
-            logger.info(f"bot.com.tw BCD {code}: {csv_name} = {val}")
-
-    # 2b. bot.com.tw BCD API (full historical series)
-    for code, (csv_name, mult) in _BOT_BCD_HISTORY_CODES.items():
         history = _fetch_bot_bcd_history(code)
         if history:
-            fresh[csv_name] = [(d, round(v * mult, 2)) for d, v in history]
-            logger.info(f"bot.com.tw BCD history {code}: {csv_name}, {len(history)} pts")
+            fresh[csv_name]   = [(d, round(v * mult, 2)) for d, v in history]
+            sources[csv_name] = {"label": "台灣銀行 fund.bot.com.tw",
+                                 "url":   "https://fund.bot.com.tw/"}
+            logger.info(f"bot.com.tw BCD {code}: {csv_name}, {len(history)} pts")
+        else:
+            # Fallback to latest-only if history parse fails
+            price = _fetch_bot_bcd_price(code)
+            if price is not None:
+                fresh[csv_name]   = [(today, round(price * mult, 2))]
+                sources[csv_name] = {"label": "台灣銀行 fund.bot.com.tw",
+                                     "url":   "https://fund.bot.com.tw/"}
 
-    # 3. buyplas.com plastic prices
-    _BUYPLAS_ITEMS = {
-        "PC_SABIC":     "PC塑料 (SABIC) CNY$/tonne",
-        "PC_ABS_SABIC": "PC/ABS塑料 (SABIC) CNY$/tonne",
-    }
-
+    # 3. buyplas.com plastic prices (latest point only — no public history)
     for key, csv_name in _BUYPLAS_ITEMS.items():
         price = _fetch_buyplas_price(key)
         if price is not None:
-            fresh[csv_name] = [(today, price)]
+            # Append today's point; preserve existing history in live cache
+            with _live_cache_lock:
+                prev = list(_live_commodity_cache.get(csv_name, []))
+            existing_dates = {d for d, _ in prev}
+            if today not in existing_dates:
+                prev.append((today, price))
+            fresh[csv_name]   = prev
+            sources[csv_name] = {"label": "Buyplas.com",
+                                 "url":   "https://www.buyplas.com/spot/1003-PP-PE-PVC-ABS-PS.html"}
             logger.info(f"buyplas.com {key}: {csv_name} = {price}")
-        else:
-            logger.warning(f"buyplas.com {key}: no price found")
 
-    # 4. LME metals + lithium + phosphorus via Trading Economics scrape
+    # 4. Trading Economics: LME metals + lithium + phosphorus (latest point only)
     for slug, (csv_name, mult) in _TE_SLUGS.items():
         price = _fetch_te_price(slug)
         if price is not None:
             val = round(price * mult, 2)
-            fresh[csv_name] = [(today, val)]
+            with _live_cache_lock:
+                prev = list(_live_commodity_cache.get(csv_name, []))
+            existing_dates = {d for d, _ in prev}
+            if today not in existing_dates:
+                prev.append((today, val))
+            fresh[csv_name]   = prev
+            sources[csv_name] = {"label": "Trading Economics",
+                                 "url":   f"https://tradingeconomics.com/commodity/{slug}"}
             logger.info(f"TradingEconomics: {csv_name} = {val}")
-
-    # 5. FX rates via free ExchangeRate-API
-    try:
-        resp  = req_lib.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=10)
-        rates = resp.json().get("rates", {})
-        for code, csv_name in _LIVE_FX_CODES.items():
-            if code == "EUR":
-                val = round(1.0 / rates["EUR"], 4) if rates.get("EUR") else None
-            else:
-                val = rates.get(code)
-            if val is not None:
-                fresh[csv_name] = [(today, float(val))]
-    except Exception as e:
-        logger.warning(f"FX rate fetch error: {e}")
 
     with _live_cache_lock:
         _live_commodity_cache.update(fresh)
+    with _item_sources_lock:
+        _item_sources.update(sources)
+    # Invalidate CSV parse cache so next request re-merges fresh live data
+    with _csv_parse_lock:
+        _csv_parse_cache["data"] = None
     logger.info(f"Live prices updated: {len(fresh)} items")
 
 
@@ -1011,6 +1027,17 @@ def api_commodities_refresh():
     return jsonify({"status": "refreshing"})
 
 
+def _get_commodity_data() -> dict:
+    """Return parsed CSV + live data, with 5-min in-memory cache."""
+    with _csv_parse_lock:
+        if _csv_parse_cache["data"] is not None and time.time() - _csv_parse_cache["ts"] < 300:
+            return _csv_parse_cache["data"]
+        data = _parse_commodity_csv()
+        _csv_parse_cache["data"] = data
+        _csv_parse_cache["ts"]   = time.time()
+        return data
+
+
 @app.route("/api/commodities")
 def api_commodities():
     # If live cache is empty (first load), fetch synchronously before serving
@@ -1018,22 +1045,25 @@ def api_commodities():
         cache_empty = not _live_commodity_cache
     if cache_empty:
         _refresh_live_prices()
-    data = _parse_commodity_csv()
-    # Return items list with latest value for overview
+    data = _get_commodity_data()
+    with _item_sources_lock:
+        src_snapshot = dict(_item_sources)
     items = []
     for name, d in data.items():
-        # Latest non-null value
         latest = next((v for v in reversed(d["values"]) if v is not None), None)
         prev   = next((v for v in reversed(d["values"][:-1]) if v is not None), None)
         change = round(((latest - prev) / prev * 100), 2) if latest and prev and prev != 0 else None
+        src    = src_snapshot.get(name, {})
         items.append({
-            "name":     name,
-            "unit":     d["unit"],
-            "category": d["category"],
-            "latest":   latest,
-            "change":   change,
-            "dates":    d["dates"],
-            "values":   d["values"],
+            "name":       name,
+            "unit":       d["unit"],
+            "category":   d["category"],
+            "latest":     latest,
+            "change":     change,
+            "dates":      d["dates"],
+            "values":     d["values"],
+            "source_label": src.get("label", ""),
+            "source_url":   src.get("url", ""),
         })
     categories = list(_COMMODITY_CATEGORIES.keys())
     return jsonify({"items": items, "categories": categories})
