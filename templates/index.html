@@ -531,14 +531,48 @@
 
   /* ── Responsive ── */
   @media (max-width: 640px) {
-    .header-inner { padding: 0 1rem; gap: 0.7rem; }
+    .header-inner { padding: 0 0.75rem; gap: 0.5rem; height: 54px; }
     .logo-sub, .search-wrap { display: none; }
-    .main { padding: 1rem; }
-    .news-grid { grid-template-columns: 1fr; }
-    .stats-bar { gap: 0.6rem; }
+    .logo-mark { width: 32px; height: 32px; font-size: 1rem; }
+    .logo-name { font-size: 1rem; }
+    .refresh-btn { padding: 0.38rem 0.65rem; font-size: 0.75rem; }
+    .main { padding: 0.75rem; }
+    .news-grid { grid-template-columns: 1fr; gap: 0.75rem; }
+    /* Stats bar: hide separators and less-critical items on mobile */
+    .stats-bar { gap: 0.5rem; padding: 0.55rem 0.75rem; flex-wrap: wrap; }
     .stat-sep { display: none; }
-    .market-layout { flex-direction: column; }
-    .market-sidebar { width: 100%; position: static; }
+    .stat-item:nth-child(n+9) { display: none; } /* hide items beyond 4th source */
+    .last-update { width: 100%; margin-left: 0; margin-top: 0.1rem; }
+    /* Date/source filters: horizontal scroll instead of wrap */
+    .date-filters { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
+    .source-filters { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
+    .tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
+    /* Page nav */
+    .page-nav-btn { font-size: 0.78rem; padding: 0.45rem 0.75rem; }
+    /* Market page */
+    .market-layout { flex-direction: column; gap: 0.75rem; }
+    .market-sidebar {
+      width: 100%; position: static;
+      padding: 0.4rem 0.5rem;
+    }
+    .market-sidebar-title { display: none; }
+    /* Sidebar category buttons: horizontal scroll row on mobile */
+    .market-sidebar > div:last-child {
+      display: flex; flex-wrap: nowrap;
+      overflow-x: auto; gap: 0.3rem;
+      padding-bottom: 2px; -webkit-overflow-scrolling: touch;
+    }
+    .mcat-btn {
+      width: auto; white-space: nowrap;
+      display: inline-block; flex-shrink: 0;
+    }
+    .market-toolbar { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .market-item-btns { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .time-btns { flex-shrink: 0; }
+    .chart-wrap { height: 220px; }
+    .chart-card { padding: 0.85rem; }
+    /* Cards */
+    .news-card { padding: 0.9rem; }
   }
   @media (min-width: 641px) {
     .btn-search-mobile { display: none !important; }
@@ -1246,7 +1280,7 @@ function switchPage(page) {
   const mobileBar  = document.getElementById('mobileSearchBar');
   if (page === 'market') {
     newsPage.style.display   = 'none';
-    mobileBar.style.display  = 'none';
+    mobileBar.classList.remove('open'); // close search if open; CSS hides it on its own
     marketPage.style.display = 'block';
     document.getElementById('navNews').classList.remove('active');
     document.getElementById('navMarket').classList.add('active');
@@ -1254,7 +1288,6 @@ function switchPage(page) {
   } else {
     newsPage.style.display   = '';
     marketPage.style.display = 'none';
-    mobileBar.style.display  = '';
     document.getElementById('navNews').classList.add('active');
     document.getElementById('navMarket').classList.remove('active');
   }
