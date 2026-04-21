@@ -1111,7 +1111,7 @@ function renderPagination(total, page, perPage) {
   for (let i = Math.max(1,page-2); i <= Math.min(pages,page+2); i++) rng.push(i);
   if (rng[0]>1) { h+=`<button class="page-btn" onclick="goPage(1)">1</button>`; if(rng[0]>2)h+=`<span style="color:var(--text-muted);padding:0 .25rem">…</span>`; }
   rng.forEach(p => { h+=`<button class="page-btn ${p===page?'active':''}" onclick="goPage(${p})">${p}</button>`; });
-  if (rng.at(-1)<pages) { if(rng.at(-1)<pages-1)h+=`<span style="color:var(--text-muted);padding:0 .25rem">…</span>`; h+=`<button class="page-btn" onclick="goPage(${pages})">${pages}</button>`; }
+  if (rng[rng.length-1]<pages) { if(rng[rng.length-1]<pages-1)h+=`<span style="color:var(--text-muted);padding:0 .25rem">…</span>`; h+=`<button class="page-btn" onclick="goPage(${pages})">${pages}</button>`; }
   h+=`<button class="page-btn" onclick="goPage(${page+1})" ${page===pages?'disabled':''}>›</button>`;
   wrap.innerHTML = h;
 }
