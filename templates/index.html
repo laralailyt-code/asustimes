@@ -543,10 +543,20 @@
     .stat-sep { display: none; }
     .stat-item:nth-child(n+9) { display: none; } /* hide items beyond 4th source */
     .last-update { width: 100%; margin-left: 0; margin-top: 0.1rem; }
-    /* Date/source filters: horizontal scroll instead of wrap */
-    .date-filters { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
-    .source-filters { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
-    .tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
+    /* Date/source/category filters: all horizontal scroll on mobile */
+    .date-filters, .source-filters {
+      flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px;
+      -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    }
+    .date-filters::-webkit-scrollbar, .source-filters::-webkit-scrollbar { display: none; }
+    /* Category tabs: remove card background on mobile, plain horizontal scroll */
+    .tabs-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .tabs-wrap::-webkit-scrollbar { display: none; }
+    .tabs {
+      flex-wrap: nowrap; background: transparent; border: none;
+      padding: 0; gap: 0.35rem; width: max-content;
+    }
+    .tab { white-space: nowrap; }
     /* Page nav */
     .page-nav-btn { font-size: 0.78rem; padding: 0.45rem 0.75rem; }
     /* Market page */
