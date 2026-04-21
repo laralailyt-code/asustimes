@@ -587,8 +587,7 @@
     /* Chart: fixed height, full width */
     .chart-card { padding: 0.75rem; margin-bottom: 0; width: 100%; box-sizing: border-box; }
     .chart-wrap { height: 240px !important; width: 100%; }
-    /* Related news: hidden on mobile */
-    .market-news-title, .market-news-list { display: none; }
+    /* Related news: visible on mobile (scrollable with page) */
     /* Cards */
     .news-card { padding: 0.9rem; }
   }
@@ -1648,15 +1647,19 @@ async function renderMarketNews() {
       })
       .filter(Boolean);
 
-    // Re-render chart with annotations (preserve avgLine)
-    if (_chartInst && _newsArticles.length) {
-      const existing = _chartInst.options.plugins.annotation.annotations || {};
-      const avgLine  = existing['avgLine'];
-      const merged   = buildAnnotations(_chartInst.data.labels, _chartInst.data.datasets[0].data);
-      if (avgLine) merged['avgLine'] = avgLine;
-      _chartInst.options.plugins.annotation.annotations = merged;
-      _chartInst.update('none');
-      setTimeout(_updateAnnotPixels, 60); // refresh hit-test positions
+    // Re-render chart with annotations (preserve avgLine) — isolated try so news still shows on error
+    try {
+      if (_chartInst && _newsArticles.length) {
+        const existing = _chartInst.options.plugins.annotation.annotations || {};
+        const avgLine  = existing['avgLine'];
+        const merged   = buildAnnotations(_chartInst.data.labels, _chartInst.data.datasets[0].data);
+        if (avgLine) merged['avgLine'] = avgLine;
+        _chartInst.options.plugins.annotation.annotations = merged;
+        _chartInst.update('none');
+        setTimeout(_updateAnnotPixels, 60);
+      }
+    } catch(annotErr) {
+      console.warn('annotation update skipped', annotErr);
     }
 
     if (!articles.length) {
