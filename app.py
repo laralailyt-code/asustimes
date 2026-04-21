@@ -285,8 +285,37 @@ def _fetch_article_snippet(url: str, max_chars: int = 150) -> str:
     return ""
 
 
+_LOW_VALUE_TITLE_KW = [
+    "展覽", "論壇", "研討會", "出席", "參展", "邀請函", "招募", "徵才", "開幕",
+    "記者會通知", "頒獎", "得獎名單", "活動報名", "免費報名",
+]
+_HIGH_VALUE_TITLE_KW = [
+    "億", "百億", "兆", "市佔", "季報", "財報", "年報", "EPS", "營收", "毛利",
+    "量產", "出貨", "導入", "突破", "裁員", "漲價", "降價", "合作", "收購",
+    "投資", "布局", "超越", "首款", "新一代", "發布", "上市",
+]
+
+
+def _article_score(a: dict) -> int:
+    title   = a.get("title", "")
+    summary = a.get("summary", "") or ""
+    score   = 50
+    for kw in _LOW_VALUE_TITLE_KW:
+        if kw in title:
+            score -= 25
+    for kw in _HIGH_VALUE_TITLE_KW:
+        if kw in title or kw in summary:
+            score += 12
+    if len(summary) > 40:
+        score += 8
+    return score
+
+
 @app.route("/api/digest")
 def api_digest():
+    import re as _re
+    from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _ac
+
     category = request.args.get("category", "").strip()
     if not category or category == "全部":
         return jsonify({"error": "select a category"}), 400
@@ -301,19 +330,59 @@ def api_digest():
     with _cache_lock:
         all_articles = list(_cache["articles"])
 
-    # Prefer today's articles; fall back to latest
+    # Prefer today's articles; fall back to latest 48h
     cat_articles = [
         a for a in all_articles
         if a.get("category") == category
         and (a.get("published") or a.get("fetched_at", ""))[:10] == today
     ]
     if len(cat_articles) < 3:
-        cat_articles = [a for a in all_articles if a.get("category") == category][:12]
+        cutoff = (date_cls.today() - timedelta(days=2)).isoformat()
+        cat_articles = [
+            a for a in all_articles
+            if a.get("category") == category
+            and (a.get("published") or a.get("fetched_at", ""))[:10] >= cutoff
+        ]
+    if not cat_articles:
+        cat_articles = [a for a in all_articles if a.get("category") == category][:15]
 
     if not cat_articles:
         return jsonify({"category": category, "points": [], "articles": [], "ai_powered": False})
 
-    top = cat_articles[:10]
+    # Sort by quality score; keep top candidates for AI
+    ranked = sorted(cat_articles, key=_article_score, reverse=True)
+    top    = ranked[:12]
+
+    # Fetch article snippets in parallel to give AI real content
+    def _clean_rss(title: str, raw: str) -> str:
+        s = (raw or "").strip()
+        if not s:
+            return ""
+        t_n = _re.sub(r'[\s\-–—·|•]+', '', title).lower()
+        s_n = _re.sub(r'[\s\-–—·|•]+', '', s).lower()
+        if s_n.startswith(t_n):
+            s = s[len(title):].lstrip(" -–—\t").strip()
+        s = _re.sub(r'\s*[-–—]\s*\S[\w\s]{1,30}$', '', s).strip()
+        return s
+
+    snippets: dict[int, str] = {}
+    for i, a in enumerate(top):
+        snippets[i] = _clean_rss(a.get("title", ""), a.get("summary") or "")
+
+    needs_fetch = [i for i, a in enumerate(top) if len(snippets[i]) < 30 and a.get("source_url")]
+    if needs_fetch:
+        with _TPE(max_workers=min(len(needs_fetch), 6)) as ex:
+            futs = {ex.submit(_fetch_article_snippet, top[i].get("source_url", ""), 200): i
+                    for i in needs_fetch}
+            for fut in _ac(futs, timeout=14):
+                i = futs[fut]
+                try:
+                    fetched = fut.result()
+                    if fetched and len(fetched) > 30:
+                        snippets[i] = fetched
+                except Exception:
+                    pass
+
     article_links = [
         {
             "title":     a["title"],
@@ -321,7 +390,7 @@ def api_digest():
             "source":    a.get("source", ""),
             "published": (a.get("published") or "")[:10],
         }
-        for a in cat_articles[:6]
+        for a in ranked[:6]
     ]
 
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -331,86 +400,48 @@ def api_digest():
     if api_key and _ANTHROPIC_AVAILABLE:
         try:
             articles_text = "\n".join([
-                f"{i+1}. {a['title']}：{a.get('summary', '')}"
-                for i, a in enumerate(top)
+                f"{i+1}. {top[i]['title']}｜{snippets.get(i, '')}"
+                for i in range(len(top))
             ])
             client = _anthropic_lib.Anthropic(api_key=api_key)
             msg = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=600,
+                model="claude-sonnet-4-6",
+                max_tokens=700,
                 messages=[{
                     "role": "user",
                     "content": (
-                        f"以下是「{category}」類別的最新科技新聞：\n\n{articles_text}\n\n"
-                        "請用繁體中文，條列出4-5條今日最重要的新聞重點。\n"
-                        "要求：每條重點用一句話（30-60字）說明核心資訊與產業意義；"
-                        "聚焦不同主題，避免重複；每條前加「•」；只輸出條列內容，不要標題或說明。"
+                        f"以下是「{category}」類別的近期科技新聞（標題｜內文摘要）：\n\n{articles_text}\n\n"
+                        "請用繁體中文，從中嚴格篩選出 3–5 條「真正值得關注的焦點」。\n\n"
+                        "【選入標準】具體數字（金額、出貨量、市佔率）、重大合作/收購/投資、"
+                        "技術突破、產業政策轉折、供應鏈重組。\n"
+                        "【排除標準】活動通知、展覽、人事任命（除非影響重大）、"
+                        "一般產品發表、重複主題、內容空洞的標題新聞。\n\n"
+                        "要求：每條一句話（40–70字），說明核心事實與產業意義，不要轉述標題；"
+                        "每條前加「•」；只輸出條列內容，不要加任何說明或標題。\n"
+                        "若無真正重要的新聞，請只輸出：NONE"
                     ),
                 }],
             )
             raw = msg.content[0].text.strip()
-            points = [
-                line.strip().lstrip("•·▪▸►→- ").strip()
-                for line in raw.split("\n")
-                if line.strip() and len(line.strip()) > 8
-            ]
+            if raw != "NONE":
+                points = [
+                    line.strip().lstrip("•·▪▸►→- ").strip()
+                    for line in raw.split("\n")
+                    if line.strip() and len(line.strip()) > 15
+                ]
             ai_powered = True
         except Exception as e:
             logger.warning(f"Digest AI error: {e}")
 
-    # Fallback: clean RSS summary (often just title+source), fetch snippet if still empty
+    # Fallback: only show articles that have substantive snippets
     if not points:
-        import re as _re
-        from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _ac
-
-        def _norm(t: str) -> str:
-            """Normalize for comparison: remove dashes/spaces/punctuation, lowercase."""
-            return _re.sub(r'[\s\-–—·|·•]+', '', t).lower()
-
-        def _clean_rss_summary(title: str, raw: str) -> str:
-            """Remove title/source repetition common in Google News RSS descriptions."""
-            s = raw.strip()
-            if not s:
-                return ""
-            # Normalized comparison handles "Title - Source" vs "Title Source" variants
-            t_norm = _norm(title)
-            s_norm = _norm(s)
-            if s_norm.startswith(t_norm) or s_norm == t_norm:
-                # Discard the title-equivalent portion from the start
-                s = s[len(title):].lstrip(" -–—\t").strip() if len(s) > len(title) else ""
-            elif s.lower().startswith(title.lower()):
-                s = s[len(title):].lstrip(" -–—\t").strip()
-            # Strip trailing source suffix like "- DIGITIMES" or "TechNews 科技新報"
-            s = _re.sub(r'\s*[-–—]\s*\S[\w\s]{1,30}$', '', s).strip()
-            return s
-
-        candidates: list[tuple] = []  # (article, title, snippet)
-        for a in top[:5]:
-            title = a["title"]
-            snippet = _clean_rss_summary(title, a.get("summary") or "")
-            candidates.append((a, title, snippet))
-
-        # Fetch article snippets in parallel for items with no useful summary
-        needs_fetch = [(i, a) for i, (a, title, snippet) in enumerate(candidates) if len(snippet) < 25]
-        if needs_fetch:
-            with _TPE(max_workers=min(len(needs_fetch), 5)) as ex:
-                futs = {ex.submit(_fetch_article_snippet, a.get("source_url", "")): i
-                        for i, a in needs_fetch if a.get("source_url")}
-                for fut in _ac(futs, timeout=12):
-                    idx = futs[fut]
-                    try:
-                        fetched = fut.result()
-                        if fetched:
-                            a, title, _ = candidates[idx]
-                            candidates[idx] = (a, title, fetched)
-                    except Exception:
-                        pass
-
-        for a, title, snippet in candidates:
-            if snippet and len(snippet) > 25:
-                points.append(f"{title}　{snippet}")
-            else:
-                points.append(title)
+        for i, a in enumerate(top[:6]):
+            snippet = snippets.get(i, "")
+            if len(snippet) > 40:
+                points.append(f"{a['title']}　{snippet[:120]}")
+        # No good content → hide digest entirely
+        if not points:
+            return jsonify({"category": category, "points": [], "articles": [], "ai_powered": False})
 
     result = {
         "date":       today,
