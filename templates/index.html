@@ -939,16 +939,18 @@ document.getElementById('themeToggle').addEventListener('click', () => {
 });
 
 // ── Mobile search toggle ───────────────────────────────────
-document.getElementById('searchToggle')?.addEventListener('click', () => {
-  const bar = document.getElementById('mobileSearchBar');
+var _searchToggleEl = document.getElementById('searchToggle');
+if (_searchToggleEl) _searchToggleEl.addEventListener('click', function() {
+  var bar = document.getElementById('mobileSearchBar');
   bar.classList.toggle('open');
   if (bar.classList.contains('open'))
     document.getElementById('mobileSearchInput').focus();
 });
 let mobileSearchTimer;
-document.getElementById('mobileSearchInput')?.addEventListener('input', e => {
+var _mobileInputEl = document.getElementById('mobileSearchInput');
+if (_mobileInputEl) _mobileInputEl.addEventListener('input', function(e) {
   clearTimeout(mobileSearchTimer);
-  mobileSearchTimer = setTimeout(() => {
+  mobileSearchTimer = setTimeout(function() {
     state.q = e.target.value.trim();
     state.page = 1; loadNews();
   }, 380);
@@ -1375,7 +1377,7 @@ function renderMarketSidebar() {
 }
 
 function renderMarketItems() {
-  const items = _marketData.filter(d => d.category === _activeCat && d.latest !== null && d.latest !== undefined);
+  const items = _marketData.filter(d => d.category === _activeCat && d.latest != null && d.latest > 0);
   const wrap  = document.getElementById('marketItemBtns');
   wrap.innerHTML = items.map(d =>
     `<button class="mitem-btn${d.name===_activeItem?' active':''}" onclick="selectMarketItem('${esc(d.name)}')">${esc(shortName(d.name))}</button>`
