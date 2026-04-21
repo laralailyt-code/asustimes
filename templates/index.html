@@ -579,14 +579,14 @@
     .market-sidebar-title { display: none; }
     .mcat-btn { width: auto; white-space: nowrap; flex-shrink: 0; display: inline-block; }
     /* Main area */
-    .market-main { display: flex; flex-direction: column; gap: 0.4rem; }
+    .market-main { display: flex; flex-direction: column; gap: 0.4rem; width: 100%; min-width: 0; flex: none; }
     /* Toolbar: 2 rows, buttons wrap within screen */
-    .market-toolbar { flex-direction: column; gap: 0.35rem; overflow: visible; flex-shrink: 0; }
+    .market-toolbar { flex-direction: column; gap: 0.35rem; overflow: visible; flex-shrink: 0; width: 100%; }
     .market-item-btns { flex-wrap: wrap; overflow-x: visible; width: 100%; }
     .time-btns { flex-shrink: 0; width: 100%; }
-    /* Chart: fixed height so it doesn't jump */
-    .chart-card { padding: 0.75rem; margin-bottom: 0; }
-    .chart-wrap { height: 240px !important; }
+    /* Chart: fixed height, full width */
+    .chart-card { padding: 0.75rem; margin-bottom: 0; width: 100%; box-sizing: border-box; }
+    .chart-wrap { height: 240px !important; width: 100%; }
     /* Related news: hidden on mobile */
     .market-news-title, .market-news-list { display: none; }
     /* Cards */
