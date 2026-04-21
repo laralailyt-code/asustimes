@@ -503,6 +503,7 @@
   }
   .chart-change-up   { color: #34d399; font-size: 0.85rem; font-weight: 600; }
   .chart-change-down { color: #f87171; font-size: 0.85rem; font-weight: 600; }
+  #chartAvg { font-size: 0.78rem; color: #f59e0b; font-weight: 600; margin-top: 0.12rem; margin-bottom: 0.4rem; }
   .chart-wrap { position: relative; height: 280px; }
   .custom-range-row {
     display: flex; align-items: center; gap: 0.5rem;
@@ -564,38 +565,29 @@
     .tab { white-space: nowrap; }
     /* Page nav */
     .page-nav-btn { font-size: 0.78rem; padding: 0.45rem 0.75rem; }
-    /* Market page: full viewport, no page scroll */
-    #marketPage { padding: 0.5rem 0.6rem; box-sizing: border-box;
-      height: calc(100dvh - 98px); overflow: hidden; display: flex; flex-direction: column; }
-    .market-layout { flex-direction: column; gap: 0.4rem; flex: 1; overflow: hidden; min-height: 0; }
+    /* Market page: scrollable, no fixed viewport lock */
+    #marketPage { padding: 0.5rem 0.6rem; box-sizing: border-box; overflow-y: auto; }
+    .market-layout { flex-direction: column; gap: 0.4rem; }
     .market-sidebar {
       width: 100%; position: static; flex-shrink: 0;
-      padding: 0.3rem 0.4rem;
-    }
-    .market-sidebar-title { display: none; }
-    /* Sidebar: horizontal scroll row */
-    .market-sidebar {
       display: flex; flex-wrap: nowrap;
-      overflow-x: auto; gap: 0.3rem;
+      overflow-x: auto; gap: 0.3rem; padding: 0.3rem 0.1rem;
       -webkit-overflow-scrolling: touch; scrollbar-width: none;
       background: transparent; border: none; border-radius: 0;
     }
     .market-sidebar::-webkit-scrollbar { display: none; }
+    .market-sidebar-title { display: none; }
     .mcat-btn { width: auto; white-space: nowrap; flex-shrink: 0; display: inline-block; }
-    /* Main area: fill remaining height */
-    .market-main { flex: 1; overflow: hidden; display: flex; flex-direction: column; gap: 0.4rem; min-height: 0; }
-    .market-toolbar { flex-direction: column; gap: 0.35rem; overflow: visible; flex-shrink: 0; flex-wrap: nowrap; }
-    .market-item-btns { flex-wrap: nowrap; overflow-x: auto; width: 100%;
-      -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-    .market-item-btns::-webkit-scrollbar { display: none; }
-    .time-btns { flex-shrink: 0; width: 100%; overflow-x: auto;
-      -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-    .time-btns::-webkit-scrollbar { display: none; }
-    /* Chart card: fill remaining space */
-    .chart-card { flex: 1; overflow: hidden; display: flex; flex-direction: column;
-      padding: 0.75rem; margin-bottom: 0; min-height: 0; }
-    .chart-wrap { flex: 1; height: auto !important; min-height: 0; }
-    /* Related news: hidden on mobile (no room) */
+    /* Main area */
+    .market-main { display: flex; flex-direction: column; gap: 0.4rem; }
+    /* Toolbar: 2 rows, buttons wrap within screen */
+    .market-toolbar { flex-direction: column; gap: 0.35rem; overflow: visible; flex-shrink: 0; }
+    .market-item-btns { flex-wrap: wrap; overflow-x: visible; width: 100%; }
+    .time-btns { flex-shrink: 0; width: 100%; }
+    /* Chart: fixed height so it doesn't jump */
+    .chart-card { padding: 0.75rem; margin-bottom: 0; }
+    .chart-wrap { height: 240px !important; }
+    /* Related news: hidden on mobile */
     .market-news-title, .market-news-list { display: none; }
     /* Cards */
     .news-card { padding: 0.9rem; }
@@ -870,6 +862,7 @@
         <div class="chart-meta" id="chartMeta"></div>
         <div class="chart-latest" id="chartLatest">—</div>
         <div id="chartChange"></div>
+        <div id="chartAvg"></div>
         <div class="chart-wrap"><canvas id="marketChart"></canvas></div>
       </div>
       <!-- Related news -->
@@ -1548,6 +1541,15 @@ function renderChart() {
     chEl.textContent = ''; chEl.className = '';
   }
 
+  // Average price for selected range
+  const avg    = nonNull.length ? nonNull.reduce((s, x) => s + x.v, 0) / nonNull.length : null;
+  const avgEl  = document.getElementById('chartAvg');
+  if (avg !== null) {
+    avgEl.textContent = `區間均價  ${avg.toLocaleString(undefined, {maximumFractionDigits: 2})}${item.unit ? '  ' + item.unit : ''}`;
+  } else {
+    avgEl.textContent = '';
+  }
+
   // No data
   if (!nonNull.length) {
     if (_chartInst) { _chartInst.destroy(); _chartInst = null; }
@@ -1563,6 +1565,27 @@ function renderChart() {
   const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
   const textColor = isDark ? '#8892aa' : '#64748b';
   const ctx       = document.getElementById('marketChart').getContext('2d');
+
+  // Build annotations: news dots + average line
+  const annotations = buildAnnotations(dates, values);
+  if (avg !== null) {
+    annotations['avgLine'] = {
+      type: 'line',
+      yMin: avg, yMax: avg,
+      borderColor: 'rgba(245, 158, 11, 0.85)',
+      borderWidth: 1.5,
+      borderDash: [6, 4],
+      label: {
+        display: true,
+        content: `均 ${avg.toLocaleString(undefined, {maximumFractionDigits: 1})}`,
+        position: 'end',
+        color: '#f59e0b',
+        font: { size: 11, weight: '600', family: "'Noto Sans TC', sans-serif" },
+        backgroundColor: 'rgba(0,0,0,0)',
+        padding: { x: 4, y: 2 },
+      }
+    };
+  }
 
   if (_chartInst) _chartInst.destroy();
   _chartInst = new Chart(ctx, {
@@ -1586,7 +1609,7 @@ function renderChart() {
         tooltip: {
           callbacks: { label: c => c.parsed.y != null ? c.parsed.y.toLocaleString() + ' ' + (item.unit||'') : '—' }
         },
-        annotation: { annotations: buildAnnotations(dates, values) }
+        annotation: { annotations }
       },
       scales: {
         x: { ticks: { color: textColor, maxTicksLimit: 8 }, grid: { color: gridColor } },
@@ -1625,10 +1648,13 @@ async function renderMarketNews() {
       })
       .filter(Boolean);
 
-    // Re-render chart with annotations
+    // Re-render chart with annotations (preserve avgLine)
     if (_chartInst && _newsArticles.length) {
-      _chartInst.options.plugins.annotation.annotations =
-        buildAnnotations(_chartInst.data.labels, _chartInst.data.datasets[0].data);
+      const existing = _chartInst.options.plugins.annotation.annotations || {};
+      const avgLine  = existing['avgLine'];
+      const merged   = buildAnnotations(_chartInst.data.labels, _chartInst.data.datasets[0].data);
+      if (avgLine) merged['avgLine'] = avgLine;
+      _chartInst.options.plugins.annotation.annotations = merged;
       _chartInst.update('none');
       setTimeout(_updateAnnotPixels, 60); // refresh hit-test positions
     }
