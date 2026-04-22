@@ -898,13 +898,17 @@ def _refresh_live_prices():
             logger.info(f"TradingEconomics: {csv_name} = {val}")
 
     # 5. ebaiyin.com: tungsten rod 1# (元/千克) — monthly history + today's price
-    _EBAIYIN_TUNGSTEN_NAME = "鎢 1#鎢條 (元/千克)"
+    _EBAIYIN_TUNGSTEN_NAME = "鎢"
     tungsten_latest, tungsten_history = _fetch_ebaiyin_tungsten()
     if tungsten_latest is not None or tungsten_history:
         with _live_cache_lock:
             prev = list(_live_commodity_cache.get(_EBAIYIN_TUNGSTEN_NAME, []))
-        # Merge: monthly history as base, then existing daily points, then today
-        merged: dict = {d: p for d, p in tungsten_history}
+        # Exclude current month from monthly averages — daily data covers it more accurately.
+        # Monthly dates are stored as YYYY-MM-01; skip any that match today's YYYY-MM.
+        this_month = today[:7]  # "YYYY-MM"
+        past_monthly = [(d, p) for d, p in tungsten_history if d[:7] != this_month]
+        # Merge: past monthly history as base, then existing daily points, then today
+        merged: dict = {d: p for d, p in past_monthly}
         for d, p in prev:
             merged[d] = p
         if tungsten_latest is not None:
@@ -1072,10 +1076,16 @@ def _parse_commodity_csv() -> dict:
             else:
                 # Item only exists in live cache (no CSV history) — create entry
                 unit = ""
-                for u in ["US$/tonne", "CNY$/tonne", "US$/盎司", "US$/桶", "USD/T"]:
-                    if u in csv_name:
-                        unit = u
+                _LIVE_UNIT_OVERRIDES = {"鎢": "元/千克"}
+                for name_key, u_val in _LIVE_UNIT_OVERRIDES.items():
+                    if name_key == csv_name:
+                        unit = u_val
                         break
+                if not unit:
+                    for u in ["US$/tonne", "CNY$/tonne", "US$/盎司", "US$/桶", "USD/T"]:
+                        if u in csv_name:
+                            unit = u
+                            break
                 cat = "其他"
                 for key, c in item_to_cat.items():
                     if key in csv_name:
@@ -1179,6 +1189,129 @@ def api_commodity_history():
     if not d:
         return jsonify({"dates": [], "values": []})
     return jsonify({"dates": d["dates"], "values": d["values"]})
+
+
+# ── Supply Chain Risk Monitor ─────────────────────────────────────────────────
+
+_SUPPLY_CHAIN_CLUSTERS = [
+    {"id": "hsinchu",    "name": "新竹",     "name_en": "Hsinchu",        "lat": 24.76, "lng": 120.99, "industries": ["半導體", "IC設計"],      "region": "TW"},
+    {"id": "taichung",   "name": "台中",     "name_en": "Taichung",       "lat": 24.15, "lng": 120.68, "industries": ["精密製造", "電子"],       "region": "TW"},
+    {"id": "shenzhen",   "name": "深圳",     "name_en": "Shenzhen",       "lat": 22.54, "lng": 114.06, "industries": ["消費電子", "PCB"],         "region": "CN"},
+    {"id": "kunshan",    "name": "昆山",     "name_en": "Kunshan",        "lat": 31.39, "lng": 121.16, "industries": ["PCB", "NB代工"],          "region": "CN"},
+    {"id": "zhengzhou",  "name": "鄭州",     "name_en": "Zhengzhou",      "lat": 34.75, "lng": 113.62, "industries": ["手機組裝", "EMS"],         "region": "CN"},
+    {"id": "shanghai",   "name": "上海",     "name_en": "Shanghai",       "lat": 31.23, "lng": 121.47, "industries": ["汽車電子", "IC設計"],      "region": "CN"},
+    {"id": "penang",     "name": "檳城",     "name_en": "Penang",         "lat": 5.41,  "lng": 100.33, "industries": ["IC封測", "電子製造"],      "region": "MY"},
+    {"id": "pyeongtaek", "name": "平澤",     "name_en": "Pyeongtaek",     "lat": 36.99, "lng": 127.11, "industries": ["DRAM", "NAND Flash"],     "region": "KR"},
+    {"id": "icheon",     "name": "利川",     "name_en": "Icheon",         "lat": 37.27, "lng": 127.44, "industries": ["DRAM", "記憶體"],          "region": "KR"},
+    {"id": "kumamoto",   "name": "熊本",     "name_en": "Kumamoto",       "lat": 32.80, "lng": 130.71, "industries": ["晶圓代工", "半導體"],       "region": "JP"},
+    {"id": "osaka",      "name": "大阪",     "name_en": "Osaka",          "lat": 34.69, "lng": 135.50, "industries": ["OLED", "感測器"],          "region": "JP"},
+    {"id": "san_jose",   "name": "矽谷",     "name_en": "Silicon Valley", "lat": 37.34, "lng": -121.89,"industries": ["AI晶片", "Fabless"],      "region": "US"},
+    {"id": "austin",     "name": "奧斯汀",   "name_en": "Austin TX",      "lat": 30.27, "lng": -97.74, "industries": ["晶圓廠", "資料中心"],      "region": "US"},
+    {"id": "dresden",    "name": "德勒斯登", "name_en": "Dresden",        "lat": 51.05, "lng": 13.74,  "industries": ["汽車晶片", "半導體"],      "region": "EU"},
+    {"id": "eindhoven",  "name": "恩荷芬",   "name_en": "Eindhoven",      "lat": 51.44, "lng": 5.48,   "industries": ["半導體設備", "EUV"],       "region": "EU"},
+]
+
+_RISK_KEYWORDS = {
+    "disaster":     ["地震", "颱風", "颶風", "洪水", "火災", "海嘯", "停電", "earthquake", "typhoon", "flood", "hurricane", "tsunami", "disaster"],
+    "geopolitical": ["制裁", "關稅", "禁令", "出口管制", "貿易戰", "tariff", "sanction", "ban", "export control", "trade war", "chip war"],
+    "operational":  ["罷工", "限電", "缺料", "斷鏈", "停工", "產能", "strike", "blackout", "shortage", "disruption", "halt"],
+    "financial":    ["破產", "虧損", "裁員", "信評", "倒閉", "財報", "獲利預警", "虧損擴大",
+                     "bankruptcy", "layoff", "downgrade", "profit warning", "earnings miss", "default"],
+}
+
+_CLUSTER_KEYWORDS = {
+    "hsinchu":    ["新竹", "竹科", "台積電", "TSMC", "聯電", "UMC", "聯發科", "MediaTek"],
+    "taichung":   ["台中", "中科"],
+    "shenzhen":   ["深圳", "Shenzhen", "比亞迪", "BYD"],
+    "kunshan":    ["昆山", "Kunshan"],
+    "zhengzhou":  ["鄭州", "Zhengzhou", "富士康", "Foxconn", "鴻海"],
+    "shanghai":   ["上海", "Shanghai", "張江", "浦東"],
+    "penang":     ["檳城", "Penang", "馬來西亞", "Malaysia"],
+    "pyeongtaek": ["平澤", "Pyeongtaek", "三星", "Samsung"],
+    "icheon":     ["利川", "Icheon", "SK海力士", "SK Hynix", "海力士"],
+    "kumamoto":   ["熊本", "Kumamoto", "TSMC日本", "JASM"],
+    "osaka":      ["大阪", "Osaka", "夏普", "Sharp", "Japan Display", "JDI", "Sony"],
+    "san_jose":   ["矽谷", "Silicon Valley", "聖荷西", "NVIDIA", "AMD", "Qualcomm", "加州"],
+    "austin":     ["奧斯汀", "Austin", "德州", "Texas"],
+    "dresden":    ["德勒斯登", "Dresden", "英飛凌", "Infineon"],
+    "eindhoven":  ["恩荷芬", "Eindhoven", "ASML", "艾司摩爾", "荷蘭"],
+}
+
+_REGION_LABELS = {
+    "TW": "🇹🇼 台灣", "CN": "🇨🇳 中國", "KR": "🇰🇷 韓國",
+    "JP": "🇯🇵 日本", "US": "🇺🇸 美國", "MY": "🇲🇾 東南亞", "EU": "🇪🇺 歐洲",
+}
+
+_RISK_TYPE_LABELS = {
+    "disaster":     "🌊 天災",
+    "geopolitical": "🚨 地緣",
+    "operational":  "⚡ 停運",
+    "financial":    "💸 財警",
+}
+
+
+@app.route("/api/risk")
+def api_risk():
+    """Supply chain risk monitor: cluster risk scores + tagged news."""
+    with _cache_lock:
+        articles = list(_cache["articles"])
+
+    now = datetime.now(timezone(timedelta(hours=8)))
+    cutoff_7d = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+    recent = [a for a in articles
+              if (a.get("published") or a.get("fetched_at", ""))[:10] >= cutoff_7d]
+
+    # Score each cluster: match cluster keywords + risk keywords in recent articles
+    weights = {"disaster": 30, "geopolitical": 20, "operational": 15, "financial": 10}
+    cluster_scores = {c["id"]: 0 for c in _SUPPLY_CHAIN_CLUSTERS}
+    for article in recent:
+        text = (article.get("title", "") + " " + article.get("summary", "")).lower()
+        for cid, ckws in _CLUSTER_KEYWORDS.items():
+            if any(kw.lower() in text for kw in ckws):
+                for rtype, rkws in _RISK_KEYWORDS.items():
+                    if any(rk.lower() in text for rk in rkws):
+                        cluster_scores[cid] = min(100, cluster_scores[cid] + weights.get(rtype, 10))
+
+    # Tag articles for news walls
+    regional_events, financial_warnings = [], []
+    seen: set = set()
+    for article in articles[:400]:
+        url = article.get("source_url") or article.get("url", "")
+        if url in seen:
+            continue
+        seen.add(url)
+        text = (article.get("title", "") + " " + article.get("summary", "")).lower()
+        risk_types = [rt for rt, rkws in _RISK_KEYWORDS.items()
+                      if any(rk.lower() in text for rk in rkws)]
+        if not risk_types:
+            continue
+        region_tags, industry_tags = set(), set()
+        for c in _SUPPLY_CHAIN_CLUSTERS:
+            if any(kw.lower() in text for kw in _CLUSTER_KEYWORDS.get(c["id"], [])):
+                region_tags.add(_REGION_LABELS.get(c["region"], c["region"]))
+                industry_tags.update(c["industries"][:2])
+        item = {
+            "title":         article.get("title"),
+            "url":           url,
+            "published":     article.get("published"),
+            "source":        article.get("source"),
+            "risk_types":    [_RISK_TYPE_LABELS[rt] for rt in risk_types],
+            "region_tags":   sorted(region_tags)[:3],
+            "industry_tags": sorted(industry_tags)[:4],
+        }
+        if "financial" in risk_types:
+            financial_warnings.append(item)
+        else:
+            regional_events.append(item)
+
+    clusters_out = [{**c, "risk_score": cluster_scores.get(c["id"], 0)}
+                    for c in _SUPPLY_CHAIN_CLUSTERS]
+    return jsonify({
+        "clusters":           clusters_out,
+        "regional_events":    regional_events[:50],
+        "financial_warnings": financial_warnings[:50],
+        "last_updated":       now.strftime("%Y-%m-%d %H:%M"),
+    })
 
 
 if __name__ == "__main__":
