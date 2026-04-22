@@ -638,7 +638,6 @@ _TE_SLUGS = {
     "cobalt":     ("鈷 (cobalt) US$/tonne",      1.0),       # TE in USD/tonne ✓
     "lithium":    ("鋰 (Lithium) CNY$/tonne",    1.0),       # TE in CNY/tonne ✓
     "phosphorus": ("黃磷 CNY$/tonne",            29.4274),   # TE in CNY/百kg → CNY/tonne
-    "tungsten":   ("鎢 (tungsten) US$/tonne",    1.0),       # TE in USD/tonne
 }
 
 
@@ -771,6 +770,27 @@ def _fetch_te_price(slug: str) -> float | None:
     return None
 
 
+def _fetch_smm_tungsten_price() -> float | None:
+    """Scrape black tungsten concentrate (≥65%) average price from SMM h5 page.
+    Page is server-rendered; pattern: {low} - {high} | {avg} | {change} | 元/标吨
+    """
+    import re
+    try:
+        r = req_lib.get(
+            "https://hq.smm.cn/h5/tungsten-ore-price",
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+                     "Accept-Language": "zh-CN,zh;q=0.9"},
+            timeout=12
+        )
+        # Match: {range} | {avg} | {change} | 元/标吨  — first match = black tungsten ≥65%
+        m = re.search(r'[\d,]+\s*-\s*[\d,]+[^|]*\|\s*([\d,]+)\s*\|\s*[-\d,]+\s*\|\s*元/标吨', r.text)
+        if m:
+            return float(m.group(1).replace(',', ''))
+    except Exception as e:
+        logger.warning(f"SMM tungsten scrape: {e}")
+    return None
+
+
 def _refresh_live_prices():
     """Fetch commodity & FX prices with 1-year history. Called on startup and periodically."""
     today = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
@@ -858,6 +878,20 @@ def _refresh_live_prices():
             sources[csv_name] = {"label": "Trading Economics",
                                  "url":   f"https://tradingeconomics.com/commodity/{slug}"}
             logger.info(f"TradingEconomics: {csv_name} = {val}")
+
+    # 5. SMM: black tungsten concentrate ≥65% (latest point only)
+    _SMM_TUNGSTEN_NAME = "鎢精礦 (黑鎢 ≥65%) CNY$/標準噸"
+    tungsten_price = _fetch_smm_tungsten_price()
+    if tungsten_price is not None:
+        with _live_cache_lock:
+            prev = list(_live_commodity_cache.get(_SMM_TUNGSTEN_NAME, []))
+        existing_dates = {d for d, _ in prev}
+        if today not in existing_dates:
+            prev.append((today, tungsten_price))
+        fresh[_SMM_TUNGSTEN_NAME]   = prev
+        sources[_SMM_TUNGSTEN_NAME] = {"label": "上海有色網 SMM",
+                                       "url":   "https://hq.smm.cn/h5/tungsten-ore-price"}
+        logger.info(f"SMM tungsten: {_SMM_TUNGSTEN_NAME} = {tungsten_price}")
 
     with _live_cache_lock:
         _live_commodity_cache.update(fresh)
