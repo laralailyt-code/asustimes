@@ -605,6 +605,8 @@ _LIVE_FX_YF_SYMBOLS = {
     "INR=X": ("美元 / 印度幣",          1.0),
 }
 
+_TUNGSTEN_NAME = "鎢"
+
 _live_commodity_cache: dict = {}   # {csv_item_name: [(date_str, value)]}
 _live_cache_lock = threading.Lock()
 
