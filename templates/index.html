@@ -121,7 +121,12 @@
     border-bottom: 1px solid var(--border);
     padding: 0.6rem 1rem;
   }
-  .mobile-search-bar.open { display: flex; }
+  .mobile-search-bar.open {
+    display: flex;
+    position: sticky;
+    top: 54px;
+    z-index: 49;
+  }
   .mobile-search-bar .search-input { max-width: 100%; }
 
   .header-actions { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
@@ -434,6 +439,9 @@
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border);
     padding: 0 1.5rem;
+    position: sticky;
+    top: 62px;
+    z-index: 49;
   }
   .page-nav { display: flex; gap: 0; }
   .page-nav-btn {
@@ -447,6 +455,84 @@
 
   /* ── Market dashboard ── */
   #marketPage { display: none; }
+
+  /* ── User Guide page ── */
+  #guidePage { display: none; max-width: 860px; margin: 0 auto; padding: 1.4rem 1.5rem; }
+  .guide-page-title {
+    font-size: 1.2rem; font-weight: 700; color: var(--text-primary);
+    margin-bottom: 1.2rem; padding-bottom: 0.7rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .guide-item {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 12px; margin-bottom: 0.8rem; overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .guide-item:hover { border-color: var(--border-hover); }
+  .guide-item-header {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.9rem 1.1rem; cursor: pointer; user-select: none;
+    transition: background 0.15s;
+  }
+  .guide-item-header:hover { background: var(--bg-card-hover); }
+  .guide-item-icon { font-size: 1.1rem; flex-shrink: 0; }
+  .guide-item-title { font-size: 0.92rem; font-weight: 600; color: var(--text-primary); flex: 1; }
+  .guide-item-arrow {
+    color: var(--text-muted); font-size: 0.75rem; flex-shrink: 0;
+    transition: transform 0.2s;
+  }
+  .guide-item.open .guide-item-arrow { transform: rotate(90deg); }
+  .guide-item-body {
+    display: none; padding: 0 1.1rem 1.1rem;
+  }
+  .guide-item.open .guide-item-body { display: block; }
+  .guide-steps { list-style: none; padding: 0; }
+  .guide-steps li {
+    position: relative; padding: 0.45rem 0 0.45rem 1.4rem;
+    font-size: 0.84rem; color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+  }
+  .guide-steps li:last-child { border-bottom: none; }
+  .guide-steps li::before {
+    content: attr(data-n);
+    position: absolute; left: 0;
+    color: var(--accent-2); font-weight: 700; font-size: 0.78rem;
+  }
+  .guide-steps li strong { color: var(--text-primary); font-weight: 600; }
+  .guide-steps li .guide-val {
+    display: inline-block; background: var(--bg-secondary);
+    border: 1px solid var(--border); border-radius: 5px;
+    padding: 0.05rem 0.45rem; font-family: 'Inter', monospace;
+    font-size: 0.82rem; color: var(--accent-light); letter-spacing: 0.02em;
+    cursor: pointer; transition: border-color 0.15s;
+  }
+  .guide-steps li .guide-val:hover { border-color: var(--accent); }
+  .guide-link {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    color: var(--accent-2); font-size: 0.82rem; text-decoration: none;
+  }
+  .guide-link:hover { color: var(--accent-light); text-decoration: underline; }
+  .guide-note {
+    margin-top: 0.7rem; padding: 0.6rem 0.9rem;
+    background: rgba(255,193,7,0.08); border-left: 3px solid #f59e0b;
+    border-radius: 0 6px 6px 0; font-size: 0.8rem; color: var(--text-secondary);
+  }
+  .guide-contact {
+    margin-top: 0.7rem; padding: 0.55rem 0.9rem;
+    background: var(--glow-card); border: 1px solid var(--border);
+    border-radius: 8px; font-size: 0.8rem; color: var(--text-secondary);
+  }
+  .guide-contact strong { color: var(--text-primary); }
+  .guide-pwa-section { margin-top: 1rem; padding-top: 0.7rem; border-top: 1px solid var(--border); }
+  .guide-pwa-section:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+  .guide-pwa-platform { margin-bottom: 0.5rem; }
+  .guide-pwa-badge {
+    display: inline-block; padding: 0.2rem 0.7rem; border-radius: 20px;
+    font-size: 0.8rem; font-weight: 700; letter-spacing: 0.03em;
+  }
+  .guide-pwa-ios     { background: rgba(0,122,255,0.15); color: #60a5fa; border: 1px solid rgba(0,122,255,0.3); }
+  .guide-pwa-android { background: rgba(52,211,153,0.15); color: #34d399; border: 1px solid rgba(52,211,153,0.3); }
+  .guide-pwa-desktop { background: rgba(168,85,247,0.15); color: #c084fc; border: 1px solid rgba(168,85,247,0.3); }
   .market-layout { display: flex; gap: 1.2rem; align-items: flex-start; }
   .market-sidebar {
     width: 200px; flex-shrink: 0;
@@ -544,6 +630,8 @@
   /* ── Responsive ── */
   @media (max-width: 640px) {
     .header-inner { padding: 0 0.75rem; gap: 0.5rem; height: 54px; }
+    .page-nav-bar { top: 54px; }
+    .mobile-search-bar.open { top: 90px; }
     .logo-sub, .search-wrap { display: none; }
     .logo-mark { width: 32px; height: 32px; font-size: 1rem; }
     .logo-name { font-size: 1rem; }
@@ -711,6 +799,7 @@
   <nav class="page-nav">
     <button class="page-nav-btn active" id="navNews" onclick="switchPage('news')">📰 新聞</button>
     <button class="page-nav-btn" id="navMarket" onclick="switchPage('market')">📈 原物料匯率行情</button>
+    <button class="page-nav-btn" id="navGuide" onclick="switchPage('guide')">📖 使用指南</button>
   </nav>
 </div>
 
@@ -878,6 +967,91 @@
     </div>
   </div>
 </main>
+
+<!-- ── User Guide Page ─────────────────────────────────── -->
+<div id="guidePage">
+  <div class="guide-page-title">📖 使用指南</div>
+
+  <!-- Digitimes 資料庫 -->
+  <div class="guide-item" id="guide-digitimes">
+    <div class="guide-item-header" onclick="toggleGuide('guide-digitimes')">
+      <span class="guide-item-icon">🔐</span>
+      <span class="guide-item-title">Digitimes 研究資料庫 — 登入說明</span>
+      <span class="guide-item-arrow">▶</span>
+    </div>
+    <div class="guide-item-body">
+      <ol class="guide-steps">
+        <li data-n="1.">前往登入頁：<a class="guide-link" href="https://www.digitimes.com.tw/tech/lgn/lgn.asp?tourl=/index.asp" target="_blank" rel="noopener">Digitimes 登入 ↗</a></li>
+        <li data-n="2."><strong>第一次使用前</strong>，請先申請個人帳號（勿直接使用公司共用帳號）。</li>
+        <li data-n="3.">輸入公司會員帳號與密碼以進入申請流程：<br>
+          &nbsp;&nbsp;會員帳號：<span class="guide-val" title="點擊複製" onclick="copyText('XAA2C007',this)">XAA2C007</span>&nbsp;&nbsp;
+          會員密碼：<span class="guide-val" title="點擊複製" onclick="copyText('n7hperyw',this)">n7hperyw</span>
+        </li>
+        <li data-n="4.">填寫個人資料，請以<strong>公司 E-mail</strong> 設定個人帳號，密碼請自行設定。</li>
+        <li data-n="5.">完成申請後，信箱將收到確認信，點選「<strong>啟用</strong>」完成驗證。</li>
+        <li data-n="6.">若超過 10 分鐘未收到確認信，請聯繫窗口協助啟用。</li>
+        <li data-n="7.">個人帳號<strong>超過一年未使用</strong>需重新認證，輸入會員帳號 / 密碼認證後即可繼續使用。</li>
+        <li data-n="8.">個人化密碼可於「<strong>MY DIGITIMES</strong>」更改設定。</li>
+        <li data-n="9.">個人帳號開通後，下次可直接以「<strong>個人帳號 / 密碼</strong>」登入。</li>
+        <li data-n="10.">瀏覽完畢請點選「<strong>登出</strong>」，直接關閉瀏覽器將佔用公司授權，影響同仁使用。</li>
+      </ol>
+      <div class="guide-note">⚠️ 授權有限，使用完畢請務必登出，避免影響其他同仁。</div>
+      <div class="guide-contact">
+        <strong>華碩聯絡窗口：</strong>BISD Emmy_Yang &nbsp;|&nbsp; Ext. 23903
+      </div>
+    </div>
+  </div>
+
+  <!-- 加入手機 / 桌面 APP -->
+  <div class="guide-item" id="guide-pwa">
+    <div class="guide-item-header" onclick="toggleGuide('guide-pwa')">
+      <span class="guide-item-icon">📲</span>
+      <span class="guide-item-title">將 ASUSTIMES 加入手機 APP 與電腦桌面</span>
+      <span class="guide-item-arrow">▶</span>
+    </div>
+    <div class="guide-item-body">
+
+      <div class="guide-pwa-section">
+        <div class="guide-pwa-platform"><span class="guide-pwa-badge guide-pwa-ios">🍎 iOS（iPhone / iPad）</span></div>
+        <ol class="guide-steps">
+          <li data-n="1.">以 <strong>Safari</strong> 或 <strong>Chrome</strong> 開啟 ASUSTIMES 網站。</li>
+          <li data-n="2.">點擊下方（Safari）或右上角（Chrome）的「<strong>分享</strong>」按鈕（方塊加箭頭圖示 <span style="font-size:0.95em">⬆️</span>）。</li>
+          <li data-n="3.">在選單中向下捲動，點選「<strong>加入主畫面</strong>」。</li>
+          <li data-n="4.">名稱可修改（預設 ASUSTIMES），點右上角「<strong>新增</strong>」。</li>
+          <li data-n="5.">APP 圖示會出現在主畫面，開啟後為全螢幕無瀏覽器框的 APP 體驗。</li>
+        </ol>
+      </div>
+
+      <div class="guide-pwa-section">
+        <div class="guide-pwa-platform"><span class="guide-pwa-badge guide-pwa-android">🤖 Android</span></div>
+        <ol class="guide-steps">
+          <li data-n="1.">以 <strong>Chrome</strong> 開啟 ASUSTIMES 網站。</li>
+          <li data-n="2.">點擊右上角「<strong>⋮</strong>」選單。</li>
+          <li data-n="3.">選擇「<strong>新增至主畫面</strong>」或「<strong>安裝應用程式</strong>」（依 Chrome 版本顯示不同）。</li>
+          <li data-n="4.">點「<strong>新增</strong>」確認，APP 圖示即出現在桌面與 APP 抽屜中。</li>
+          <li data-n="5.">開啟後為全螢幕體驗，與原生 APP 相同。</li>
+        </ol>
+        <div class="guide-note" style="margin-top:0.5rem">💡 部分三星裝置可改用 <strong>Samsung Internet</strong> 瀏覽器，步驟相同。</div>
+      </div>
+
+      <div class="guide-pwa-section">
+        <div class="guide-pwa-platform"><span class="guide-pwa-badge guide-pwa-desktop">🖥️ 電腦桌面（Windows / Mac）</span></div>
+        <ol class="guide-steps">
+          <li data-n="1.">以 <strong>Chrome</strong> 或 <strong>Edge</strong> 開啟 ASUSTIMES 網站。</li>
+          <li data-n="2.">
+            <strong>Chrome：</strong>點網址列右側的「<span style="font-size:0.9em">⊕</span> 安裝」圖示，或點「⋮」選單 → 「<strong>儲存並分享</strong>」→「<strong>安裝網頁為應用程式…</strong>」。<br>
+            <strong>Edge：</strong>點「⋯」選單 → 「<strong>應用程式</strong>」→「<strong>將此網站安裝為應用程式</strong>」。
+          </li>
+          <li data-n="3.">名稱確認後點「<strong>安裝</strong>」，系統會在桌面新增捷徑。</li>
+          <li data-n="4.">開啟後為獨立視窗，無瀏覽器工具列，快速存取更方便。</li>
+        </ol>
+        <div class="guide-note" style="margin-top:0.5rem">💡 若網址列右側未出現安裝圖示，請確認網址是否為 <strong>https://</strong> 開頭（正式站）。</div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
 
 
 <div class="toast" id="toast"></div>
@@ -1305,20 +1479,40 @@ const poller = setInterval(async()=>{
 function switchPage(page) {
   const newsPage   = document.querySelector('main.main:not(#marketPage)');
   const marketPage = document.getElementById('marketPage');
+  const guidePage  = document.getElementById('guidePage');
   const mobileBar  = document.getElementById('mobileSearchBar');
+  // Hide all
+  newsPage.style.display   = 'none';
+  marketPage.style.display = 'none';
+  guidePage.style.display  = 'none';
+  mobileBar.classList.remove('open');
+  document.getElementById('navNews').classList.remove('active');
+  document.getElementById('navMarket').classList.remove('active');
+  document.getElementById('navGuide').classList.remove('active');
   if (page === 'market') {
-    newsPage.style.display   = 'none';
-    mobileBar.classList.remove('open'); // close search if open; CSS hides it on its own
     marketPage.style.display = 'block';
-    document.getElementById('navNews').classList.remove('active');
     document.getElementById('navMarket').classList.add('active');
     if (!window._marketLoaded) { loadMarket(); window._marketLoaded = true; }
+  } else if (page === 'guide') {
+    guidePage.style.display = 'block';
+    document.getElementById('navGuide').classList.add('active');
   } else {
-    newsPage.style.display   = '';
-    marketPage.style.display = 'none';
+    newsPage.style.display = '';
     document.getElementById('navNews').classList.add('active');
-    document.getElementById('navMarket').classList.remove('active');
   }
+}
+
+function toggleGuide(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('open');
+}
+
+function copyText(text, el) {
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = el.textContent;
+    el.textContent = '已複製!';
+    setTimeout(() => { el.textContent = orig; }, 1200);
+  });
 }
 
 // ── Market dashboard ───────────────────────────────────────
@@ -1356,14 +1550,22 @@ function applyCustomRange() {
   if (_customStart) { renderChart(); renderMarketNews(); }
 }
 
-async function loadMarket() {
+async function loadMarket(isRetry) {
   const wrap = document.getElementById('marketItemBtns');
-  wrap.innerHTML = '<span style="color:var(--text-muted);font-size:0.82rem">載入中…</span>';
-  document.getElementById('chartTitle').textContent = '載入中…';
+  if (!isRetry) {
+    wrap.innerHTML = '<span style="color:var(--text-muted);font-size:0.82rem">載入中…</span>';
+    document.getElementById('chartTitle').textContent = '載入中…';
+  }
   try {
     const res  = await fetch('/api/commodities');
     const data = await res.json();
     _marketData = data.items || [];
+    if (data.loading && !_marketData.length) {
+      wrap.innerHTML = '<span style="color:var(--text-muted);font-size:0.82rem">⏳ 資料準備中，稍後自動更新…</span>';
+      document.getElementById('chartTitle').textContent = '—';
+      setTimeout(() => loadMarket(true), 3000);
+      return;
+    }
     if (!_marketData.length) {
       wrap.innerHTML = '<span style="color:var(--text-muted);font-size:0.82rem">⚠️ 無原物料資料，請確認 CSV 檔案已上傳</span>';
       document.getElementById('chartTitle').textContent = '—';
@@ -1371,6 +1573,8 @@ async function loadMarket() {
     }
     renderMarketSidebar();
     renderMarketItems();
+    // If live prices were still loading, auto-refresh once they're ready
+    if (data.loading) setTimeout(() => loadMarket(true), 5000);
   } catch(e) {
     console.error('market load error', e);
     wrap.innerHTML = '<span style="color:#f87171;font-size:0.82rem">❌ 載入失敗</span>';
@@ -1393,8 +1597,7 @@ function renderMarketItems() {
   if (items.length && (!_activeItem || !items.find(d=>d.name===_activeItem))) {
     selectMarketItem(items[0].name);
   } else if (_activeItem) {
-    renderChart();
-    renderMarketNews();
+    selectMarketItem(_activeItem);
   }
 }
 
@@ -1405,12 +1608,23 @@ function shortName(name) {
     .replace(/\s+/g, ' ').trim();
 }
 
-function selectMarketItem(name) {
+let _activeItemHistory = { dates: [], values: [] };
+
+async function selectMarketItem(name) {
   _activeItem = name;
   _newsArticles = [];
   document.querySelectorAll('.mitem-btn').forEach(b =>
     b.classList.toggle('active', b.textContent.trim() === shortName(name))
   );
+  document.getElementById('chartTitle').textContent = shortName(name);
+  // Fetch history on demand
+  try {
+    const res = await fetch('/api/commodity-history?name=' + encodeURIComponent(name));
+    const h   = await res.json();
+    _activeItemHistory = h;
+  } catch(e) {
+    _activeItemHistory = { dates: [], values: [] };
+  }
   renderChart();
   renderMarketNews();
 }
@@ -1526,7 +1740,7 @@ function renderChart() {
   const item = _marketData.find(d => d.name === _activeItem);
   if (!item) return;
 
-  const { dates, values } = filterByRange(item.dates, item.values);
+  const { dates, values } = filterByRange(_activeItemHistory.dates || [], _activeItemHistory.values || []);
   const displayName = shortName(item.name);
   document.getElementById('chartTitle').textContent = displayName;
   document.getElementById('chartMeta').textContent  = item.unit || '';
@@ -1787,6 +2001,25 @@ document.getElementById('timeBtns').addEventListener('click', e => {
   if (_activeDays !== -1) { renderChart(); renderMarketNews(); }
 });
 
+// Fix chart disappearing on browser zoom / window resize
+(function() {
+  let _resizeTimer = null;
+  function onResize() {
+    if (!_chartInst) return;
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(() => {
+      if (_chartInst) {
+        _chartInst.resize();
+        renderAnnotationDots();
+      }
+    }, 80);
+  }
+  window.addEventListener('resize', onResize);
+  const chartWrap = document.querySelector('.chart-wrap');
+  if (chartWrap && typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(onResize).observe(chartWrap);
+  }
+})();
 
 </script>
 </body>

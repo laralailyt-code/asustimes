@@ -10,6 +10,7 @@ import threading
 import time
 import logging
 import requests as req_lib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, date as date_cls, timedelta, timezone
 from flask import Flask, jsonify, render_template, request
 from scraper import fetch_all_news, CATEGORY_KEYWORDS
@@ -775,34 +776,41 @@ def _refresh_live_prices():
     fresh: dict = {}
     sources: dict = {}
 
-    # 1. yfinance: commodities + FX — 1-year daily history
+    # 1. yfinance: commodities + FX — 1-year daily history (parallel)
     if _YF_AVAILABLE:
         all_yf_syms: dict = {}
         all_yf_syms.update(_LIVE_COMMODITY_SYMBOLS)
         all_yf_syms.update(_LIVE_FX_YF_SYMBOLS)
 
-        for sym, (csv_name, mult) in all_yf_syms.items():
+        def _fetch_yf_sym(sym, csv_name, mult):
             for attempt in range(2):
                 try:
                     hist   = yf.Ticker(sym).history(period="1y", interval="1d", auto_adjust=True)
                     series = hist["Close"].dropna() if "Close" in hist.columns else hist.dropna()
                     if series.empty:
-                        break
+                        return sym, csv_name, None, None
                     points = [(str(ts.date()), round(float(v) * mult, 4)) for ts, v in series.items()]
                     if points:
-                        fresh[csv_name]   = points
-                        sources[csv_name] = {"label": "Yahoo Finance",
-                                             "url":   f"https://finance.yahoo.com/quote/{sym}"}
                         logger.info(f"yfinance {sym}: {csv_name}, {len(points)} pts, latest={points[-1][1]}")
-                    break
+                        return sym, csv_name, points, f"https://finance.yahoo.com/quote/{sym}"
+                    return sym, csv_name, None, None
                 except Exception as e:
                     if attempt == 0 and "RateLimit" in type(e).__name__:
                         logger.warning(f"yfinance {sym} rate limited, retrying 15s")
                         time.sleep(15)
                     else:
                         logger.warning(f"yfinance {sym}: {e}")
-                        break
-            time.sleep(1)
+                        return sym, csv_name, None, None
+            return sym, csv_name, None, None
+
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futs = {pool.submit(_fetch_yf_sym, sym, csv_name, mult): sym
+                    for sym, (csv_name, mult) in all_yf_syms.items()}
+            for fut in as_completed(futs):
+                sym, csv_name, points, url = fut.result()
+                if points:
+                    fresh[csv_name]   = points
+                    sources[csv_name] = {"label": "Yahoo Finance", "url": url}
 
     # 2. bot.com.tw BCD API — full history for all codes
     for code, (csv_name, mult) in _BOT_BCD_CODES.items():
@@ -1071,11 +1079,9 @@ def _get_commodity_data() -> dict:
 
 @app.route("/api/commodities")
 def api_commodities():
-    # If live cache is empty (first load), fetch synchronously before serving
+    """Return item metadata only (no history) — fast small payload."""
     with _live_cache_lock:
         cache_empty = not _live_commodity_cache
-    if cache_empty:
-        _refresh_live_prices()
     data = _get_commodity_data()
     with _item_sources_lock:
         src_snapshot = dict(_item_sources)
@@ -1086,18 +1092,29 @@ def api_commodities():
         change = round(((latest - prev) / prev * 100), 2) if latest and prev and prev != 0 else None
         src    = src_snapshot.get(name, {})
         items.append({
-            "name":       name,
-            "unit":       d["unit"],
-            "category":   d["category"],
-            "latest":     latest,
-            "change":     change,
-            "dates":      d["dates"],
-            "values":     d["values"],
+            "name":         name,
+            "unit":         d["unit"],
+            "category":     d["category"],
+            "latest":       latest,
+            "change":       change,
             "source_label": src.get("label", ""),
             "source_url":   src.get("url", ""),
         })
     categories = list(_COMMODITY_CATEGORIES.keys())
-    return jsonify({"items": items, "categories": categories})
+    return jsonify({"items": items, "categories": categories, "loading": cache_empty})
+
+
+@app.route("/api/commodity-history")
+def api_commodity_history():
+    """Return full date/value history for a single item (fetched on demand)."""
+    name = request.args.get("name", "").strip()
+    if not name:
+        return jsonify({"dates": [], "values": []}), 400
+    data = _get_commodity_data()
+    d = data.get(name)
+    if not d:
+        return jsonify({"dates": [], "values": []})
+    return jsonify({"dates": d["dates"], "values": d["values"]})
 
 
 if __name__ == "__main__":
