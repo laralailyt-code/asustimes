@@ -809,6 +809,24 @@ def _fetch_ebaiyin_tungsten() -> tuple:
         return None, []
 
 
+def _fetch_smm_tungsten_price() -> float | None:
+    """Fallback: scrape black tungsten concentrate average price from SMM h5 page."""
+    import re
+    try:
+        r = req_lib.get(
+            "https://hq.smm.cn/h5/tungsten-ore-price",
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+                     "Accept-Language": "zh-CN,zh;q=0.9"},
+            timeout=12
+        )
+        m = re.search(r'[\d,]+\s*-\s*[\d,]+[^|]*\|\s*([\d,]+)\s*\|\s*[-\d,]+\s*\|\s*元/标吨', r.text)
+        if m:
+            return float(m.group(1).replace(',', ''))
+    except Exception as e:
+        logger.warning(f"SMM tungsten fallback: {e}")
+    return None
+
+
 def _refresh_live_prices():
     """Fetch commodity & FX prices with 1-year history. Called on startup and periodically."""
     today = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
@@ -897,27 +915,31 @@ def _refresh_live_prices():
                                  "url":   f"https://tradingeconomics.com/commodity/{slug}"}
             logger.info(f"TradingEconomics: {csv_name} = {val}")
 
-    # 5. ebaiyin.com: tungsten rod 1# (元/千克) — monthly history + today's price
-    _EBAIYIN_TUNGSTEN_NAME = "鎢"
+    # 5. Tungsten: ebaiyin (monthly history + today) with SMM as fallback
+    _TUNGSTEN_NAME = "鎢"
     tungsten_latest, tungsten_history = _fetch_ebaiyin_tungsten()
+    tungsten_source = {"label": "中國白銀網 ebaiyin", "url": "https://www.ebaiyin.com/quote/wu.shtml"}
+    if tungsten_latest is None and not tungsten_history:
+        # ebaiyin unreachable (e.g. geo-blocked) — fall back to SMM latest price
+        smm_price = _fetch_smm_tungsten_price()
+        if smm_price is not None:
+            tungsten_latest = smm_price
+            tungsten_source = {"label": "上海有色網 SMM", "url": "https://hq.smm.cn/h5/tungsten-ore-price"}
+            logger.info(f"Tungsten SMM fallback: {smm_price}")
     if tungsten_latest is not None or tungsten_history:
         with _live_cache_lock:
-            prev = list(_live_commodity_cache.get(_EBAIYIN_TUNGSTEN_NAME, []))
-        # Exclude current month from monthly averages — daily data covers it more accurately.
-        # Monthly dates are stored as YYYY-MM-01; skip any that match today's YYYY-MM.
-        this_month = today[:7]  # "YYYY-MM"
+            prev = list(_live_commodity_cache.get(_TUNGSTEN_NAME, []))
+        this_month   = today[:7]
         past_monthly = [(d, p) for d, p in tungsten_history if d[:7] != this_month]
-        # Merge: past monthly history as base, then existing daily points, then today
         merged: dict = {d: p for d, p in past_monthly}
         for d, p in prev:
             merged[d] = p
         if tungsten_latest is not None:
             merged[today] = tungsten_latest
         sorted_pts = sorted(merged.items())
-        fresh[_EBAIYIN_TUNGSTEN_NAME]   = sorted_pts
-        sources[_EBAIYIN_TUNGSTEN_NAME] = {"label": "中國白銀網 ebaiyin",
-                                           "url":   "https://www.ebaiyin.com/quote/wu.shtml"}
-        logger.info(f"ebaiyin tungsten: latest={tungsten_latest}, history={len(sorted_pts)} pts")
+        fresh[_TUNGSTEN_NAME]   = sorted_pts
+        sources[_TUNGSTEN_NAME] = tungsten_source
+        logger.info(f"Tungsten: latest={tungsten_latest}, history={len(sorted_pts)} pts, src={tungsten_source['label']}")
 
     with _live_cache_lock:
         _live_commodity_cache.update(fresh)
