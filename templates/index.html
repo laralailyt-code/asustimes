@@ -1488,10 +1488,12 @@ function switchPage(page) {
     document.getElementById('navMarket').classList.add('active');
     if (!window._marketLoaded) {
       loadMarket(); window._marketLoaded = true;
-    } else if (_chartInst) {
-      requestAnimationFrame(() => { _chartInst.resize(); renderAnnotationDots(); });
-    } else if (_activeItem) {
-      selectMarketItem(_activeItem);
+    } else {
+      setTimeout(() => {
+        if (_chartInst) { _chartInst.destroy(); _chartInst = null; }
+        if (_activeItem) renderChart();
+        renderAnnotationDots();
+      }, 50);
     }
   } else if (page === 'guide') {
     guidePage.style.display = 'block';
@@ -1588,8 +1590,16 @@ function renderMarketSidebar() {
   );
 }
 
+function _isDataFresh(dateStr) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - 6);  // hide if older than 6 months
+  return d >= cutoff;
+}
+
 function renderMarketItems() {
-  const items = _marketData.filter(d => d.category === _activeCat && d.latest != null && d.latest > 0);
+  const items = _marketData.filter(d => d.category === _activeCat && d.latest != null && d.latest > 0 && _isDataFresh(d.latest_date));
   const wrap  = document.getElementById('marketItemBtns');
   wrap.innerHTML = items.map(d =>
     `<button class="mitem-btn${d.name===_activeItem?' active':''}" onclick="selectMarketItem('${esc(d.name)}')">${esc(shortName(d.name))}</button>`

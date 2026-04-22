@@ -638,6 +638,7 @@ _TE_SLUGS = {
     "cobalt":     ("鈷 (cobalt) US$/tonne",      1.0),       # TE in USD/tonne ✓
     "lithium":    ("鋰 (Lithium) CNY$/tonne",    1.0),       # TE in CNY/tonne ✓
     "phosphorus": ("黃磷 CNY$/tonne",            29.4274),   # TE in CNY/百kg → CNY/tonne
+    "tungsten":   ("鎢 (tungsten) US$/tonne",    1.0),       # TE in USD/tonne
 }
 
 
@@ -890,7 +891,7 @@ _COMMODITY_CSV = os.path.join(os.path.dirname(__file__), "2026 Raw material tren
 
 # Category mapping for each item
 _COMMODITY_CATEGORIES = {
-    "金屬": ["銅", "錫", "鋁", "鎳", "鋅", "鈷", "鋰"],
+    "金屬": ["銅", "錫", "鋁", "鎳", "鋅", "鈷", "鋰", "鎢"],
     "貴金屬": ["金", "銀"],
     "能源": ["石油 西德州", "石油 北海布蘭特"],
     "原物料": ["黃磷", "ABS聚合物", "PC塑料", "PC/ABS塑料", "NOREXECO 長纖紙漿", "瓦楞芯紙"],
@@ -1091,11 +1092,18 @@ def api_commodities():
         prev   = next((v for v in reversed(d["values"][:-1]) if v is not None), None)
         change = round(((latest - prev) / prev * 100), 2) if latest and prev and prev != 0 else None
         src    = src_snapshot.get(name, {})
+        # Find the date of the latest non-null value
+        latest_date = None
+        for dt, v in zip(reversed(d["dates"]), reversed(d["values"])):
+            if v is not None:
+                latest_date = dt
+                break
         items.append({
             "name":         name,
             "unit":         d["unit"],
             "category":     d["category"],
             "latest":       latest,
+            "latest_date":  latest_date,
             "change":       change,
             "source_label": src.get("label", ""),
             "source_url":   src.get("url", ""),
