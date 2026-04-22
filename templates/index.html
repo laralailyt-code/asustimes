@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ASUSTIMES — 科技產業情報</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap');
 
@@ -453,6 +455,47 @@
 
   /* ── User Guide page ── */
   #guidePage { display: none; max-width: 860px; margin: 0 auto; padding: 1.4rem 1.5rem; }
+
+  /* ── Supply Chain Risk page ── */
+  #riskPage { display: none; height: calc(100vh - 116px); overflow: hidden; }
+  .risk-layout { display: grid; grid-template-columns: 56% 44%; height: 100%; }
+  #riskMap { height: 100%; background: var(--bg-secondary); }
+  .risk-map-wrap { position: relative; height: 100%; overflow: hidden; }
+  .risk-panel { display: flex; flex-direction: column; border-left: 1px solid var(--border); overflow: hidden; background: var(--bg-primary); }
+  .risk-panel-hd { padding: 0.7rem 1rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .risk-panel-hd-title { font-size: 0.85rem; font-weight: 600; }
+  .risk-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .risk-tab { padding: 0.55rem 1rem; font-size: 0.82rem; font-weight: 500; border: none; background: none; color: var(--text-secondary); cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.15s; }
+  .risk-tab:hover { color: var(--text-primary); }
+  .risk-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .risk-news-list { flex: 1; overflow-y: auto; padding: 0.5rem; }
+  .risk-news-item { display: block; padding: 0.6rem 0.75rem; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 0.4rem; text-decoration: none; color: inherit; transition: border-color 0.15s, background 0.15s; }
+  .risk-news-item:hover { border-color: var(--border-hover); background: var(--bg-card-hover); }
+  .risk-news-title { font-size: 0.82rem; font-weight: 500; color: var(--text-primary); margin-bottom: 0.25rem; line-height: 1.45; }
+  .risk-news-meta { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.3rem; }
+  .risk-tags { display: flex; flex-wrap: wrap; gap: 0.22rem; }
+  .risk-tag { font-size: 0.67rem; padding: 0.08rem 0.38rem; border-radius: 4px; font-weight: 600; white-space: nowrap; }
+  .rtag-disaster    { background: rgba(239,68,68,0.15); color: #ef4444; }
+  .rtag-geopolitical{ background: rgba(249,115,22,0.15); color: #f97316; }
+  .rtag-operational { background: rgba(234,179,8,0.15);  color: #ca8a04; }
+  .rtag-financial   { background: rgba(168,85,247,0.15); color: #a855f7; }
+  .rtag-region   { background: rgba(99,102,241,0.12); color: var(--accent-2); }
+  .rtag-industry { background: rgba(20,184,166,0.12); color: #14b8a6; }
+  .risk-empty { padding: 2.5rem 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.83rem; line-height: 1.8; }
+  .risk-legend { position: absolute; bottom: 14px; left: 14px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.75rem; font-size: 0.72rem; z-index: 500; pointer-events: none; }
+  .risk-legend-row { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.18rem; color: var(--text-secondary); }
+  .risk-legend-row:last-child { margin-bottom: 0; }
+  .risk-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .risk-cluster-badge { position: absolute; top: 14px; right: 14px; background: var(--bg-secondary); border: 1px solid var(--accent); border-radius: 8px; padding: 0.35rem 0.65rem; font-size: 0.72rem; z-index: 500; cursor: pointer; color: var(--accent); display: none; }
+  /* Leaflet popup overrides */
+  .risk-map-tooltip { background: var(--bg-secondary) !important; color: var(--text-primary) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; font-size: 0.78rem !important; padding: 6px 10px !important; box-shadow: 0 4px 12px rgba(0,0,0,0.25) !important; }
+  .risk-map-tooltip::before { display: none !important; }
+  @media (max-width: 768px) {
+    #riskPage { height: auto; overflow: auto; }
+    .risk-layout { grid-template-columns: 1fr; grid-template-rows: 45vh auto; }
+    #riskMap { height: 45vh; }
+    .risk-panel { height: 50vh; }
+  }
   .guide-page-title {
     font-size: 1.2rem; font-weight: 700; color: var(--text-primary);
     margin-bottom: 1.2rem; padding-bottom: 0.7rem;
@@ -802,6 +845,7 @@
   <nav class="page-nav">
     <button class="page-nav-btn active" id="navNews" onclick="switchPage('news')">📰 新聞</button>
     <button class="page-nav-btn" id="navMarket" onclick="switchPage('market')">📈 原物料匯率行情</button>
+    <button class="page-nav-btn" id="navRisk" onclick="switchPage('risk')">🌐 供應鏈風險</button>
     <button class="page-nav-btn" id="navGuide" onclick="switchPage('guide')">📖 使用指南</button>
   </nav>
 </div>
@@ -1048,6 +1092,38 @@
 </div>
 
 
+<!-- ── Supply Chain Risk Page ──────────────────────────── -->
+<div id="riskPage">
+  <div class="risk-layout">
+    <!-- Left: Globe Map -->
+    <div class="risk-map-wrap">
+      <div id="riskMap"></div>
+      <div class="risk-legend">
+        <div class="risk-legend-row"><div class="risk-dot" style="background:#22c55e"></div>低風險</div>
+        <div class="risk-legend-row"><div class="risk-dot" style="background:#eab308"></div>中風險</div>
+        <div class="risk-legend-row"><div class="risk-dot" style="background:#f97316"></div>高風險</div>
+        <div class="risk-legend-row"><div class="risk-dot" style="background:#ef4444"></div>極高風險</div>
+      </div>
+      <div class="risk-cluster-badge" id="riskClusterBadge" onclick="clearRiskCluster()">✕ 清除篩選</div>
+    </div>
+    <!-- Right: News Panel -->
+    <div class="risk-panel">
+      <div class="risk-panel-hd">
+        <span class="risk-panel-hd-title">🛰 供應鏈情報牆</span>
+        <span id="riskLastUpdate" style="font-size:0.72rem;color:var(--text-muted)"></span>
+      </div>
+      <div class="risk-tabs">
+        <button class="risk-tab active" id="riskTabA" onclick="switchRiskTab('regional')">🌏 區域事件</button>
+        <button class="risk-tab" id="riskTabB" onclick="switchRiskTab('financial')">💸 財務預警</button>
+      </div>
+      <div class="risk-news-list" id="riskNewsList">
+        <div class="risk-empty">載入中…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <div class="toast" id="toast"></div>
 
 <!-- Floating tooltip for chart news-annotation dots -->
@@ -1062,8 +1138,8 @@
   <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.3rem">點擊開啟新聞</div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<script src="chart.umd.min.js"></script>
+<script src="chartjs-plugin-annotation.min.js"></script>
 <script>
 // ── State ──────────────────────────────────────────────────
 const state = {
@@ -1474,15 +1550,18 @@ function switchPage(page) {
   const newsPage   = document.querySelector('main.main:not(#marketPage)');
   const marketPage = document.getElementById('marketPage');
   const guidePage  = document.getElementById('guidePage');
+  const riskPage   = document.getElementById('riskPage');
   const mobileBar  = document.getElementById('mobileSearchBar');
   // Hide all
   newsPage.style.display   = 'none';
   marketPage.style.display = 'none';
   guidePage.style.display  = 'none';
+  riskPage.style.display   = 'none';
   mobileBar.classList.remove('open');
-  document.getElementById('navNews').classList.remove('active');
-  document.getElementById('navMarket').classList.remove('active');
-  document.getElementById('navGuide').classList.remove('active');
+  ['navNews','navMarket','navGuide','navRisk'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('active');
+  });
   if (page === 'market') {
     marketPage.style.display = 'block';
     document.getElementById('navMarket').classList.add('active');
@@ -1498,6 +1577,14 @@ function switchPage(page) {
   } else if (page === 'guide') {
     guidePage.style.display = 'block';
     document.getElementById('navGuide').classList.add('active');
+  } else if (page === 'risk') {
+    riskPage.style.display = 'block';
+    document.getElementById('navRisk').classList.add('active');
+    setTimeout(() => {
+      initRiskMap();
+      if (!window._riskLoaded) { loadRisk(); window._riskLoaded = true; }
+      else if (_riskMap) _riskMap.invalidateSize();
+    }, 30);
   } else {
     newsPage.style.display = '';
     document.getElementById('navNews').classList.add('active');
@@ -1749,6 +1836,13 @@ function _setupCanvasAnnotEvents() {
 function renderChart() {
   const item = _marketData.find(d => d.name === _activeItem);
   if (!item) return;
+
+  // Guard: ensure Chart.js is loaded (retry if not ready)
+  if (typeof Chart === 'undefined') {
+    console.warn('Chart.js not loaded yet, retrying in 500ms...');
+    setTimeout(renderChart, 500);
+    return;
+  }
 
   const { dates, values } = filterByRange(_activeItemHistory.dates || [], _activeItemHistory.values || []);
   const displayName = shortName(item.name);
@@ -2030,6 +2124,135 @@ document.getElementById('timeBtns').addEventListener('click', e => {
     new ResizeObserver(onResize).observe(chartWrap);
   }
 })();
+
+// ── Supply Chain Risk Monitor ───────────────────────────────
+
+let _riskMap     = null;
+let _riskData    = null;
+let _riskTab     = 'regional';
+let _riskCluster = null;   // currently selected cluster id
+let _riskMarkers = [];
+
+function _riskColor(score) {
+  if (score >= 75) return '#ef4444';
+  if (score >= 50) return '#f97316';
+  if (score >= 25) return '#eab308';
+  return '#22c55e';
+}
+
+function initRiskMap() {
+  if (_riskMap) return;
+  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+  const tile   = isDark
+    ? 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png';
+  _riskMap = L.map('riskMap', { zoomControl: true, attributionControl: false, minZoom: 2 });
+  L.tileLayer(tile, { maxZoom: 18 }).addTo(_riskMap);
+  _riskMap.setView([28, 110], 3);
+}
+
+function _renderRiskMarkers(clusters) {
+  _riskMarkers.forEach(m => _riskMap.removeLayer(m));
+  _riskMarkers = [];
+  clusters.forEach(c => {
+    const color = _riskColor(c.risk_score);
+    const r = 9 + Math.floor(c.risk_score / 14);
+    const m = L.circleMarker([c.lat, c.lng], {
+      radius: r, color: '#fff', weight: 1.5,
+      fillColor: color, fillOpacity: 0.82,
+    }).addTo(_riskMap);
+    m.bindTooltip(
+      `<b>${c.name}</b> ${c.name_en}<br/>` +
+      `${c.industries.join(' · ')}<br/>` +
+      `<span style="color:${color};font-weight:700">風險值 ${c.risk_score}</span>`,
+      { className: 'risk-map-tooltip', direction: 'top' }
+    );
+    m.on('click', () => {
+      _riskCluster = c.id;
+      const badge = document.getElementById('riskClusterBadge');
+      badge.textContent = `✕ ${c.name} 篩選中`;
+      badge.style.display = 'block';
+      renderRiskNews();
+    });
+    _riskMarkers.push(m);
+  });
+}
+
+function clearRiskCluster() {
+  _riskCluster = null;
+  document.getElementById('riskClusterBadge').style.display = 'none';
+  renderRiskNews();
+}
+
+function switchRiskTab(tab) {
+  _riskTab = tab;
+  document.getElementById('riskTabA').classList.toggle('active', tab === 'regional');
+  document.getElementById('riskTabB').classList.toggle('active', tab === 'financial');
+  renderRiskNews();
+}
+
+function _riskTagClass(tag) {
+  if (tag.includes('天災')) return 'rtag-disaster';
+  if (tag.includes('地緣')) return 'rtag-geopolitical';
+  if (tag.includes('停運')) return 'rtag-operational';
+  if (tag.includes('財警')) return 'rtag-financial';
+  if (/🇹🇼|🇨🇳|🇰🇷|🇯🇵|🇺🇸|🇲🇾|🇪🇺/.test(tag)) return 'rtag-region';
+  return 'rtag-industry';
+}
+
+function renderRiskNews() {
+  if (!_riskData) return;
+  const list  = document.getElementById('riskNewsList');
+  const items = (_riskTab === 'regional') ? _riskData.regional_events : _riskData.financial_warnings;
+
+  // If a cluster is selected, filter by matching region/industry tags
+  let filtered = items;
+  if (_riskCluster && _riskData.clusters) {
+    const c = _riskData.clusters.find(x => x.id === _riskCluster);
+    if (c) {
+      filtered = items.filter(a =>
+        a.region_tags.some(t => t.includes(c.name)) ||
+        a.industry_tags.some(t => c.industries.includes(t))
+      );
+    }
+  }
+
+  if (!filtered.length) {
+    list.innerHTML = `<div class="risk-empty">${
+      _riskCluster ? '此集群暫無相關事件<br><small>點擊上方「清除篩選」查看全部</small>' :
+      '目前無相關風險事件<br><small>當新聞匹配風險關鍵字時將自動顯示</small>'
+    }</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(a => {
+    const allTags = [...a.risk_types, ...a.region_tags, ...a.industry_tags];
+    const tagsHtml = allTags.map(t =>
+      `<span class="risk-tag ${_riskTagClass(t)}">${esc(t)}</span>`
+    ).join('');
+    const dateStr = a.published ? a.published.slice(0, 10) : '';
+    return `<a class="risk-news-item" href="${esc(a.url || '#')}" target="_blank" rel="noopener">
+      <div class="risk-news-title">${esc(a.title || '')}</div>
+      <div class="risk-news-meta">${esc(a.source || '')} · ${esc(dateStr)}</div>
+      <div class="risk-tags">${tagsHtml}</div>
+    </a>`;
+  }).join('');
+}
+
+async function loadRisk() {
+  const list = document.getElementById('riskNewsList');
+  list.innerHTML = '<div class="risk-empty">🛰 載入供應鏈情報中…</div>';
+  try {
+    const res   = await fetch('/api/risk');
+    _riskData   = await res.json();
+    const upd   = document.getElementById('riskLastUpdate');
+    if (upd) upd.textContent = '更新：' + (_riskData.last_updated || '');
+    _renderRiskMarkers(_riskData.clusters || []);
+    renderRiskNews();
+  } catch(e) {
+    list.innerHTML = '<div class="risk-empty">載入失敗，請稍後再試</div>';
+  }
+}
 
 </script>
 </body>

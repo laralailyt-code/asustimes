@@ -31,7 +31,7 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='templates', static_url_path='')
 
 # ── In-memory cache ────────────────────────────────────────────────────────────
 _cache: dict = {
@@ -774,6 +774,7 @@ def _fetch_ebaiyin_tungsten() -> tuple:
     """Fetch tungsten rod (1#鎢條) price and monthly history from ebaiyin.com API.
     Returns (latest_price_or_None, [(date_str, price), ...]).
     Monthly history dates are returned as YYYY-MM-01 strings.
+    Also returns daily data for the current month.
     """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
@@ -785,12 +786,12 @@ def _fetch_ebaiyin_tungsten() -> tuple:
         r_m = req_lib.post(
             "https://www.ebaiyin.com/Ajax/GetMarketKLineList",
             data={"name": "1#钨条", "type": "3", "spell": "wutiao"},
-            headers=headers, timeout=20,
+            headers=headers, timeout=60,
         )
         r_d = req_lib.post(
             "https://www.ebaiyin.com/Ajax/GetMarketKLineList",
             data={"name": "1#钨条", "type": "1", "spell": "wutiao"},
-            headers=headers, timeout=20,
+            headers=headers, timeout=60,
         )
         history = []
         d_m = r_m.json()
@@ -798,15 +799,28 @@ def _fetch_ebaiyin_tungsten() -> tuple:
             for t, p in zip(d_m["Data"]["Time"], d_m["Data"]["OKLine"]):
                 history.append((t + "-01", round(float(p), 2)))
 
-        latest = None
+        # Get daily data for current month
+        daily_data = {}
         d_d = r_d.json()
+        if d_d.get("Status") == 200 and d_d.get("Data", {}).get("OKLine"):
+            times = d_d["Data"]["Time"]
+            prices = d_d["Data"]["OKLine"]
+            # Parse "2026/4/22 13:49:43" format
+            for t, p in zip(times, prices):
+                parts = t.split(" ")[0].split("/")  # "2026/4/22" -> ["2026", "4", "22"]
+                if len(parts) == 3:
+                    y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+                    date_str = f"{y}-{m:02d}-{d:02d}"
+                    daily_data[date_str] = round(float(p), 2)
+
+        latest = None
         if d_d.get("Status") == 200 and d_d.get("Data", {}).get("OKLine"):
             latest = round(float(d_d["Data"]["OKLine"][-1]), 2)
 
-        return latest, history
+        return latest, history, daily_data
     except Exception as e:
         logger.warning(f"ebaiyin tungsten: {e}")
-        return None, []
+        return None, [], {}
 
 
 def _fetch_smm_tungsten_price() -> float | None:
@@ -829,6 +843,7 @@ def _fetch_smm_tungsten_price() -> float | None:
 
 def _refresh_live_prices():
     """Fetch commodity & FX prices with 1-year history. Called on startup and periodically."""
+    logger.info("[REFRESH] Starting refresh...")
     today = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
     fresh: dict = {}
     sources: dict = {}
@@ -887,9 +902,12 @@ def _refresh_live_prices():
 
     # 3. buyplas.com plastic prices (latest point only — no public history)
     for key, csv_name in _BUYPLAS_ITEMS.items():
-        price = _fetch_buyplas_price(key)
+        try:
+            price = _fetch_buyplas_price(key)
+        except Exception as e:
+            logger.warning(f"buyplas.com {key} error: {e}")
+            price = None
         if price is not None:
-            # Append today's point; preserve existing history in live cache
             with _live_cache_lock:
                 prev = list(_live_commodity_cache.get(csv_name, []))
             existing_dates = {d for d, _ in prev}
@@ -900,9 +918,13 @@ def _refresh_live_prices():
                                  "url":   "https://www.buyplas.com/spot/1003-PP-PE-PVC-ABS-PS.html"}
             logger.info(f"buyplas.com {key}: {csv_name} = {price}")
 
-    # 4. Trading Economics: LME metals + lithium + phosphorus (latest point only)
+    logger.info("[REFRESH] Starting TradingEconomics...")
     for slug, (csv_name, mult) in _TE_SLUGS.items():
-        price = _fetch_te_price(slug)
+        try:
+            price = _fetch_te_price(slug)
+        except Exception as e:
+            logger.warning(f"TE {slug} error: {e}")
+            price = None
         if price is not None:
             val = round(price * mult, 2)
             with _live_cache_lock:
@@ -915,9 +937,20 @@ def _refresh_live_prices():
                                  "url":   f"https://tradingeconomics.com/commodity/{slug}"}
             logger.info(f"TradingEconomics: {csv_name} = {val}")
 
-    # 5. Tungsten: ebaiyin (monthly history + today) with SMM as fallback
-    _TUNGSTEN_NAME = "鎢"
-    tungsten_latest, tungsten_history = _fetch_ebaiyin_tungsten()
+    logger.info("[REFRESH] Starting Tungsten...")
+    try:
+        tungsten_latest, tungsten_history, tungsten_daily = _fetch_ebaiyin_tungsten()
+        logger.info(f"Tungsten fetch result: latest={tungsten_latest}, history={len(tungsten_history)} pts, daily={len(tungsten_daily)} pts")
+    except Exception as e:
+        logger.warning(f"Tungsten fetch error: {e}")
+        # Retry once
+        try:
+            logger.info("[REFRESH] Retrying Tungsten...")
+            tungsten_latest, tungsten_history, tungsten_daily = _fetch_ebaiyin_tungsten()
+            logger.info(f"Tungsten retry result: latest={tungsten_latest}, history={len(tungsten_history)} pts, daily={len(tungsten_daily)} pts")
+        except Exception as e2:
+            logger.warning(f"Tungsten retry error: {e2}")
+            tungsten_latest, tungsten_history, tungsten_daily = None, [], {}
     tungsten_source = {"label": "中國白銀網 ebaiyin", "url": "https://www.ebaiyin.com/quote/wu.shtml"}
     if tungsten_latest is None and not tungsten_history:
         # ebaiyin unreachable (e.g. geo-blocked) — fall back to SMM latest price
@@ -929,17 +962,20 @@ def _refresh_live_prices():
     if tungsten_latest is not None or tungsten_history:
         with _live_cache_lock:
             prev = list(_live_commodity_cache.get(_TUNGSTEN_NAME, []))
-        this_month   = today[:7]
-        past_monthly = [(d, p) for d, p in tungsten_history if d[:7] != this_month]
-        merged: dict = {d: p for d, p in past_monthly}
+        # Use monthly history for past months, daily data for current month
+        # This way April shows daily prices (4/16, 4/17, 4/20, etc.) instead of just one monthly point
+        this_month = today[:7]  # "2026-04"
+        merged: dict = {d: p for d, p in tungsten_history if d[:7] != this_month}  # past months: monthly
+        # Add daily data for current month
+        for d, p in tungsten_daily.items():
+            if d[:7] == this_month:
+                merged[d] = p
         for d, p in prev:
             merged[d] = p
-        if tungsten_latest is not None:
-            merged[today] = tungsten_latest
         sorted_pts = sorted(merged.items())
         fresh[_TUNGSTEN_NAME]   = sorted_pts
         sources[_TUNGSTEN_NAME] = tungsten_source
-        logger.info(f"Tungsten: latest={tungsten_latest}, history={len(sorted_pts)} pts, src={tungsten_source['label']}")
+        logger.info(f"Tungsten: history={len(sorted_pts)} pts, src={tungsten_source['label']}")
 
     with _live_cache_lock:
         _live_commodity_cache.update(fresh)
@@ -949,6 +985,7 @@ def _refresh_live_prices():
     with _csv_parse_lock:
         _csv_parse_cache["data"] = None
     logger.info(f"Live prices updated: {len(fresh)} items")
+    logger.info("[REFRESH] Done!")
 
 
 def _live_price_loop():
@@ -1205,7 +1242,10 @@ def api_commodity_history():
     """Return full date/value history for a single item (fetched on demand)."""
     name = request.args.get("name", "").strip()
     if not name:
-        return jsonify({"dates": [], "values": []}), 400
+        return jsonify({"dates": [], "values": []})
+    # Bypass 5-min cache to get fresh live data
+    with _csv_parse_lock:
+        _csv_parse_cache["data"] = None
     data = _get_commodity_data()
     d = data.get(name)
     if not d:
@@ -1337,4 +1377,7 @@ def api_risk():
 
 
 if __name__ == "__main__":
+    # Refresh live prices before starting server so cache is warm
+    logger.info("Fetching initial live prices...")
+    _refresh_live_prices()
     app.run(host="0.0.0.0", debug=False, port=5050, use_reloader=False)
