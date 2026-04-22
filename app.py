@@ -770,25 +770,43 @@ def _fetch_te_price(slug: str) -> float | None:
     return None
 
 
-def _fetch_smm_tungsten_price() -> float | None:
-    """Scrape black tungsten concentrate (≥65%) average price from SMM h5 page.
-    Page is server-rendered; pattern: {low} - {high} | {avg} | {change} | 元/标吨
+def _fetch_ebaiyin_tungsten() -> tuple:
+    """Fetch tungsten rod (1#鎢條) price and monthly history from ebaiyin.com API.
+    Returns (latest_price_or_None, [(date_str, price), ...]).
+    Monthly history dates are returned as YYYY-MM-01 strings.
     """
-    import re
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+        "Referer": "https://www.ebaiyin.com/quote/wu.shtml",
+        "X-Requested-With": "XMLHttpRequest",
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+    }
     try:
-        r = req_lib.get(
-            "https://hq.smm.cn/h5/tungsten-ore-price",
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
-                     "Accept-Language": "zh-CN,zh;q=0.9"},
-            timeout=12
+        r_m = req_lib.post(
+            "https://www.ebaiyin.com/Ajax/GetMarketKLineList",
+            data={"name": "1#钨条", "type": "3", "spell": "wutiao"},
+            headers=headers, timeout=20,
         )
-        # Match: {range} | {avg} | {change} | 元/标吨  — first match = black tungsten ≥65%
-        m = re.search(r'[\d,]+\s*-\s*[\d,]+[^|]*\|\s*([\d,]+)\s*\|\s*[-\d,]+\s*\|\s*元/标吨', r.text)
-        if m:
-            return float(m.group(1).replace(',', ''))
+        r_d = req_lib.post(
+            "https://www.ebaiyin.com/Ajax/GetMarketKLineList",
+            data={"name": "1#钨条", "type": "1", "spell": "wutiao"},
+            headers=headers, timeout=20,
+        )
+        history = []
+        d_m = r_m.json()
+        if d_m.get("Status") == 200 and d_m.get("Data", {}).get("OKLine"):
+            for t, p in zip(d_m["Data"]["Time"], d_m["Data"]["OKLine"]):
+                history.append((t + "-01", round(float(p), 2)))
+
+        latest = None
+        d_d = r_d.json()
+        if d_d.get("Status") == 200 and d_d.get("Data", {}).get("OKLine"):
+            latest = round(float(d_d["Data"]["OKLine"][-1]), 2)
+
+        return latest, history
     except Exception as e:
-        logger.warning(f"SMM tungsten scrape: {e}")
-    return None
+        logger.warning(f"ebaiyin tungsten: {e}")
+        return None, []
 
 
 def _refresh_live_prices():
@@ -879,19 +897,23 @@ def _refresh_live_prices():
                                  "url":   f"https://tradingeconomics.com/commodity/{slug}"}
             logger.info(f"TradingEconomics: {csv_name} = {val}")
 
-    # 5. SMM: black tungsten concentrate ≥65% (latest point only)
-    _SMM_TUNGSTEN_NAME = "鎢精礦 (黑鎢 ≥65%) CNY$/標準噸"
-    tungsten_price = _fetch_smm_tungsten_price()
-    if tungsten_price is not None:
+    # 5. ebaiyin.com: tungsten rod 1# (元/千克) — monthly history + today's price
+    _EBAIYIN_TUNGSTEN_NAME = "鎢 1#鎢條 (元/千克)"
+    tungsten_latest, tungsten_history = _fetch_ebaiyin_tungsten()
+    if tungsten_latest is not None or tungsten_history:
         with _live_cache_lock:
-            prev = list(_live_commodity_cache.get(_SMM_TUNGSTEN_NAME, []))
-        existing_dates = {d for d, _ in prev}
-        if today not in existing_dates:
-            prev.append((today, tungsten_price))
-        fresh[_SMM_TUNGSTEN_NAME]   = prev
-        sources[_SMM_TUNGSTEN_NAME] = {"label": "上海有色網 SMM",
-                                       "url":   "https://hq.smm.cn/h5/tungsten-ore-price"}
-        logger.info(f"SMM tungsten: {_SMM_TUNGSTEN_NAME} = {tungsten_price}")
+            prev = list(_live_commodity_cache.get(_EBAIYIN_TUNGSTEN_NAME, []))
+        # Merge: monthly history as base, then existing daily points, then today
+        merged: dict = {d: p for d, p in tungsten_history}
+        for d, p in prev:
+            merged[d] = p
+        if tungsten_latest is not None:
+            merged[today] = tungsten_latest
+        sorted_pts = sorted(merged.items())
+        fresh[_EBAIYIN_TUNGSTEN_NAME]   = sorted_pts
+        sources[_EBAIYIN_TUNGSTEN_NAME] = {"label": "中國白銀網 ebaiyin",
+                                           "url":   "https://www.ebaiyin.com/quote/wu.shtml"}
+        logger.info(f"ebaiyin tungsten: latest={tungsten_latest}, history={len(sorted_pts)} pts")
 
     with _live_cache_lock:
         _live_commodity_cache.update(fresh)
