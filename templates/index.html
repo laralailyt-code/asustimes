@@ -121,12 +121,7 @@
     border-bottom: 1px solid var(--border);
     padding: 0.6rem 1rem;
   }
-  .mobile-search-bar.open {
-    display: flex;
-    position: sticky;
-    top: 54px;
-    z-index: 49;
-  }
+  .mobile-search-bar.open { display: flex; }
   .mobile-search-bar .search-input { max-width: 100%; }
 
   .header-actions { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
@@ -631,7 +626,6 @@
   @media (max-width: 640px) {
     .header-inner { padding: 0 0.75rem; gap: 0.5rem; height: 54px; }
     .page-nav-bar { top: 54px; }
-    .mobile-search-bar.open { top: 90px; }
     .logo-sub, .search-wrap { display: none; }
     .logo-mark { width: 32px; height: 32px; font-size: 1rem; }
     .logo-name { font-size: 1rem; }
@@ -792,6 +786,14 @@
       </button>
     </div>
   </div>
+  <!-- Mobile search bar (inside header so it stays sticky) -->
+  <div class="mobile-search-bar" id="mobileSearchBar">
+    <div class="search-wrap" style="max-width:100%;width:100%">
+      <span class="search-icon">⌕</span>
+      <input class="search-input" id="mobileSearchInput" type="text"
+             placeholder="搜尋新聞…" />
+    </div>
+  </div>
 </header>
 
 <!-- Page nav bar -->
@@ -801,15 +803,6 @@
     <button class="page-nav-btn" id="navMarket" onclick="switchPage('market')">📈 原物料匯率行情</button>
     <button class="page-nav-btn" id="navGuide" onclick="switchPage('guide')">📖 使用指南</button>
   </nav>
-</div>
-
-<!-- Mobile search bar -->
-<div class="mobile-search-bar" id="mobileSearchBar">
-  <div class="search-wrap" style="max-width:100%;width:100%">
-    <span class="search-icon">⌕</span>
-    <input class="search-input" id="mobileSearchInput" type="text"
-           placeholder="搜尋新聞…" />
-  </div>
 </div>
 
 <!-- ── Main ──────────────────────────────────────────────── -->
@@ -1492,7 +1485,13 @@ function switchPage(page) {
   if (page === 'market') {
     marketPage.style.display = 'block';
     document.getElementById('navMarket').classList.add('active');
-    if (!window._marketLoaded) { loadMarket(); window._marketLoaded = true; }
+    if (!window._marketLoaded) {
+      loadMarket(); window._marketLoaded = true;
+    } else if (_chartInst) {
+      requestAnimationFrame(() => { _chartInst.resize(); renderAnnotationDots(); });
+    } else if (_activeItem) {
+      selectMarketItem(_activeItem);
+    }
   } else if (page === 'guide') {
     guidePage.style.display = 'block';
     document.getElementById('navGuide').classList.add('active');
