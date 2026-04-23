@@ -1659,15 +1659,20 @@ _SUPPLY_CHAIN_CLUSTERS = [
 ]
 
 _RISK_KEYWORDS = {
-    "disaster":     ["地震", "颱風", "颶風", "洪水", "水災", "火災", "海嘯", "停電", "暴風雪", "龍捲風", "冰雹", "霜凍", "雪災",
-                     "earthquake", "typhoon", "flood", "hurricane", "tsunami", "disaster", "blizzard", "tornado", "snowstorm", "cyclone"],
+    "disaster":     ["地震", "颶風", "洪水", "水災", "火災", "海嘯", "暴風雪", "龍捲風", "冰雹", "霜凍", "雪災",
+                     "earthquake", "hurricane", "flood", "tsunami", "disaster", "blizzard", "tornado", "snowstorm", "cyclone"],
     "geopolitical": ["制裁", "關稅", "禁令", "出口管制", "貿易戰", "tariff", "sanction", "ban", "export control", "trade war", "chip war"],
-    "strike":       ["罷工", "工人罷工", "工潮", "勞資爭議", "勞工抗議", "停工抗議",
-                     "strike", "labor strike", "workers strike", "walkout", "industrial action"],
+    "strike":       ["罷工", "工人罷工", "工潮", "勞資爭議", "勞工抗議", "工會", "停工", "罷課",
+                     "strike", "labor strike", "workers strike", "walkout", "industrial action", "union"],
     "operational":  ["限電", "缺料", "斷鏈", "停工", "產能", "blackout", "shortage", "disruption", "halt"],
     "financial":    ["破產", "虧損", "裁員", "信評", "倒閉", "財報", "獲利預警", "虧損擴大",
                      "bankruptcy", "layoff", "downgrade", "profit warning", "earnings miss", "default"],
 }
+
+# Typhoon only counts as disaster if paired with impact keywords (不只是氣象預報)
+_DISASTER_SEVERITY_KEYWORDS = ["警報", "停工", "警戒", "致災", "災害", "損失", "損害", "中斷",
+                                "warning", "alert", "closure", "damage", "disruption", "impact"]
+_TYPHOON_KEYWORDS = ["颱風", "typhoon"]
 
 _CLUSTER_KEYWORDS = {
     "hsinchu":    ["新竹", "竹科", "台積電", "TSMC", "聯電", "UMC", "聯發科", "MediaTek"],
@@ -1720,7 +1725,16 @@ def api_risk():
         for cid, ckws in _CLUSTER_KEYWORDS.items():
             if any(kw.lower() in text for kw in ckws):
                 for rtype, rkws in _RISK_KEYWORDS.items():
-                    if any(rk.lower() in text for rk in rkws):
+                    # Apply risk type with special rules for typhoon/flood
+                    risk_found = False
+                    if rtype == "disaster" and any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
+                        # Typhoon/flood only count with severity keywords
+                        if any(sk.lower() in text for sk in _DISASTER_SEVERITY_KEYWORDS):
+                            risk_found = True
+                    elif any(rk.lower() in text for rk in rkws):
+                        risk_found = True
+
+                    if risk_found:
                         cluster_scores[cid] = min(100, cluster_scores[cid] + weights.get(rtype, 10))
 
     # Tag articles for news walls
@@ -1732,8 +1746,25 @@ def api_risk():
             continue
         seen.add(url)
         text = (article.get("title", "") + " " + article.get("summary", "")).lower()
-        risk_types = [rt for rt, rkws in _RISK_KEYWORDS.items()
-                      if any(rk.lower() in text for rk in rkws)]
+
+        # Detect risk types with special handling for typhoon/flood (require severity keywords)
+        risk_types = []
+        for rt, rkws in _RISK_KEYWORDS.items():
+            if any(rk.lower() in text for rk in rkws):
+                # For disaster: typhoon/flood only count if paired with severity keywords
+                if rt == "disaster" and any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
+                    if any(sk.lower() in text for sk in _DISASTER_SEVERITY_KEYWORDS):
+                        risk_types.append(rt)
+                elif rt == "disaster":
+                    # Other disasters (earthquake, tsunami, etc.) always count
+                    if not any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
+                        risk_types.append(rt)
+                    # Or earthquake/tsunami with severity
+                    elif any(sk.lower() in text for sk in _DISASTER_SEVERITY_KEYWORDS):
+                        risk_types.append(rt)
+                else:
+                    risk_types.append(rt)
+
         if not risk_types:
             continue
         region_tags, industry_tags = set(), set()
