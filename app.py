@@ -33,6 +33,11 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder='templates', static_url_path='')
 
+# ── Environment detection ──────────────────────────────────────────────────────
+# On Render: RENDER=true, On Localhost: RENDER is not set
+_IS_RENDER_PRODUCTION = os.environ.get("RENDER") == "true"
+_SHOW_RISK_PAGE = not _IS_RENDER_PRODUCTION  # Only show risk page on test/local machine
+
 # ── In-memory cache ────────────────────────────────────────────────────────────
 _cache: dict = {
     "articles": [],
@@ -150,7 +155,7 @@ def _ensure_bg_running():
 # ── Routes ─────────────────────────────────────────────────────────────────────
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", show_risk_page=_SHOW_RISK_PAGE)
 
 
 @app.route("/api/ping")
