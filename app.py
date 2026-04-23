@@ -407,19 +407,20 @@ def api_digest():
             client = _anthropic_lib.Anthropic(api_key=api_key)
             msg = client.messages.create(
                 model="claude-sonnet-4-6",
-                max_tokens=700,
+                max_tokens=1500,
                 messages=[{
                     "role": "user",
                     "content": (
                         f"以下是「{category}」類別的近期科技新聞（標題｜內文摘要）：\n\n{articles_text}\n\n"
-                        "請用繁體中文，從中嚴格篩選出 3–5 條「真正值得關注的焦點」。\n\n"
+                        "請用繁體中文，從中嚴格篩選出 2–5 條「真正值得關注的焦點」。\n\n"
                         "【選入標準】具體數字（金額、出貨量、市佔率）、重大合作/收購/投資、"
                         "技術突破、產業政策轉折、供應鏈重組。\n"
                         "【排除標準】活動通知、展覽、人事任命（除非影響重大）、"
                         "一般產品發表、重複主題、內容空洞的標題新聞。\n\n"
-                        "要求：每條一句話（40–70字），說明核心事實與產業意義，不要轉述標題；"
-                        "每條前加「•」；只輸出條列內容，不要加任何說明或標題。\n"
-                        "若無真正重要的新聞，請只輸出：NONE"
+                        "要求：每條一句完整的話（50–80字），說明核心事實與產業意義，不要轉述標題；"
+                        "每條前加「•」；每條必須是完整句子，不可在句子中間截斷；"
+                        "只輸出條列內容，不要加任何說明或標題。\n"
+                        "至少輸出 2 條；若真的無任何值得關注的新聞，輸出：NONE"
                     ),
                 }],
             )
@@ -434,13 +435,17 @@ def api_digest():
         except Exception as e:
             logger.warning(f"Digest AI error: {e}")
 
-    # Fallback: only show articles that have substantive snippets
+    # Fallback: show top articles with snippets (or at least titles)
     if not points:
-        for i, a in enumerate(top[:6]):
+        for i, a in enumerate(top[:5]):
             snippet = snippets.get(i, "")
             if len(snippet) > 40:
-                points.append(f"{a['title']}　{snippet[:120]}")
-        # No good content → hide digest entirely
+                points.append(f"{a['title']}：{snippet[:150]}")
+            else:
+                points.append(a['title'])
+        if len(points) < 2 and len(top) >= 2:
+            for a in top[len(points):2]:
+                points.append(a['title'])
         if not points:
             return jsonify({"category": category, "points": [], "articles": [], "ai_powered": False})
 
@@ -1158,6 +1163,13 @@ def _parse_commodity_csv() -> dict:
                     "dates":    [p[0] for p in live_points],
                     "values":   [p[1] for p in live_points],
                 }
+
+    # Sort all items by date after merging live data (prevents x-axis going backward)
+    for key in result:
+        if result[key]["dates"]:
+            paired = sorted(zip(result[key]["dates"], result[key]["values"]))
+            result[key]["dates"]  = [p[0] for p in paired]
+            result[key]["values"] = [p[1] for p in paired]
 
     return result
 
