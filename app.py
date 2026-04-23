@@ -10,7 +10,7 @@ import threading
 import time
 import logging
 import requests as req_lib
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait as fut_wait
 from datetime import datetime, date as date_cls, timedelta, timezone
 from flask import Flask, jsonify, render_template, request
 from scraper import fetch_all_news, CATEGORY_KEYWORDS
@@ -69,6 +69,24 @@ def background_refresh_loop():
         refresh_news()
 
 
+def _risk_cache_preload_loop():
+    """Pre-warm geopolitical + strike caches at startup and every 3 hours."""
+    time.sleep(10)  # 讓 news cache 先刷新完再開始
+    while True:
+        try:
+            logger.info("[RISK] Pre-warming geopolitical cache (parallel)...")
+            _do_geo_scan()
+        except Exception as e:
+            logger.warning(f"[RISK] geo preload error: {e}")
+        try:
+            logger.info("[RISK] Pre-warming strike cache (parallel)...")
+            _do_strike_scan()
+        except Exception as e:
+            logger.warning(f"[RISK] strike preload error: {e}")
+        logger.info("[RISK] Risk caches pre-warmed.")
+        time.sleep(3 * 3600)  # 每 3 小時更新一次
+
+
 def daily_digest_loop():
     """Send digest email every day at DIGEST_HOUR (UTC)."""
     sent_date = None
@@ -124,6 +142,8 @@ def _ensure_bg_running():
                 td.start()
                 tl = threading.Thread(target=_live_price_loop, daemon=True)
                 tl.start()
+                tr = threading.Thread(target=_risk_cache_preload_loop, daemon=True)
+                tr.start()
                 logger.info("Background threads started in worker")
 
 
@@ -443,6 +463,7 @@ def api_digest():
                 points.append(f"{a['title']}：{snippet[:150]}")
             else:
                 points.append(a['title'])
+        # Still enforce minimum 2 items
         if len(points) < 2 and len(top) >= 2:
             for a in top[len(points):2]:
                 points.append(a['title'])
@@ -642,10 +663,12 @@ _TE_SLUGS = {
     "tin":        ("錫 (tin) US$/tonne",         1.0),       # TE in USD/tonne ✓
     "nickel":     ("鎳 (nickel)  US$/tonne",     1.0),       # TE in USD/tonne ✓
     "zinc":       ("鋅 (zinc)  US$/tonne",       1.0),       # TE in USD/tonne ✓
-    "cobalt":     ("鈷 (cobalt) US$/tonne",      1.0),       # TE in USD/tonne ✓
     "lithium":    ("鋰 (Lithium) CNY$/tonne",    1.0),       # TE in CNY/tonne ✓
     "phosphorus": ("黃磷 CNY$/tonne",            29.4274),   # TE in CNY/百kg → CNY/tonne
 }
+
+# Cobalt moved to dedicated fetcher (_fetch_cobalt_price) due to TE data quality issues
+# Using metals.live API as primary source instead
 
 
 def _fetch_bot_bcd_price(code: str) -> float | None:
@@ -774,6 +797,39 @@ def _fetch_te_price(slug: str) -> float | None:
             return float(m.group(1))
     except Exception as e:
         logger.warning(f"TE scrape {slug}: {e}")
+    return None
+
+
+def _fetch_cobalt_price() -> float | None:
+    """Fetch cobalt price from metals.live API (USD/tonne).
+    Uses metals.live as primary source since Trading Economics data quality is unreliable.
+    """
+    try:
+        r = req_lib.get("https://api.metals.live/v1/spot/cobalt", timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, dict) and "price" in data:
+                return float(data["price"])
+    except Exception as e:
+        logger.debug(f"metals.live cobalt: {e}")
+
+    # Fallback: try LME cobalt (if accessible)
+    try:
+        r = req_lib.get(
+            "https://www.lme.com/en-GB/Metals/Future-contracts/COBALT",
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            },
+            timeout=10
+        )
+        if r.status_code == 200:
+            import re
+            m = re.search(r'[\$£€]?\s*([\d,]+\.?\d{0,2})', r.text)
+            if m:
+                return float(m.group(1).replace(",", ""))
+    except Exception as e:
+        logger.debug(f"LME cobalt: {e}")
+
     return None
 
 
@@ -944,6 +1000,23 @@ def _refresh_live_prices():
                                  "url":   f"https://tradingeconomics.com/commodity/{slug}"}
             logger.info(f"TradingEconomics: {csv_name} = {val}")
 
+    logger.info("[REFRESH] Starting Cobalt (website source)...")
+    cobalt_name = "鈷 (cobalt) US$/tonne"
+    cobalt_price = _fetch_cobalt_price()
+    if cobalt_price is not None:
+        cobalt_val = round(cobalt_price, 2)
+        with _live_cache_lock:
+            prev = list(_live_commodity_cache.get(cobalt_name, []))
+        existing_dates = {d for d, _ in prev}
+        if today not in existing_dates:
+            prev.append((today, cobalt_val))
+        fresh[cobalt_name]   = prev
+        sources[cobalt_name] = {"label": "metals.live (API)",
+                                "url":   "https://metals.live"}
+        logger.info(f"Cobalt: {cobalt_name} = {cobalt_val}")
+    else:
+        logger.warning("Cobalt price fetch failed from all sources")
+
     logger.info("[REFRESH] Starting Tungsten...")
     try:
         tungsten_latest, tungsten_history, tungsten_daily = _fetch_ebaiyin_tungsten()
@@ -997,8 +1070,9 @@ def _refresh_live_prices():
 
 def _live_price_loop():
     _refresh_live_prices()
-    # Refresh at 08:00, 12:00, 15:00 Taiwan time (UTC+8) every day
-    _REFRESH_HOURS = {8, 12, 15}
+    # Refresh at 07:00, 09:00, 11:00, 13:00, 15:00, 17:00 Taiwan time (UTC+8) every day
+    # This ensures ~2+ data points per 7 days for cobalt and other commodities
+    _REFRESH_HOURS = {7, 9, 11, 13, 15, 17}
     last_run_hour: set = set()
     while True:
         time.sleep(60)
@@ -1206,6 +1280,303 @@ def api_commodities_refresh():
     return jsonify({"status": "refreshing"})
 
 
+@app.route("/api/risk/suppliers")
+def api_risk_suppliers():
+    """Return backend-managed supplier list from suppliers.json."""
+    import json
+    path = os.path.join(os.path.dirname(__file__), "suppliers.json")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            suppliers = json.load(f)
+    except FileNotFoundError:
+        suppliers = []
+    return jsonify(suppliers)
+
+
+@app.route("/api/risk/quakes")
+def api_risk_quakes():
+    """Proxy USGS earthquake feed (4.5+ past day)."""
+    try:
+        r = req_lib.get(
+            "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson",
+            timeout=5,
+        )
+        return r.content, r.status_code, {"Content-Type": "application/json"}
+    except Exception as e:
+        logger.warning(f"USGS proxy error: {e}")
+        return jsonify({"features": []})
+
+
+@app.route("/api/risk/storms")
+def api_risk_storms():
+    """Proxy NOAA NHC active storms."""
+    try:
+        r = req_lib.get("https://www.nhc.noaa.gov/CurrentStorms.json", timeout=5)
+        return r.content, r.status_code, {"Content-Type": "application/json"}
+    except Exception as e:
+        logger.warning(f"NHC proxy error: {e}")
+        return jsonify({"activeStorms": []})
+
+
+@app.route("/api/risk/gdacs")
+def api_risk_gdacs():
+    """Proxy GDACS floods and volcanic events (Orange/Red alerts only)."""
+    try:
+        r = req_lib.get(
+            "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH"
+            "?eventlist=FL;VO;TC&alertlevel=Orange;Red&limit=40",
+            timeout=8,
+        )
+        return r.content, r.status_code, {"Content-Type": "application/json"}
+    except Exception as e:
+        logger.warning(f"GDACS proxy error: {e}")
+        return jsonify({"features": []})
+
+
+@app.route("/api/risk/crises")
+def api_risk_crises():
+    """Proxy ReliefWeb ALL ongoing crises (wars, floods, epidemics)."""
+    try:
+        payload = {
+            "appname": "asustimes-risk",
+            "profile": "list",
+            "slim": 1,
+            "limit": 50,
+            "fields": {"include": ["name", "date", "country", "type", "status"]},
+            "filter": {"field": "status", "value": "ongoing"},
+            "sort": ["date.created:desc"],
+        }
+        r = req_lib.post("https://api.reliefweb.int/v1/disasters", json=payload, timeout=8)
+        return r.content, r.status_code, {"Content-Type": "application/json"}
+    except Exception as e:
+        logger.warning(f"ReliefWeb proxy error: {e}")
+        return jsonify({"data": []})
+
+
+# ── Geopolitical risk cache (4-hour TTL) ─────────────────────
+_geo_risk_cache: dict = {"data": None, "ts": 0.0}
+_geo_risk_lock  = threading.Lock()
+
+_GEO_RISKS = [
+    {"id":"geo-redsea",  "kw":["Houthi Red Sea ship attack","Red Sea shipping attack"],
+     "title":"紅海航運威脅（胡塞武裝）","type":"war","lat":14.5,"lng":42.5,"region":"葉門/紅海",
+     "impact":"CRITICAL","supply":"亞歐航程延長10-14天，運費上漲200-400%，建議改走好望角或提前備貨"},
+    {"id":"geo-taiwan",  "kw":["PLA Taiwan Strait military","China Taiwan military exercise"],
+     "title":"台灣海峽地緣緊張","type":"war","lat":24.0,"lng":122.0,"region":"東亞",
+     "impact":"HIGH","supply":"全球半導體（TSMC等）供應鏈最高風險區"},
+    {"id":"geo-iran",    "kw":["Iran Israel attack war","Iran US military strike","Iran attack Israel"],
+     "title":"伊朗地區衝突","type":"war","lat":32.0,"lng":53.0,"region":"中東/波斯灣",
+     "impact":"HIGH","supply":"荷姆茲海峽石油供應威脅，波斯灣航運風險"},
+    {"id":"geo-ukraine", "kw":["Ukraine Russia war attack","Russia Ukraine missile"],
+     "title":"俄烏戰爭","type":"war","lat":49.0,"lng":32.0,"region":"東歐",
+     "impact":"CRITICAL","supply":"穀物、化肥、氖氣供應中斷；黑海航運受限"},
+    {"id":"geo-drc",     "kw":["DRC Congo M23 conflict cobalt","Congo mineral conflict"],
+     "title":"剛果衝突（礦產風險）","type":"war","lat":-1.5,"lng":29.0,"region":"中非",
+     "impact":"HIGH","supply":"鈷、鋰等電池礦產供應不穩定"},
+    {"id":"geo-myanmar", "kw":["Myanmar civil war military","Myanmar junta conflict"],
+     "title":"緬甸內戰","type":"war","lat":19.8,"lng":96.2,"region":"東南亞",
+     "impact":"HIGH","supply":"稀土、天然氣出口受阻；紡織供應鏈中斷"},
+    {"id":"geo-india-pak",
+     "kw":["India Pakistan military tension border","India Pakistan conflict"],
+     "title":"印巴邊境緊張","type":"war","lat":30.0,"lng":71.0,"region":"南亞",
+     "impact":"MED","supply":"南亞製造業（電子/紡織）物流中斷風險"},
+]
+
+def _scan_one_geo_risk(risk, headers, cutoff):
+    """Scan Google News for one geopolitical risk entry. Returns result dict or None."""
+    import xml.etree.ElementTree as ET
+    from urllib.parse import quote
+    from email.utils import parsedate_to_datetime
+    found_date = ""
+    for kw in risk["kw"]:
+        try:
+            url = f"https://news.google.com/rss/search?q={quote(kw)}&hl=en-US&gl=US&ceid=US:en"
+            r = req_lib.get(url, timeout=5, headers=headers)
+            root = ET.fromstring(r.content)
+            for item in root.findall('.//item')[:5]:
+                pub = item.findtext('pubDate', '')
+                try:
+                    dt = parsedate_to_datetime(pub)
+                    if dt >= cutoff:
+                        found_date = str(dt.date())
+                        break
+                except Exception:
+                    found_date = "持續"
+                    break
+            if found_date:
+                break
+        except Exception as e:
+            logger.debug(f"geo news {kw}: {e}")
+    if not found_date:
+        return None
+    from urllib.parse import quote as _q
+    return {
+        "id": risk["id"], "type": risk["type"],
+        "title": risk["title"], "lat": risk["lat"], "lng": risk["lng"],
+        "region": risk["region"], "impact": risk["impact"],
+        "supply": risk["supply"],
+        "time": found_date, "status": "新聞持續報導中",
+        "source": "Google News自動監測",
+        "sourceUrl": f"https://news.google.com/search?q={_q(risk['kw'][0])}",
+    }
+
+
+def _do_geo_scan():
+    """Run parallel geopolitical scan and update cache. Returns results list."""
+    from datetime import datetime, timezone, timedelta
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    cutoff = datetime.now(timezone.utc) - timedelta(days=45)
+    results = []
+    executor = ThreadPoolExecutor(max_workers=len(_GEO_RISKS))
+    try:
+        futs = [executor.submit(_scan_one_geo_risk, risk, headers, cutoff)
+                for risk in _GEO_RISKS]
+        done, not_done = fut_wait(futs, timeout=20)
+        for fut in not_done:
+            fut.cancel()
+        for fut in done:
+            try:
+                res = fut.result()
+                if res:
+                    results.append(res)
+            except Exception as e:
+                logger.debug(f"geo scan error: {e}")
+    finally:
+        executor.shutdown(wait=False)
+    with _geo_risk_lock:
+        _geo_risk_cache["data"] = results
+        _geo_risk_cache["ts"] = time.time()
+    logger.info(f"Geopolitical risks detected: {len(results)}/{len(_GEO_RISKS)}")
+    return results
+
+
+@app.route("/api/risk/geopolitical")
+def api_risk_geopolitical():
+    """Return cached geopolitical risks instantly. Background loop refreshes every 3 hours."""
+    with _geo_risk_lock:
+        data = _geo_risk_cache["data"]
+    if data is None:
+        return jsonify([])
+    return jsonify(data)
+
+
+# ── Strike risk monitor ─────────────────────────────────────────────────────
+_STRIKE_TARGETS = [
+    {"company": "三星電子",  "kw": ["三星 罷工", "Samsung strike", "Samsung workers strike"],
+     "lat": 37.00, "lng": 127.06, "region": "韓國"},
+    {"company": "現代汽車",  "kw": ["現代 罷工", "Hyundai strike", "Hyundai workers"],
+     "lat": 37.49, "lng": 126.86, "region": "韓國"},
+    {"company": "富士康",    "kw": ["富士康 罷工", "Foxconn strike", "foxconn workers"],
+     "lat": 34.75, "lng": 113.62, "region": "中國"},
+    {"company": "波音",      "kw": ["波音 罷工", "Boeing strike", "Boeing workers walkout"],
+     "lat": 47.44, "lng": -122.31, "region": "美國"},
+    {"company": "UPS",       "kw": ["UPS strike", "UPS workers walkout"],
+     "lat": 33.75, "lng": -84.39,  "region": "美國"},
+    {"company": "Volkswagen","kw": ["Volkswagen strike", "VW strike", "福斯 罷工"],
+     "lat": 52.42, "lng": 10.79,   "region": "德國"},
+    {"company": "通用汽車",  "kw": ["GM strike", "General Motors strike", "UAW strike"],
+     "lat": 42.33, "lng": -83.04,  "region": "美國"},
+    {"company": "SK海力士",  "kw": ["SK Hynix strike", "SK海力士 罷工"],
+     "lat": 37.27, "lng": 127.44,  "region": "韓國"},
+    {"company": "LG",        "kw": ["LG strike", "LG 罷工"],
+     "lat": 37.52, "lng": 126.89,  "region": "韓國"},
+    {"company": "比亞迪",    "kw": ["比亞迪 罷工", "BYD strike", "BYD workers"],
+     "lat": 22.58, "lng": 114.09,  "region": "中國"},
+]
+
+_strike_cache: dict = {"data": None, "ts": 0.0}
+_strike_lock  = threading.Lock()
+
+def _scan_one_strike(target, headers, cutoff):
+    """Scan Google News for one strike target. Returns result dict or None."""
+    import xml.etree.ElementTree as ET
+    from urllib.parse import quote
+    from email.utils import parsedate_to_datetime
+    found_article = None
+    for kw in target["kw"]:
+        try:
+            url = f"https://news.google.com/rss/search?q={quote(kw)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+            r = req_lib.get(url, timeout=6, headers=headers)
+            root = ET.fromstring(r.content)
+            for item in root.findall(".//item")[:5]:
+                pub = item.findtext("pubDate", "")
+                try:
+                    dt = parsedate_to_datetime(pub)
+                    if dt >= cutoff:
+                        found_article = {
+                            "title": item.findtext("title", ""),
+                            "url":   item.findtext("link", ""),
+                            "date":  str(dt.date()),
+                        }
+                        break
+                except Exception:
+                    pass
+            if found_article:
+                break
+        except Exception as e:
+            logger.debug(f"strike news {kw}: {e}")
+    if not found_article:
+        return None
+    return {
+        "id":        f"strike-{target['company']}",
+        "type":      "strike",
+        "title":     f"{target['company']} 罷工事件",
+        "lat":       target["lat"], "lng": target["lng"],
+        "region":    target["region"],
+        "time":      found_article["date"],
+        "impact":    "HIGH",
+        "supply":    f"{target['company']}勞資衝突，可能影響生產排程與出貨交期，建議評估替代供應",
+        "source":    "Google News自動監測",
+        "sourceUrl": found_article["url"],
+        "newsTitle": found_article["title"],
+    }
+
+
+def _do_strike_scan():
+    """Run parallel strike scan and update cache. Returns results list."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
+    }
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    results = []
+    executor = ThreadPoolExecutor(max_workers=len(_STRIKE_TARGETS))
+    try:
+        futs = [executor.submit(_scan_one_strike, t, headers, cutoff)
+                for t in _STRIKE_TARGETS]
+        done, not_done = fut_wait(futs, timeout=25)
+        for fut in not_done:
+            fut.cancel()
+        for fut in done:
+            try:
+                res = fut.result()
+                if res:
+                    results.append(res)
+                    logger.info(f"Strike detected: {res['title']} ({res['time']})")
+            except Exception as e:
+                logger.debug(f"strike scan error: {e}")
+    finally:
+        executor.shutdown(wait=False)
+    with _strike_lock:
+        _strike_cache["data"] = results
+        _strike_cache["ts"] = time.time()
+    logger.info(f"Strike events: {len(results)}/{len(_STRIKE_TARGETS)}")
+    return results
+
+
+@app.route("/api/risk/strikes")
+def api_risk_strikes():
+    """Return cached strike events instantly. Background loop refreshes every 3 hours."""
+    with _strike_lock:
+        data = _strike_cache["data"]
+    if data is None:
+        return jsonify([])
+    return jsonify(data)
+
+
 def _get_commodity_data() -> dict:
     """Return parsed CSV + live data, with 5-min in-memory cache."""
     with _csv_parse_lock:
@@ -1288,9 +1659,12 @@ _SUPPLY_CHAIN_CLUSTERS = [
 ]
 
 _RISK_KEYWORDS = {
-    "disaster":     ["地震", "颱風", "颶風", "洪水", "火災", "海嘯", "停電", "earthquake", "typhoon", "flood", "hurricane", "tsunami", "disaster"],
+    "disaster":     ["地震", "颱風", "颶風", "洪水", "水災", "火災", "海嘯", "停電", "暴風雪", "龍捲風", "冰雹", "霜凍", "雪災",
+                     "earthquake", "typhoon", "flood", "hurricane", "tsunami", "disaster", "blizzard", "tornado", "snowstorm", "cyclone"],
     "geopolitical": ["制裁", "關稅", "禁令", "出口管制", "貿易戰", "tariff", "sanction", "ban", "export control", "trade war", "chip war"],
-    "operational":  ["罷工", "限電", "缺料", "斷鏈", "停工", "產能", "strike", "blackout", "shortage", "disruption", "halt"],
+    "strike":       ["罷工", "工人罷工", "工潮", "勞資爭議", "勞工抗議", "停工抗議",
+                     "strike", "labor strike", "workers strike", "walkout", "industrial action"],
+    "operational":  ["限電", "缺料", "斷鏈", "停工", "產能", "blackout", "shortage", "disruption", "halt"],
     "financial":    ["破產", "虧損", "裁員", "信評", "倒閉", "財報", "獲利預警", "虧損擴大",
                      "bankruptcy", "layoff", "downgrade", "profit warning", "earnings miss", "default"],
 }
@@ -1321,6 +1695,7 @@ _REGION_LABELS = {
 _RISK_TYPE_LABELS = {
     "disaster":     "🌊 天災",
     "geopolitical": "🚨 地緣",
+    "strike":       "✊ 罷工",
     "operational":  "⚡ 停運",
     "financial":    "💸 財警",
 }
@@ -1338,7 +1713,7 @@ def api_risk():
               if (a.get("published") or a.get("fetched_at", ""))[:10] >= cutoff_7d]
 
     # Score each cluster: match cluster keywords + risk keywords in recent articles
-    weights = {"disaster": 30, "geopolitical": 20, "operational": 15, "financial": 10}
+    weights = {"disaster": 30, "geopolitical": 20, "strike": 20, "operational": 15, "financial": 10}
     cluster_scores = {c["id"]: 0 for c in _SUPPLY_CHAIN_CLUSTERS}
     for article in recent:
         text = (article.get("title", "") + " " + article.get("summary", "")).lower()
@@ -1391,7 +1766,8 @@ def api_risk():
 
 
 if __name__ == "__main__":
-    # Refresh live prices before starting server so cache is warm
     logger.info("Fetching initial live prices...")
     _refresh_live_prices()
+    # Pre-warm risk caches in background so first page visit is fast
+    threading.Thread(target=_risk_cache_preload_loop, daemon=True).start()
     app.run(host="0.0.0.0", debug=False, port=5050, use_reloader=False)
