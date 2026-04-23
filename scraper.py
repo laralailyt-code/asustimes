@@ -121,20 +121,28 @@ CATEGORY_KEYWORDS = {
 }
 
 # ── Non-tech blocklist (articles matching these are dropped if no tech match) ──
+# NOTE: 颱風、地震、罷工 are supply chain risks, NOT filtered out
 NON_TECH_SIGNALS = [
     "選舉", "民調", "立委", "縣市長", "政黨", "藍綠",
     "棒球", "籃球", "足球", "奧運", "世界盃", "體育賽",
     "娛樂", "藝人", "明星", "電影票房", "韓劇", "偶像",
     "美食", "餐廳", "食安", "咖啡廳",
-    "颱風", "地震", "天氣預報",
     "房地產", "買房", "炒房", "房市",
     "醫療糾紛", "新冠疫苗", "醫院",
 ]
 
+# ── Supply chain risk keywords (NOT filtered even without tech keywords) ──
+_SUPPLY_CHAIN_RISK_KEYWORDS = {
+    "typhoon":   ["颱風", "typhoon", "颶風", "hurricane"],
+    "earthquake": ["地震", "earthquake"],
+    "strike":    ["罷工", "工人罷工", "工潮", "strike", "labor strike"],
+    "flood":     ["洪水", "水災", "flood"],
+}
+
 
 def classify_category(title: str, summary: str = "", hint: str = "") -> str | None:
     """Return matched category, or None if no tech keyword matches at all.
-    hint is only used as fallback when NO keywords match — it does NOT influence scoring.
+    Supply chain risks (strike, typhoon, earthquake, flood) are NEVER dropped.
     """
     text = f"{title} {summary}"   # hint excluded from scoring to avoid bias
     text_lower = text.lower()
@@ -148,6 +156,11 @@ def classify_category(title: str, summary: str = "", hint: str = "") -> str | No
     best = max(scores, key=scores.get)
     if scores[best] > 0:
         return best
+
+    # Check if this is a supply chain risk (never filter out)
+    for risk_type, risk_kws in _SUPPLY_CHAIN_RISK_KEYWORDS.items():
+        if any(rk.lower() in text_lower for rk in risk_kws):
+            return "供應鏈/關稅"  # Classify as supply chain even without tech keywords
 
     # No tech keyword hit → check blocklist
     for word in NON_TECH_SIGNALS:
