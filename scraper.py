@@ -287,6 +287,16 @@ FEEDS = [
     {"url": GN_EN + "TSMC+semiconductor+AI",                 "source": "Global Tech", "hint": "半導體"},
     {"url": GN_EN + "NVIDIA+GPU+data+center",                "source": "Global Tech", "hint": "AI 產業"},
     {"url": GN_EN + "earnings+semiconductor+quarterly",      "source": "Global Tech", "hint": "財報/法說"},
+
+    # ── Supply chain risks: strikes, conflicts, disasters ───────────────────
+    {"url": GN + "罷工",                                    "source": "Google News", "hint": "供應鏈/關稅"},
+    {"url": GN + "工人罷工+三星+富士康+鴻海",               "source": "Google News", "hint": "供應鏈/關稅"},
+    {"url": GN + "罷工+供應鏈+工潮",                        "source": "Google News", "hint": "供應鏈/關稅"},
+    {"url": GN + "戰爭+衝突+地緣政治",                      "source": "Google News", "hint": "供應鏈/關稅"},
+    {"url": GN + "伊朗+美國+中東+衝突",                     "source": "Google News", "hint": "供應鏈/關稅"},
+    {"url": GN + "紅海+胡塞+航運",                          "source": "Google News", "hint": "供應鏈/關稅"},
+    {"url": GN + "颱風+警報+停工+致災",                     "source": "Google News", "hint": "供應鏈/關稅"},
+    {"url": GN + "地震+水災+災害",                          "source": "Google News", "hint": "供應鏈/關稅"},
 ]
 
 
