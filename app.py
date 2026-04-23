@@ -806,35 +806,62 @@ def _fetch_te_price(slug: str) -> float | None:
 
 
 def _fetch_cobalt_price() -> float | None:
-    """Fetch cobalt price from metals.live API (USD/tonne).
-    Uses metals.live as primary source since Trading Economics data quality is unreliable.
+    """Fetch cobalt price from multiple sources.
+    Primary: metals.live API
+    Fallback 1: Trading Economics (slower but stable)
+    Fallback 2: LME website
     """
+    # Primary: metals.live API
     try:
         r = req_lib.get("https://api.metals.live/v1/spot/cobalt", timeout=10)
         if r.status_code == 200:
             data = r.json()
             if isinstance(data, dict) and "price" in data:
-                return float(data["price"])
+                price = float(data["price"])
+                if price > 0:
+                    return price
     except Exception as e:
         logger.debug(f"metals.live cobalt: {e}")
 
-    # Fallback: try LME cobalt (if accessible)
+    # Fallback 1: Trading Economics (reliable but slower)
+    try:
+        r = req_lib.get(
+            "https://tradingeconomics.com/commodity/cobalt",
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            timeout=12
+        )
+        if r.status_code == 200:
+            import re
+            m = re.search(r'"last":"?([\d.]+)', r.text)
+            if m:
+                price = float(m.group(1))
+                if price > 0:
+                    logger.info(f"Cobalt via Trading Economics fallback: {price}")
+                    return price
+    except Exception as e:
+        logger.debug(f"Trading Economics cobalt fallback: {e}")
+
+    # Fallback 2: LME website
     try:
         r = req_lib.get(
             "https://www.lme.com/en-GB/Metals/Future-contracts/COBALT",
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            },
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
             timeout=10
         )
         if r.status_code == 200:
             import re
             m = re.search(r'[\$£€]?\s*([\d,]+\.?\d{0,2})', r.text)
             if m:
-                return float(m.group(1).replace(",", ""))
+                price = float(m.group(1).replace(",", ""))
+                if price > 0:
+                    return price
     except Exception as e:
-        logger.debug(f"LME cobalt: {e}")
+        logger.debug(f"LME cobalt fallback: {e}")
 
+    logger.warning("All cobalt price sources failed")
     return None
 
 
@@ -1016,11 +1043,20 @@ def _refresh_live_prices():
         if today not in existing_dates:
             prev.append((today, cobalt_val))
         fresh[cobalt_name]   = prev
-        sources[cobalt_name] = {"label": "metals.live (API)",
+        sources[cobalt_name] = {"label": "metals.live (API) / Trading Economics",
                                 "url":   "https://metals.live"}
         logger.info(f"Cobalt: {cobalt_name} = {cobalt_val}")
     else:
-        logger.warning("Cobalt price fetch failed from all sources")
+        # If fetch fails, preserve existing cache (don't drop it)
+        with _live_cache_lock:
+            existing = _live_commodity_cache.get(cobalt_name, [])
+            if existing:
+                fresh[cobalt_name] = list(existing)
+                sources[cobalt_name] = {"label": "metals.live (API) / Trading Economics [cached]",
+                                        "url":   "https://metals.live"}
+                logger.warning(f"Cobalt fetch failed, using cached data ({len(existing)} points)")
+            else:
+                logger.warning("Cobalt price fetch failed from all sources and no cache available")
 
     logger.info("[REFRESH] Starting Tungsten...")
     try:
