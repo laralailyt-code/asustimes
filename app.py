@@ -1138,27 +1138,36 @@ def _refresh_live_prices():
 
     logger.info("[REFRESH] Starting Copper (LME source)...")
     copper_name = "銅 (copper) US$/tonne"
+    with _live_cache_lock:
+        prev = list(_live_commodity_cache.get(copper_name, []))
+
     copper_price = _fetch_copper_price()
     if copper_price is not None:
         # LME copper is in USD/tonne, convert from $/lb if needed
         copper_val = round(copper_price, 2)
-        with _live_cache_lock:
-            prev = list(_live_commodity_cache.get(copper_name, []))
         existing_dates = {d for d, _ in prev}
         if today not in existing_dates:
             prev.append((today, copper_val))
-        fresh[copper_name]   = prev
-        sources[copper_name] = {"label": "LME (歷史)",
+        else:
+            prev = [(d if d != today else today, copper_val if d == today else p) for d, p in prev]
+        fresh[copper_name] = prev
+        sources[copper_name] = {"label": "LME (metals.live)",
                                 "url":   "https://www.lme.com"}
-        logger.info(f"Copper: {copper_name} = {copper_val}")
+        logger.info(f"Copper: {copper_name} = {copper_val} ({len(prev)} points)")
     else:
-        # If fetch fails, preserve existing cache
-        with _live_cache_lock:
-            existing = _live_commodity_cache.get(copper_name, [])
-            if existing:
-                fresh[copper_name] = list(existing)
-                sources[copper_name] = {"label": "LME (cached)", "url": "https://www.lme.com"}
-                logger.warning(f"Copper fetch failed, using cached data ({len(existing)} points)")
+        # If fetch fails, still update today with last known price
+        existing_dates = {d for d, _ in prev}
+        if today not in existing_dates:
+            last_price = prev[-1][1] if prev else None
+            if last_price is not None:
+                prev.append((today, last_price))
+                logger.warning(f"Copper fetch failed, using last known price {last_price} for {today}")
+            else:
+                logger.error(f"Copper fetch failed and no historical data available for {today}")
+        fresh[copper_name] = prev
+        sources[copper_name] = {"label": "LME (cached)",
+                                "url":   "https://www.lme.com"}
+        logger.warning(f"Copper fetch failed, preserved data ({len(prev)} points)")
 
     logger.info("[REFRESH] Starting LME metals (Tin, Nickel, Zinc)...")
     lme_metals = {
@@ -1167,26 +1176,35 @@ def _refresh_live_prices():
         "鋅 (zinc)  US$/tonne": ("Zinc", "zinc", 1.0),
     }
     for csv_name, (display_name, api_slug, mult) in lme_metals.items():
+        with _live_cache_lock:
+            prev = list(_live_commodity_cache.get(csv_name, []))
+
         price = _fetch_lme_metal_price(display_name, api_slug)
         if price is not None:
             val = round(price * mult, 2)
-            with _live_cache_lock:
-                prev = list(_live_commodity_cache.get(csv_name, []))
             existing_dates = {d for d, _ in prev}
             if today not in existing_dates:
                 prev.append((today, val))
-            fresh[csv_name]   = prev
-            sources[csv_name] = {"label": "LME (歷史)",
+            else:
+                prev = [(d if d != today else today, val if d == today else p) for d, p in prev]
+            fresh[csv_name] = prev
+            sources[csv_name] = {"label": "LME (metals.live)",
                                 "url":   "https://www.lme.com"}
-            logger.info(f"LME: {csv_name} = {val}")
+            logger.info(f"LME: {csv_name} = {val} ({len(prev)} points)")
         else:
-            # If fetch fails, preserve existing cache
-            with _live_cache_lock:
-                existing = _live_commodity_cache.get(csv_name, [])
-                if existing:
-                    fresh[csv_name] = list(existing)
-                    sources[csv_name] = {"label": "LME (cached)", "url": "https://www.lme.com"}
-                    logger.warning(f"{csv_name} fetch failed, using cached data")
+            # If fetch fails, still update today with last known price
+            existing_dates = {d for d, _ in prev}
+            if today not in existing_dates:
+                last_price = prev[-1][1] if prev else None
+                if last_price is not None:
+                    prev.append((today, last_price))
+                    logger.warning(f"{csv_name} fetch failed, using last known price {last_price} for {today}")
+                else:
+                    logger.error(f"{csv_name} fetch failed and no historical data available for {today}")
+            fresh[csv_name] = prev
+            sources[csv_name] = {"label": "LME (cached)",
+                                "url":   "https://www.lme.com"}
+            logger.warning(f"{csv_name} fetch failed, preserved data ({len(prev)} points)")
 
     logger.info("[REFRESH] Starting Cobalt (pure LME only)...")
     cobalt_name = "鈷 (cobalt) US$/tonne"
@@ -1225,29 +1243,35 @@ def _refresh_live_prices():
 
     logger.info("[REFRESH] Starting Aluminum (LME source)...")
     aluminum_name = "鋁 (aluminum) US$/tonne"
+    with _live_cache_lock:
+        prev = list(_live_commodity_cache.get(aluminum_name, []))
+
     aluminum_price = _fetch_aluminum_price()
     if aluminum_price is not None:
         aluminum_val = round(aluminum_price, 2)
-        with _live_cache_lock:
-            prev = list(_live_commodity_cache.get(aluminum_name, []))
         existing_dates = {d for d, _ in prev}
         if today not in existing_dates:
             prev.append((today, aluminum_val))
-        fresh[aluminum_name]   = prev
-        sources[aluminum_name] = {"label": "LME (metals.live API fallback)",
+        else:
+            prev = [(d if d != today else today, aluminum_val if d == today else p) for d, p in prev]
+        fresh[aluminum_name] = prev
+        sources[aluminum_name] = {"label": "LME (metals.live)",
                                   "url":   "https://www.lme.com"}
-        logger.info(f"Aluminum: {aluminum_name} = {aluminum_val}")
+        logger.info(f"Aluminum: {aluminum_name} = {aluminum_val} ({len(prev)} points)")
     else:
-        # If fetch fails, preserve existing cache (don't drop it)
-        with _live_cache_lock:
-            existing = _live_commodity_cache.get(aluminum_name, [])
-            if existing:
-                fresh[aluminum_name] = list(existing)
-                sources[aluminum_name] = {"label": "LME (cached)",
-                                          "url":   "https://www.lme.com"}
-                logger.warning(f"Aluminum fetch failed, using cached data ({len(existing)} points)")
+        # If fetch fails, still update today with last known price
+        existing_dates = {d for d, _ in prev}
+        if today not in existing_dates:
+            last_price = prev[-1][1] if prev else None
+            if last_price is not None:
+                prev.append((today, last_price))
+                logger.warning(f"Aluminum fetch failed, using last known price {last_price} for {today}")
             else:
-                logger.warning("Aluminum price fetch failed from all sources and no cache available")
+                logger.error(f"Aluminum fetch failed and no historical data available for {today}")
+        fresh[aluminum_name] = prev
+        sources[aluminum_name] = {"label": "LME (cached)",
+                                  "url":   "https://www.lme.com"}
+        logger.warning(f"Aluminum fetch failed, preserved data ({len(prev)} points)")
 
     logger.info("[REFRESH] Starting Tungsten Powder (SMM 国产钨粉 only)...")
     tungsten_name = "鎢"
