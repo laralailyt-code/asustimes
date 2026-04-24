@@ -1512,11 +1512,11 @@ def _do_geo_scan():
     }
     cutoff = datetime.now(timezone.utc) - timedelta(days=45)
     results = []
-    executor = ThreadPoolExecutor(max_workers=len(_GEO_RISKS))
+    executor = ThreadPoolExecutor(max_workers=min(3, len(_GEO_RISKS)))  # Limit to 3 parallel
     try:
         futs = [executor.submit(_scan_one_geo_risk, risk, headers, cutoff)
                 for risk in _GEO_RISKS]
-        done, not_done = fut_wait(futs, timeout=20)
+        done, not_done = fut_wait(futs, timeout=60)  # Increased from 20 to 60
         for fut in not_done:
             fut.cancel()
         for fut in done:
@@ -1524,6 +1524,7 @@ def _do_geo_scan():
                 res = fut.result()
                 if res:
                     results.append(res)
+                    logger.info(f"[GEO] Found: {res['title']}")
             except Exception as e:
                 logger.debug(f"geo scan error: {e}")
     finally:
@@ -1625,11 +1626,11 @@ def _do_strike_scan():
     }
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
     results = []
-    executor = ThreadPoolExecutor(max_workers=len(_STRIKE_TARGETS))
+    executor = ThreadPoolExecutor(max_workers=min(3, len(_STRIKE_TARGETS)))  # Limit to 3 parallel
     try:
         futs = [executor.submit(_scan_one_strike, t, headers, cutoff)
                 for t in _STRIKE_TARGETS]
-        done, not_done = fut_wait(futs, timeout=25)
+        done, not_done = fut_wait(futs, timeout=60)  # Increased from 25 to 60
         for fut in not_done:
             fut.cancel()
         for fut in done:
@@ -1637,7 +1638,7 @@ def _do_strike_scan():
                 res = fut.result()
                 if res:
                     results.append(res)
-                    logger.info(f"Strike detected: {res['title']} ({res['time']})")
+                    logger.info(f"[STRIKE] Found: {res['title']} ({res['time']})")
             except Exception as e:
                 logger.debug(f"strike scan error: {e}")
     finally:
@@ -1872,10 +1873,36 @@ def api_risk():
 
     clusters_out = [{**c, "risk_score": cluster_scores.get(c["id"], 0)}
                     for c in _SUPPLY_CHAIN_CLUSTERS]
+
+    # Get cached strikes and geopolitical risks
+    with _strike_lock:
+        strikes = _strike_cache.get("data", []) or []
+    with _geo_risk_lock:
+        geo_risks = _geo_risk_cache.get("data", []) or []
+
+    # Combine specific events (strikes + geo risks) for the map
+    specific_events = []
+    for event in strikes + geo_risks:
+        specific_events.append({
+            "id": event.get("id"),
+            "type": event.get("type"),
+            "title": event.get("title"),
+            "region": event.get("region"),
+            "lat": event.get("lat"),
+            "lng": event.get("lng"),
+            "impact": event.get("impact"),
+            "supply": event.get("supply"),
+            "time": event.get("time"),
+            "source": event.get("source"),
+            "sourceUrl": event.get("sourceUrl"),
+            "newsTitle": event.get("newsTitle", ""),
+        })
+
     return jsonify({
         "clusters":           clusters_out,
         "regional_events":    regional_events[:50],
         "financial_warnings": financial_warnings[:50],
+        "specific_events":    specific_events,
         "last_updated":       now.strftime("%Y-%m-%d %H:%M"),
     })
 
