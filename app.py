@@ -1114,6 +1114,10 @@ def _refresh_live_prices():
         _live_commodity_cache.update(fresh)
     with _item_sources_lock:
         _item_sources.update(sources)
+        # Always ensure correct CSV-based sources for key commodities
+        _item_sources["鈷 (cobalt) US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
+        _item_sources["銅 (copper) US$/tonne"] = {"label": "Trading Economics (歷史)", "url": "https://tradingeconomics.com/commodity/copper"}
+        _item_sources["鋁 (aluminum) US$/tonne"] = {"label": "Trading Economics (歷史)", "url": "https://tradingeconomics.com/commodity/aluminum"}
     # Invalidate CSV parse cache so next request re-merges fresh live data
     with _csv_parse_lock:
         _csv_parse_cache["data"] = None
@@ -1252,12 +1256,29 @@ def _parse_commodity_csv() -> dict:
                 "values":   [p[1] for p in paired],
             }
 
-            # Set default source for CSV-only items (if not already set by live fetcher)
+            # Set default source for CSV-only items
             with _item_sources_lock:
-                if name not in _item_sources:
+                # Special source mappings for specific commodities (always set these)
+                if "鈷" in name or "cobalt" in name:
+                    _item_sources[name] = {
+                        "label": "LME (歷史)",
+                        "url": "https://www.lme.com"
+                    }
+                elif "銅" in name or "copper" in name:
+                    _item_sources[name] = {
+                        "label": "Trading Economics (歷史)",
+                        "url": "https://tradingeconomics.com/commodity/copper"
+                    }
+                elif "鋁" in name or "aluminum" in name:
+                    _item_sources[name] = {
+                        "label": "Trading Economics (歷史)",
+                        "url": "https://tradingeconomics.com/commodity/aluminum"
+                    }
+                elif name not in _item_sources:
+                    # Default source for other CSV-only items
                     _item_sources[name] = {
                         "label": "歷史記錄",
-                        "url": "file:///csv"  # Placeholder for CSV data
+                        "url": "file:///csv"
                     }
 
     except Exception as e:
