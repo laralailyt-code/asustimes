@@ -960,9 +960,21 @@ def _fetch_ebaiyin_tungsten() -> tuple:
 
 
 def _fetch_smm_tungsten_powder_price() -> float | None:
-    """Fetch Chinese tungsten powder (国产钨粉) price from SMM h5 page.
-    Primary source for tungsten pricing. Returns price in CNY/kg or None if fetch fails.
+    """Fetch tungsten price from reliable sources.
+    Primary: ebaiyin (1#钨条 tungsten rod)
+    Fallback: SMM (国产钨粉 tungsten powder) - but SMM uses JS rendering, may not work
+    Returns price in CNY/kg or None if fetch fails.
     """
+    # Primary: Try ebaiyin first (more reliable)
+    try:
+        ebaiyin_price, _, _ = _fetch_ebaiyin_tungsten()
+        if ebaiyin_price and ebaiyin_price > 0:
+            logger.info(f"Tungsten from ebaiyin (1#钨条): {ebaiyin_price} CNY/kg")
+            return ebaiyin_price
+    except Exception as e:
+        logger.debug(f"ebaiyin tungsten fetch: {e}")
+
+    # Fallback: Try SMM if ebaiyin fails
     import re
     try:
         r = req_lib.get(
@@ -971,37 +983,25 @@ def _fetch_smm_tungsten_powder_price() -> float | None:
                      "Accept-Language": "zh-CN,zh;q=0.9"},
             timeout=12
         )
-        # Look for price patterns in the page (SMM h5 page structure varies)
+        # Look for price patterns in the page
         patterns = [
-            r'均价[：:]\s*([0-9.]+)',  # 均价: 123.45
-            r'<[^>]*?class="[^"]*price[^"]*"[^>]*>([0-9.]+)',  # HTML class price
-            r'([0-9.]+)\s*元/千克',  # price 元/千克
-            r'([0-9.]+)\.00',  # Generic price patterns
-            r'>([0-9]{3,}\.?[0-9]*)<',  # Numbers in HTML tags
+            r'均价[：:]\s*([0-9.]+)',
+            r'([0-9.]+)\s*元/千克',
+            r'>(\d{3,}\.\d+)<',
         ]
         for pattern in patterns:
             matches = re.findall(pattern, r.text)
             for match in matches:
                 try:
                     price = float(match.replace(',', ''))
-                    if 100 < price < 500:  # Reasonable tungsten powder price range (CNY/kg)
-                        logger.info(f"SMM tungsten powder: {price} CNY/kg")
+                    if 100 < price < 500:  # Reasonable tungsten price range
+                        logger.info(f"Tungsten from SMM (fallback): {price} CNY/kg")
                         return price
                 except (ValueError, AttributeError):
                     continue
-        logger.warning(f"SMM tungsten powder: no valid price pattern matched in response")
+        logger.debug(f"SMM tungsten: no valid price pattern matched")
     except Exception as e:
-        logger.warning(f"SMM tungsten powder fetch: {e}")
-
-    # Fallback: Try ebaiyin if SMM fails
-    try:
-        logger.info("Trying ebaiyin tungsten fallback...")
-        ebaiyin_price, _, _ = _fetch_ebaiyin_tungsten()
-        if ebaiyin_price and ebaiyin_price > 0:
-            logger.info(f"SMM fallback to ebaiyin tungsten: {ebaiyin_price} CNY/kg")
-            return ebaiyin_price
-    except Exception as e:
-        logger.debug(f"ebaiyin tungsten fallback: {e}")
+        logger.debug(f"SMM tungsten fetch: {e}")
 
     return None
 
@@ -1211,9 +1211,9 @@ def _refresh_live_prices():
             else:
                 logger.warning("Aluminum price fetch failed from all sources and no cache available")
 
-    logger.info("[REFRESH] Starting Tungsten (国产钨粉 from SMM)...")
+    logger.info("[REFRESH] Starting Tungsten (ebaiyin 1#钨条 + SMM fallback)...")
     tungsten_name = "鎢"
-    tungsten_source = {"label": "上海有色網 SMM (钨粉)", "url": "https://hq.smm.cn/h5/tungsten-powder-price"}
+    tungsten_source = {"label": "八百易 ebaiyin (1#钨条)", "url": "https://www.ebaiyin.com/quote/wu.shtml"}
     tungsten_price = _fetch_smm_tungsten_powder_price()
 
     if tungsten_price is not None:
@@ -1228,21 +1228,20 @@ def _refresh_live_prices():
             # Update today's price if it already exists
             fresh[tungsten_name] = [(d if d != today else today, tungsten_val if d == today else p) for d, p in prev]
         sources[tungsten_name] = tungsten_source
-        logger.info(f"Tungsten: {tungsten_val} CNY/kg from SMM")
+        logger.info(f"Tungsten: {tungsten_val} CNY/kg (ebaiyin)")
     else:
         # If fetch fails, preserve existing cache or create placeholder
         with _live_cache_lock:
             existing = _live_commodity_cache.get(tungsten_name, [])
         if existing:
             fresh[tungsten_name] = list(existing)
-            sources[tungsten_name] = {"label": "上海有色網 SMM (钨粉) [cached]", "url": "https://hq.smm.cn/h5/tungsten-powder-price"}
+            sources[tungsten_name] = {"label": "八百易 ebaiyin (1#钨条) [cached]", "url": "https://www.ebaiyin.com/quote/wu.shtml"}
             logger.warning(f"Tungsten fetch failed, using cached data ({len(existing)} points)")
         else:
             # No existing cache — create placeholder entry so tungsten appears in API
-            # User said to start recording from 2026-03-25, but fetch failures shouldn't hide it
             fresh[tungsten_name] = []  # Empty list, will be populated with CSV data if available
-            sources[tungsten_name] = {"label": "上海有色網 SMM (钨粉)", "url": "https://hq.smm.cn/h5/tungsten-powder-price"}
-            logger.warning("Tungsten: fetch failed, waiting for SMM data (will start recording from 2026-03-25)")
+            sources[tungsten_name] = {"label": "八百易 ebaiyin (1#钨条)", "url": "https://www.ebaiyin.com/quote/wu.shtml"}
+            logger.warning("Tungsten: fetch failed, no cache available")
 
     with _live_cache_lock:
         _live_commodity_cache.update(fresh)
@@ -1425,8 +1424,8 @@ def _parse_commodity_csv() -> dict:
                     }
                 elif "鎢" in name or "tungsten" in name:
                     _item_sources[name] = {
-                        "label": "上海有色網 SMM (钨粉)",
-                        "url": "https://hq.smm.cn/h5/tungsten-powder-price"
+                        "label": "八百易 ebaiyin (1#钨条)",
+                        "url": "https://www.ebaiyin.com/quote/wu.shtml"
                     }
                 elif name not in _item_sources:
                     # Default source for other CSV-only items
