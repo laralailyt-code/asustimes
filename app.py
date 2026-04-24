@@ -1190,31 +1190,38 @@ def _refresh_live_prices():
 
     logger.info("[REFRESH] Starting Cobalt (pure LME only)...")
     cobalt_name = "鈷 (cobalt) US$/tonne"
+    with _live_cache_lock:
+        prev = list(_live_commodity_cache.get(cobalt_name, []))
+
     cobalt_price = _fetch_cobalt_price()
     if cobalt_price is not None:
         cobalt_val = round(cobalt_price, 2)
-        with _live_cache_lock:
-            prev = list(_live_commodity_cache.get(cobalt_name, []))
         existing_dates = {d for d, _ in prev}
         if today not in existing_dates:
             prev.append((today, cobalt_val))
-        fresh[cobalt_name]   = prev
+        else:
+            # Update today if already exists
+            prev = [(d if d != today else today, cobalt_val if d == today else p) for d, p in prev]
+        fresh[cobalt_name] = prev
         sources[cobalt_name] = {"label": "LME (metals.live)",
                                 "url":   "https://www.lme.com"}
         logger.info(f"Cobalt (pure LME): {cobalt_name} = {cobalt_val} ({len(prev)} points)")
     else:
-        # If fetch fails, only preserve cache from today onwards (no old mixed data)
-        with _live_cache_lock:
-            existing = _live_commodity_cache.get(cobalt_name, [])
-            # Filter to keep only recent data from 2026-04-24 onwards
-            recent = [(d, p) for d, p in existing if d >= "2026-04-24"]
-            if recent:
-                fresh[cobalt_name] = recent
-                sources[cobalt_name] = {"label": "LME (cached from 2026-04-24+)",
-                                        "url":   "https://www.lme.com"}
-                logger.warning(f"Cobalt fetch failed, keeping only recent data ({len(recent)} points from 2026-04-24+)")
+        # If fetch fails, still need to update today's record
+        # Use last known price or note as unavailable
+        existing_dates = {d for d, _ in prev}
+        if today not in existing_dates:
+            # Use last known price if available
+            last_price = prev[-1][1] if prev else None
+            if last_price is not None:
+                prev.append((today, last_price))
+                logger.warning(f"Cobalt fetch failed, using last known price {last_price} for {today}")
             else:
-                logger.warning("Cobalt price fetch failed and no recent cached data available")
+                logger.error(f"Cobalt fetch failed and no historical data available for {today}")
+        fresh[cobalt_name] = prev
+        sources[cobalt_name] = {"label": "LME (metals.live) [fetch may have failed]",
+                                "url":   "https://www.lme.com"}
+        logger.warning(f"Cobalt fetch failed, preserved data ({len(prev)} points)")
 
     logger.info("[REFRESH] Starting Aluminum (LME source)...")
     aluminum_name = "鋁 (aluminum) US$/tonne"
