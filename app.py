@@ -76,9 +76,11 @@ def background_refresh_loop():
 
 def _risk_cache_preload_loop():
     """Pre-warm geopolitical + strike caches at startup and every 3 hours."""
-    time.sleep(10)  # 讓 news cache 先刷新完再開始
+    first_run = True
     while True:
         try:
+            if not first_run:
+                time.sleep(2)  # Brief delay for subsequent runs
             logger.info("[RISK] Pre-warming geopolitical cache (parallel)...")
             _do_geo_scan()
         except Exception as e:
@@ -89,6 +91,7 @@ def _risk_cache_preload_loop():
         except Exception as e:
             logger.warning(f"[RISK] strike preload error: {e}")
         logger.info("[RISK] Risk caches pre-warmed.")
+        first_run = False
         time.sleep(3 * 3600)  # 每 3 小時更新一次
 
 
@@ -1475,22 +1478,26 @@ def _scan_one_geo_risk(risk, headers, cutoff):
         try:
             url = f"https://news.google.com/rss/search?q={quote(kw)}&hl=en-US&gl=US&ceid=US:en"
             r = req_lib.get(url, timeout=5, headers=headers)
-            root = ET.fromstring(r.content)
-            for item in root.findall('.//item')[:5]:
+            items = ET.fromstring(r.content).findall('.//item')[:5]
+            logger.info(f"[GEO] {risk['title']} + '{kw}': {len(items)} items (status {r.status_code})")
+            for item in items:
                 pub = item.findtext('pubDate', '')
                 try:
                     dt = parsedate_to_datetime(pub)
                     if dt >= cutoff:
                         found_date = str(dt.date())
+                        logger.info(f"[GEO] ✓ {risk['title']}: found recent article")
                         break
                 except Exception:
                     found_date = "持續"
+                    logger.info(f"[GEO] ✓ {risk['title']}: ongoing (no date)")
                     break
             if found_date:
                 break
         except Exception as e:
-            logger.debug(f"geo news {kw}: {e}")
+            logger.warning(f"[GEO] {risk['title']} + '{kw}' ERROR: {type(e).__name__}: {e}")
     if not found_date:
+        logger.info(f"[GEO] ✗ {risk['title']}: no matching articles")
         return None
     from urllib.parse import quote as _q
     return {
@@ -1585,7 +1592,9 @@ def _scan_one_strike(target, headers, cutoff):
             url = f"https://news.google.com/rss/search?q={quote(kw)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
             r = req_lib.get(url, timeout=6, headers=headers)
             root = ET.fromstring(r.content)
-            for item in root.findall(".//item")[:5]:
+            items = root.findall(".//item")[:5]
+            logger.info(f"[STRIKE] {target['company']} + '{kw}': {len(items)} items (status {r.status_code})")
+            for item in items:
                 pub = item.findtext("pubDate", "")
                 try:
                     dt = parsedate_to_datetime(pub)
@@ -1595,14 +1604,16 @@ def _scan_one_strike(target, headers, cutoff):
                             "url":   item.findtext("link", ""),
                             "date":  str(dt.date()),
                         }
+                        logger.info(f"[STRIKE] ✓ {target['company']}: {found_article['title'][:60]}")
                         break
                 except Exception:
                     pass
             if found_article:
                 break
         except Exception as e:
-            logger.debug(f"strike news {kw}: {e}")
+            logger.warning(f"[STRIKE] {target['company']} + '{kw}' ERROR: {type(e).__name__}: {e}")
     if not found_article:
+        logger.info(f"[STRIKE] ✗ {target['company']}: no matching articles")
         return None
     return {
         "id":        f"strike-{target['company']}",
@@ -1755,9 +1766,9 @@ _RISK_KEYWORDS = {
                      "bankruptcy", "layoff", "downgrade", "profit warning", "earnings miss", "default"],
 }
 
-# Typhoon only counts as disaster if paired with impact keywords (不只是氣象預報)
-_DISASTER_SEVERITY_KEYWORDS = ["警報", "停工", "警戒", "致災", "災害", "損失", "損害", "中斷",
-                                "warning", "alert", "closure", "damage", "disruption", "impact"]
+# Typhoon only counts as disaster if paired with SERIOUS impact keywords (致災程度，不只是氣象預報)
+_DISASTER_SEVERITY_KEYWORDS = ["致災", "災害", "損失", "損害", "中斷", "停工", "罹難", "傷亡",
+                                "damage", "disruption", "impact", "closure", "casualty", "fatality"]
 _TYPHOON_KEYWORDS = ["颱風", "typhoon"]
 
 _CLUSTER_KEYWORDS = {
@@ -1919,6 +1930,7 @@ def ensure_background_threads():
     logger.info("Starting background threads...")
     threading.Thread(target=background_refresh_loop, daemon=True).start()
     threading.Thread(target=_live_price_loop, daemon=True).start()
+    threading.Thread(target=_risk_cache_preload_loop, daemon=True).start()
     logger.info("Background threads started")
 
 if __name__ == "__main__":
