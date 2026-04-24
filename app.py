@@ -956,6 +956,18 @@ _YELLOW_PHOSPHORUS_HISTORY = {
     "2026-04-10": 29133.33,
 }
 
+# PC (Polycarbonate) historical data from user's Excel (2026-04-14 onwards)
+# Format: "YYYY-MM-DD": price (CNY/tonne)
+_PC_HISTORY = {
+    "2026-04-14": 17850.0,
+    "2026-04-15": 17716.67,
+    "2026-04-16": 17516.67,
+    "2026-04-17": 17466.67,
+    "2026-04-20": 17350.0,
+    "2026-04-21": 17350.0,
+    "2026-04-22": 17350.0,
+}
+
 
 def _fetch_ebaiyin_tungsten() -> tuple:
     """Fetch tungsten rod (1#鎢條) price and monthly history from ebaiyin.com API.
@@ -1064,6 +1076,56 @@ def _fetch_smm_tungsten_powder_price() -> float | None:
         logger.warning(f"SMM tungsten powder: could not extract price from page")
     except Exception as e:
         logger.warning(f"SMM tungsten powder fetch error: {e}")
+
+    return None
+
+
+def _fetch_pc_price_from_sci99() -> float | None:
+    """Fetch PC (Polycarbonate) price from sci99.com/monitor-678-0.html.
+    Returns price in CNY/tonne or None if fetch fails.
+    """
+    import re
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept-Language": "zh-CN,zh;q=0.9",
+        }
+        r = req_lib.get(
+            "https://www.sci99.com/monitor-678-0.html",
+            headers=headers,
+            timeout=12
+        )
+
+        # Try to find PC price in multiple formats from sci99 page
+        patterns = [
+            # "PC: 17350" or "PC（聚碳酸酯）: 17350"
+            r'PC[^0-9]*?(\d{4,5}(?:\.\d+)?)',
+            # "聚碳酸酯: 17350"
+            r'聚碳酸酯[：:]\s*(\d{4,5}(?:\.\d+)?)',
+            # Price in HTML/JSON format
+            r'"pc"\s*:\s*(\d{4,5}(?:\.\d+)?)',
+            # Generic pattern: number between 15000-20000 (PC typical range)
+            r'>(\d{5}(?:\.\d+)?)\s*<',
+        ]
+
+        for pattern in patterns:
+            try:
+                matches = re.findall(pattern, r.text, re.IGNORECASE)
+                for match in matches:
+                    try:
+                        price = float(match.replace(',', ''))
+                        # Validate price range for PC (10000-25000 CNY/tonne typical)
+                        if 10000 < price < 25000:
+                            logger.info(f"PC price from sci99.com: {price} CNY/tonne")
+                            return price
+                    except (ValueError, TypeError):
+                        continue
+            except:
+                continue
+
+        logger.warning(f"sci99.com PC: could not extract price from page")
+    except Exception as e:
+        logger.warning(f"sci99.com PC fetch error: {e}")
 
     return None
 
@@ -1394,6 +1456,46 @@ def _refresh_live_prices():
             logger.warning(f"Tungsten Powder fetch failed from SMM, keeping cached data ({len(prev)} points)")
         else:
             logger.error("Tungsten Powder: No price available and no cache")
+
+    logger.info("[REFRESH] Starting PC (Polycarbonate from sci99.com)...")
+    pc_name = "聚碳酸酯 (PC) CNY$/tonne"
+    with _live_cache_lock:
+        prev = list(_live_commodity_cache.get(pc_name, []))
+
+    # Initialize from historical data if cache is empty
+    if not prev:
+        prev = [(date, price) for date, price in sorted(_PC_HISTORY.items())]
+        logger.info(f"Initialized PC from user history: {len(prev)} points")
+
+    pc_price = _fetch_pc_price_from_sci99()
+    if pc_price is not None:
+        pc_val = round(pc_price, 2)
+        existing_dates = {d for d, _ in prev}
+        if today not in existing_dates:
+            prev.append((today, pc_val))
+            logger.info(f"Added new PC price for {today}: {pc_val} CNY/tonne")
+        else:
+            # Update today if already exists
+            prev = [(d if d != today else today, pc_val if d == today else p) for d, p in prev]
+            logger.info(f"Updated PC price for {today}: {pc_val} CNY/tonne")
+        fresh[pc_name] = prev
+        sources[pc_name] = {"label": "sci99.com",
+                            "url":   "https://www.sci99.com/monitor-678-0.html"}
+        logger.info(f"PC: {len(prev)} historical points (latest: {pc_val} CNY/tonne on {today})")
+    else:
+        # If fetch fails, still update today with last known price
+        existing_dates = {d for d, _ in prev}
+        if today not in existing_dates:
+            last_price = prev[-1][1] if prev else None
+            if last_price is not None:
+                prev.append((today, last_price))
+                logger.warning(f"PC fetch failed, using last known price {last_price} for {today}")
+            else:
+                logger.error(f"PC fetch failed and no historical data available for {today}")
+        fresh[pc_name] = prev
+        sources[pc_name] = {"label": "sci99.com (cached)",
+                            "url":   "https://www.sci99.com/monitor-678-0.html"}
+        logger.warning(f"PC fetch failed, preserved data ({len(prev)} points)")
 
     with _live_cache_lock:
         _live_commodity_cache.update(fresh)
