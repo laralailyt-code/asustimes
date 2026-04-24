@@ -1049,7 +1049,8 @@ def _refresh_live_prices():
 
     logger.info("[REFRESH] Starting TradingEconomics (non-LME metals only)...")
     # Filter out metals that should come from LME instead
-    lme_slugs = {"tin", "nickel", "zinc"}  # These will be fetched from LME below
+    # All LME-traded metals: cobalt, copper, tin, nickel, zinc, aluminum
+    lme_slugs = {"copper", "tin", "nickel", "zinc", "aluminum"}  # These will be fetched from LME below
     for slug, (csv_name, mult) in _TE_SLUGS.items():
         if slug in lme_slugs:
             continue  # Skip LME metals, fetch them separately
