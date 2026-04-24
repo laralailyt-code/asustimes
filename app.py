@@ -1816,9 +1816,9 @@ _RISK_TYPE_LABELS = {
     "financial":    "💸 財警",  # Financial: shown in news wall but NOT counted for risk scores
 }
 
-# Key fab keywords: only events affecting these count toward risk scoring
-_KEY_FAB_KEYWORDS = ["台積電", "tsmc", "samsung", "三星", "sk海力士", "sk hynix", "intel", "英特爾",
-                     "dram", "nand flash", "晶圓代工", "memory", "記憶體"]
+# Key fab keywords: ONLY specific critical companies (not generic product terms)
+_KEY_FAB_KEYWORDS = ["台積電", "tsmc", "samsung", "三星", "sk海力士", "sk hynix", "hynix",
+                     "intel", "英特爾", "mediatek", "聯發科", "聯電", "umc"]
 
 # Event certainty keywords: indicates confirmed/imminent event (not pure forecast)
 _CONFIRMED_EVENT_KEYWORDS = ["宣布", "確認", "已發生", "發動", "啟動", "正在", "進行中", "將", "即將",
