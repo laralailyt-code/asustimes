@@ -898,6 +898,7 @@ def _fetch_lme_metal_price(metal_name: str, metals_live_slug: str) -> float | No
 
 # Tungsten historical data from user's Excel (2026-03-25 onwards)
 # Format: "YYYY-MM-DD": price (CNY/kg)
+# Note: 4/03-4/06 no data in original spreadsheet
 _TUNGSTEN_HISTORY = {
     "2026-03-25": 2385.0,
     "2026-03-26": 2385.0,
@@ -906,7 +907,6 @@ _TUNGSTEN_HISTORY = {
     "2026-03-31": 2330.0,
     "2026-04-01": 2310.0,
     "2026-04-02": 2290.0,
-    # 4/03-4/06 no data
     "2026-04-07": 2260.0,
     "2026-04-08": 2240.0,
     "2026-04-09": 2220.0,
