@@ -811,6 +811,7 @@ def _fetch_te_price(slug: str) -> float | None:
 def _fetch_cobalt_price() -> float | None:
     """Fetch cobalt price from metals.live API (LME data).
     Primary: metals.live API (LME settlement prices)
+    Fallback: Trading Economics
     """
     try:
         r = req_lib.get("https://api.metals.live/v1/spot/cobalt", timeout=10)
@@ -823,12 +824,23 @@ def _fetch_cobalt_price() -> float | None:
                     return price
     except Exception as e:
         logger.debug(f"metals.live cobalt fetch: {e}")
+
+    # Fallback: Try Trading Economics
+    try:
+        price = _fetch_te_price("cobalt")
+        if price and price > 0:
+            logger.info(f"Cobalt from Trading Economics (fallback): ${price}")
+            return price
+    except Exception as e:
+        logger.debug(f"Trading Economics cobalt fallback: {e}")
+
     return None
 
 
 def _fetch_aluminum_price() -> float | None:
     """Fetch aluminum price from metals.live API (LME data).
     Primary: metals.live API (LME settlement prices)
+    Fallback: Trading Economics
     """
     try:
         r = req_lib.get("https://api.metals.live/v1/spot/aluminum", timeout=10)
@@ -841,6 +853,16 @@ def _fetch_aluminum_price() -> float | None:
                     return price
     except Exception as e:
         logger.debug(f"metals.live aluminum fetch: {e}")
+
+    # Fallback: Try Trading Economics
+    try:
+        price = _fetch_te_price("aluminum")
+        if price and price > 0:
+            logger.info(f"Aluminum from Trading Economics (fallback): ${price}")
+            return price
+    except Exception as e:
+        logger.debug(f"Trading Economics aluminum fallback: {e}")
+
     return None
 
 
@@ -939,8 +961,7 @@ def _fetch_ebaiyin_tungsten() -> tuple:
 
 def _fetch_smm_tungsten_powder_price() -> float | None:
     """Fetch Chinese tungsten powder (国产钨粉) price from SMM h5 page.
-    Primary source for tungsten pricing (replaces ebaiyin).
-    Returns price in CNY/kg or None if fetch fails.
+    Primary source for tungsten pricing. Returns price in CNY/kg or None if fetch fails.
     """
     import re
     try:
@@ -950,23 +971,38 @@ def _fetch_smm_tungsten_powder_price() -> float | None:
                      "Accept-Language": "zh-CN,zh;q=0.9"},
             timeout=12
         )
-        # Look for price pattern in the page (may vary, adjust regex as needed)
-        # Pattern: "均价" or average price followed by number
+        # Look for price patterns in the page (SMM h5 page structure varies)
         patterns = [
-            r'均价[:\s]*([\d.]+)',  # 均价: 123.45
-            r'[\d,]+\s*-\s*[\d,]+[^|]*\|\s*([\d,]+)',  # Range | price | ...
-            r'([\d.]+)\s*元/千克',  # price 元/千克
+            r'均价[：:]\s*([0-9.]+)',  # 均价: 123.45
+            r'<[^>]*?class="[^"]*price[^"]*"[^>]*>([0-9.]+)',  # HTML class price
+            r'([0-9.]+)\s*元/千克',  # price 元/千克
+            r'([0-9.]+)\.00',  # Generic price patterns
+            r'>([0-9]{3,}\.?[0-9]*)<',  # Numbers in HTML tags
         ]
         for pattern in patterns:
-            m = re.search(pattern, r.text)
-            if m:
-                price = float(m.group(1).replace(',', ''))
-                if price > 0:
-                    logger.info(f"SMM tungsten powder: {price} CNY/kg")
-                    return price
-        logger.warning(f"SMM tungsten powder: no price pattern matched in response")
+            matches = re.findall(pattern, r.text)
+            for match in matches:
+                try:
+                    price = float(match.replace(',', ''))
+                    if 100 < price < 500:  # Reasonable tungsten powder price range (CNY/kg)
+                        logger.info(f"SMM tungsten powder: {price} CNY/kg")
+                        return price
+                except (ValueError, AttributeError):
+                    continue
+        logger.warning(f"SMM tungsten powder: no valid price pattern matched in response")
     except Exception as e:
         logger.warning(f"SMM tungsten powder fetch: {e}")
+
+    # Fallback: Try ebaiyin if SMM fails
+    try:
+        logger.info("Trying ebaiyin tungsten fallback...")
+        ebaiyin_price, _, _ = _fetch_ebaiyin_tungsten()
+        if ebaiyin_price and ebaiyin_price > 0:
+            logger.info(f"SMM fallback to ebaiyin tungsten: {ebaiyin_price} CNY/kg")
+            return ebaiyin_price
+    except Exception as e:
+        logger.debug(f"ebaiyin tungsten fallback: {e}")
+
     return None
 
 
