@@ -960,21 +960,10 @@ def _fetch_ebaiyin_tungsten() -> tuple:
 
 
 def _fetch_smm_tungsten_powder_price() -> float | None:
-    """Fetch tungsten price from reliable sources.
-    Primary: ebaiyin (1#钨条 tungsten rod)
-    Fallback: SMM (国产钨粉 tungsten powder) - but SMM uses JS rendering, may not work
+    """Fetch tungsten POWDER (钨粉) price from SMM h5 page.
+    Primary: SMM (国产钨粉 domestic tungsten powder)
     Returns price in CNY/kg or None if fetch fails.
     """
-    # Primary: Try ebaiyin first (more reliable)
-    try:
-        ebaiyin_price, _, _ = _fetch_ebaiyin_tungsten()
-        if ebaiyin_price and ebaiyin_price > 0:
-            logger.info(f"Tungsten from ebaiyin (1#钨条): {ebaiyin_price} CNY/kg")
-            return ebaiyin_price
-    except Exception as e:
-        logger.debug(f"ebaiyin tungsten fetch: {e}")
-
-    # Fallback: Try SMM if ebaiyin fails
     import re
     try:
         r = req_lib.get(
@@ -983,25 +972,36 @@ def _fetch_smm_tungsten_powder_price() -> float | None:
                      "Accept-Language": "zh-CN,zh;q=0.9"},
             timeout=12
         )
-        # Look for price patterns in the page
+
+        # Look for tungsten powder prices in the page
+        # SMM页面包含多个价格（国产、出口等），需要从HTML中提取
+        # Pattern: Look for numbers in 1000-5000 range (typical for tungsten powder in CNY/kg)
         patterns = [
-            r'均价[：:]\s*([0-9.]+)',
-            r'([0-9.]+)\s*元/千克',
-            r'>(\d{3,}\.\d+)<',
+            r'>(\d{3,4}(?:\.\d+)?)\s*<',  # Numbers in HTML tags
+            r'(\d{3,4}(?:\.\d+)?)\s*元/千克',  # price 元/千克
+            r'均价[：:]\s*(\d+(?:\.\d+)?)',  # Average price pattern
         ]
+
+        candidate_prices = []
         for pattern in patterns:
             matches = re.findall(pattern, r.text)
             for match in matches:
                 try:
                     price = float(match.replace(',', ''))
-                    if 100 < price < 500:  # Reasonable tungsten price range
-                        logger.info(f"Tungsten from SMM (fallback): {price} CNY/kg")
-                        return price
+                    if 200 < price < 5000:  # Reasonable tungsten powder price range (CNY/kg)
+                        candidate_prices.append(price)
                 except (ValueError, AttributeError):
                     continue
-        logger.debug(f"SMM tungsten: no valid price pattern matched")
+
+        # Return the most common or first valid price
+        if candidate_prices:
+            price = candidate_prices[0]  # Take first valid price
+            logger.info(f"Tungsten powder from SMM (钨粉): {price} CNY/kg")
+            return price
+
+        logger.warning(f"SMM tungsten powder: no valid price pattern matched")
     except Exception as e:
-        logger.debug(f"SMM tungsten fetch: {e}")
+        logger.warning(f"SMM tungsten powder fetch: {e}")
 
     return None
 
@@ -1211,12 +1211,15 @@ def _refresh_live_prices():
             else:
                 logger.warning("Aluminum price fetch failed from all sources and no cache available")
 
-    logger.info("[REFRESH] Starting Tungsten (ebaiyin 1#钨条 with history)...")
+    logger.info("[REFRESH] Starting Tungsten Powder (SMM 国产钨粉)...")
     tungsten_name = "鎢"
-    tungsten_source = {"label": "八百易 ebaiyin (1#钨条)", "url": "https://www.ebaiyin.com/quote/wu.shtml"}
+    tungsten_source = {"label": "上海有色網 SMM (钨粉)", "url": "https://hq.smm.cn/h5/tungsten-powder-price"}
 
-    # Get both current price and monthly history from ebaiyin
-    tungsten_price, tungsten_history, tungsten_daily = _fetch_ebaiyin_tungsten()
+    # Get current price from SMM
+    tungsten_price = _fetch_smm_tungsten_powder_price()
+
+    # Get historical data from ebaiyin (1#钨条 as proxy for historical trend)
+    _, tungsten_history, tungsten_daily = _fetch_ebaiyin_tungsten()
 
     if tungsten_price is not None or tungsten_history:
         # Merge monthly history with daily data
@@ -1241,7 +1244,7 @@ def _refresh_live_prices():
                     # Update existing date
                     updated_list = [(d if d != date_str else date_str, history_dates[date_str] if d == date_str else p) for d, p in updated_list]
 
-        # Add/update today's price
+        # Add/update today's price from SMM
         if today not in existing_dates:
             if tungsten_price is not None:
                 updated_list.append((today, tungsten_price))
@@ -1251,20 +1254,21 @@ def _refresh_live_prices():
 
         fresh[tungsten_name] = updated_list
         sources[tungsten_name] = tungsten_source
-        logger.info(f"Tungsten: {len(updated_list)} data points from ebaiyin (current: {tungsten_price} CNY/kg)")
+        data_points = len([d for d, _ in updated_list if d >= cutoff_date])
+        logger.info(f"Tungsten Powder: {data_points} data points since 2026-03-25 (current: {tungsten_price} CNY/kg from SMM)")
     else:
         # If fetch fails, preserve existing cache or create placeholder
         with _live_cache_lock:
             existing = _live_commodity_cache.get(tungsten_name, [])
         if existing:
             fresh[tungsten_name] = list(existing)
-            sources[tungsten_name] = {"label": "八百易 ebaiyin (1#钨条) [cached]", "url": "https://www.ebaiyin.com/quote/wu.shtml"}
-            logger.warning(f"Tungsten fetch failed, using cached data ({len(existing)} points)")
+            sources[tungsten_name] = {"label": "上海有色網 SMM (钨粉) [cached]", "url": "https://hq.smm.cn/h5/tungsten-powder-price"}
+            logger.warning(f"Tungsten Powder fetch failed, using cached data ({len(existing)} points)")
         else:
             # No existing cache — create placeholder entry so tungsten appears in API
             fresh[tungsten_name] = []
-            sources[tungsten_name] = {"label": "八百易 ebaiyin (1#钨条)", "url": "https://www.ebaiyin.com/quote/wu.shtml"}
-            logger.warning("Tungsten: fetch failed, no cache available")
+            sources[tungsten_name] = tungsten_source
+            logger.warning("Tungsten Powder: fetch failed, no cache available")
 
     with _live_cache_lock:
         _live_commodity_cache.update(fresh)
