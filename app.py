@@ -1252,6 +1252,14 @@ def _parse_commodity_csv() -> dict:
                 "values":   [p[1] for p in paired],
             }
 
+            # Set default source for CSV-only items (if not already set by live fetcher)
+            with _item_sources_lock:
+                if name not in _item_sources:
+                    _item_sources[name] = {
+                        "label": "歷史記錄",
+                        "url": "file:///csv"  # Placeholder for CSV data
+                    }
+
     except Exception as e:
         logger.error(f"Commodity CSV parse error: {e}")
 
@@ -1718,7 +1726,9 @@ _SUPPLY_CHAIN_CLUSTERS = [
 _RISK_KEYWORDS = {
     "disaster":     ["地震", "颶風", "洪水", "水災", "火災", "海嘯", "暴風雪", "龍捲風", "冰雹", "霜凍", "雪災",
                      "earthquake", "hurricane", "flood", "tsunami", "disaster", "blizzard", "tornado", "snowstorm", "cyclone"],
-    "geopolitical": ["制裁", "關稅", "禁令", "出口管制", "貿易戰", "tariff", "sanction", "ban", "export control", "trade war", "chip war"],
+    "geopolitical": ["制裁", "關稅", "禁令", "出口管制", "貿易戰", "戰爭", "衝突", "伊朗", "中東", "紅海", "胡塞", "俄烏", "以巴",
+                     "tariff", "sanction", "ban", "export control", "trade war", "chip war",
+                     "war", "conflict", "iran", "middle east", "red sea", "houthi", "russia ukraine", "israel palestin"],
     "strike":       ["罷工", "工人罷工", "工潮", "勞資爭議", "勞工抗議", "工會", "停工", "罷課",
                      "strike", "labor strike", "workers strike", "walkout", "industrial action", "union"],
     "operational":  ["限電", "缺料", "斷鏈", "停工", "產能", "blackout", "shortage", "disruption", "halt"],
