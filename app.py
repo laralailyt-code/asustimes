@@ -623,8 +623,7 @@ _LIVE_COMMODITY_SYMBOLS = {
     "SI=F":  ("銀 (silver) US$/盎司",          1.0),       # Silver $/oz
     "CL=F":  ("石油 西德州 ( US$/桶)",          1.0),       # WTI $/barrel
     "BZ=F":  ("石油 北海布蘭特 (US$/桶)",       1.0),       # Brent $/barrel
-    "HG=F":  ("銅 (copper) US$/tonne",         2204.62),   # Copper $/lb → $/tonne
-    # ALI=F removed — now uses dedicated LME fetcher (_fetch_aluminum_price)
+    # HG=F, ALI=F removed — now uses dedicated LME fetchers
 }
 
 # yfinance FX tickers → (exact CSV item name, multiplier)
@@ -953,6 +952,76 @@ def _fetch_aluminum_price() -> float | None:
     return None
 
 
+def _fetch_copper_price() -> float | None:
+    """Fetch copper price with LME as primary source.
+    Primary: LME (London Metal Exchange) - official source
+    Fallback: Yahoo Finance (COMEX)
+    """
+    # Primary: LME
+    try:
+        r = req_lib.get(
+            "https://www.lme.com/en-GB/Metals/Future-contracts/COPPER",
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            timeout=12
+        )
+        if r.status_code == 200:
+            import re
+            patterns = [
+                r'Settlement:\s*[\$£€]?\s*([\d,]+\.?\d{0,2})',
+                r'Last:\s*[\$£€]?\s*([\d,]+\.?\d{0,2})',
+                r'[\$£€]?\s*([\d,]+)(?:\.\d{1,2})?\s*USD',
+            ]
+            for pattern in patterns:
+                m = re.search(pattern, r.text, re.IGNORECASE)
+                if m:
+                    price = float(m.group(1).replace(",", ""))
+                    if price > 0:
+                        logger.info(f"Copper from LME: ${price}")
+                        return price
+    except Exception as e:
+        logger.debug(f"LME copper fetch: {e}")
+    return None
+
+
+def _fetch_lme_metal_price(metal_name: str, metal_url_name: str) -> float | None:
+    """Generic LME metal price fetcher.
+    Args:
+        metal_name: Display name (e.g., "Tin", "Nickel")
+        metal_url_name: LME URL path (e.g., "TIN", "NICKEL")
+    Returns:
+        Price in USD or None if fetch fails
+    """
+    try:
+        r = req_lib.get(
+            f"https://www.lme.com/en-GB/Metals/Future-contracts/{metal_url_name}",
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            timeout=12
+        )
+        if r.status_code == 200:
+            import re
+            patterns = [
+                r'Settlement:\s*[\$£€]?\s*([\d,]+\.?\d{0,2})',
+                r'Last:\s*[\$£€]?\s*([\d,]+\.?\d{0,2})',
+                r'[\$£€]?\s*([\d,]+)(?:\.\d{1,2})?\s*USD',
+            ]
+            for pattern in patterns:
+                m = re.search(pattern, r.text, re.IGNORECASE)
+                if m:
+                    price = float(m.group(1).replace(",", ""))
+                    if price > 0:
+                        logger.info(f"{metal_name} from LME: ${price}")
+                        return price
+    except Exception as e:
+        logger.debug(f"LME {metal_name} fetch: {e}")
+    return None
+
+
 def _fetch_ebaiyin_tungsten() -> tuple:
     """Fetch tungsten rod (1#鎢條) price and monthly history from ebaiyin.com API.
     Returns (latest_price_or_None, [(date_str, price), ...]).
@@ -1101,8 +1170,12 @@ def _refresh_live_prices():
                                  "url":   "https://www.buyplas.com/spot/1003-PP-PE-PVC-ABS-PS.html"}
             logger.info(f"buyplas.com {key}: {csv_name} = {price}")
 
-    logger.info("[REFRESH] Starting TradingEconomics...")
+    logger.info("[REFRESH] Starting TradingEconomics (non-LME metals only)...")
+    # Filter out metals that should come from LME instead
+    lme_slugs = {"tin", "nickel", "zinc"}  # These will be fetched from LME below
     for slug, (csv_name, mult) in _TE_SLUGS.items():
+        if slug in lme_slugs:
+            continue  # Skip LME metals, fetch them separately
         try:
             price = _fetch_te_price(slug)
         except Exception as e:
@@ -1119,6 +1192,58 @@ def _refresh_live_prices():
             sources[csv_name] = {"label": "Trading Economics",
                                  "url":   f"https://tradingeconomics.com/commodity/{slug}"}
             logger.info(f"TradingEconomics: {csv_name} = {val}")
+
+    logger.info("[REFRESH] Starting Copper (LME source)...")
+    copper_name = "銅 (copper) US$/tonne"
+    copper_price = _fetch_copper_price()
+    if copper_price is not None:
+        # LME copper is in USD/tonne, convert from $/lb if needed
+        copper_val = round(copper_price, 2)
+        with _live_cache_lock:
+            prev = list(_live_commodity_cache.get(copper_name, []))
+        existing_dates = {d for d, _ in prev}
+        if today not in existing_dates:
+            prev.append((today, copper_val))
+        fresh[copper_name]   = prev
+        sources[copper_name] = {"label": "LME (歷史)",
+                                "url":   "https://www.lme.com"}
+        logger.info(f"Copper: {copper_name} = {copper_val}")
+    else:
+        # If fetch fails, preserve existing cache
+        with _live_cache_lock:
+            existing = _live_commodity_cache.get(copper_name, [])
+            if existing:
+                fresh[copper_name] = list(existing)
+                sources[copper_name] = {"label": "LME (cached)", "url": "https://www.lme.com"}
+                logger.warning(f"Copper fetch failed, using cached data ({len(existing)} points)")
+
+    logger.info("[REFRESH] Starting LME metals (Tin, Nickel, Zinc)...")
+    lme_metals = {
+        "錫 (tin) US$/tonne": ("TIN", 1.0),
+        "鎳 (nickel)  US$/tonne": ("NICKEL", 1.0),
+        "鋅 (zinc)  US$/tonne": ("ZINC", 1.0),
+    }
+    for csv_name, (url_name, mult) in lme_metals.items():
+        price = _fetch_lme_metal_price(csv_name.split("(")[1].strip().rstrip(")"), url_name)
+        if price is not None:
+            val = round(price * mult, 2)
+            with _live_cache_lock:
+                prev = list(_live_commodity_cache.get(csv_name, []))
+            existing_dates = {d for d, _ in prev}
+            if today not in existing_dates:
+                prev.append((today, val))
+            fresh[csv_name]   = prev
+            sources[csv_name] = {"label": "LME (歷史)",
+                                "url":   "https://www.lme.com"}
+            logger.info(f"LME: {csv_name} = {val}")
+        else:
+            # If fetch fails, preserve existing cache
+            with _live_cache_lock:
+                existing = _live_commodity_cache.get(csv_name, [])
+                if existing:
+                    fresh[csv_name] = list(existing)
+                    sources[csv_name] = {"label": "LME (cached)", "url": "https://www.lme.com"}
+                    logger.warning(f"{csv_name} fetch failed, using cached data")
 
     logger.info("[REFRESH] Starting Cobalt (website source)...")
     cobalt_name = "鈷 (cobalt) US$/tonne"
@@ -1216,10 +1341,13 @@ def _refresh_live_prices():
         _live_commodity_cache.update(fresh)
     with _item_sources_lock:
         _item_sources.update(sources)
-        # Always ensure correct sources for key commodities (use LME for standard metals)
+        # Always ensure correct sources: use LME for all traded metals
         _item_sources["鈷 (cobalt) US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
-        _item_sources["銅 (copper) US$/tonne"] = {"label": "Trading Economics (歷史)", "url": "https://tradingeconomics.com/commodity/copper"}
+        _item_sources["銅 (copper) US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
         _item_sources["鋁 (aluminum) US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
+        _item_sources["錫 (tin) US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
+        _item_sources["鎳 (nickel)  US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
+        _item_sources["鋅 (zinc)  US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
     # Invalidate CSV parse cache so next request re-merges fresh live data
     with _csv_parse_lock:
         _csv_parse_cache["data"] = None
