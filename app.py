@@ -1242,12 +1242,8 @@ def _parse_commodity_csv() -> dict:
                     except Exception:
                         values.append(None)
 
-            # Pair dates with values, skip None dates and leading empty values
-            paired = [(d, v) for d, v in zip(dates, values) if d is not None]
-
-            # Skip leading None values (empty chart start)
-            while paired and paired[0][1] is None:
-                paired.pop(0)
+            # Pair dates with values, skip None dates and None values
+            paired = [(d, v) for d, v in zip(dates, values) if d is not None and v is not None]
 
             result[name] = {
                 "unit":     unit,
