@@ -1784,8 +1784,8 @@ _CLUSTER_KEYWORDS = {
     "icheon":     ["利川", "Icheon", "SK海力士", "SK Hynix", "海力士", "韓國"],
     "kumamoto":   ["熊本", "Kumamoto", "TSMC日本", "JASM"],
     "osaka":      ["大阪", "Osaka", "夏普", "Sharp", "Japan Display", "JDI", "Sony"],
-    "san_jose":   ["矽谷", "Silicon Valley", "聖荷西", "NVIDIA", "AMD", "Qualcomm", "加州"],
-    "austin":     ["奧斯汀", "Austin", "德州", "Texas"],
+    "san_jose":   ["矽谷", "Silicon Valley", "聖荷西", "NVIDIA", "AMD", "Qualcomm"],
+    "austin":     ["奧斯汀", "Austin"],
     "dresden":    ["德勒斯登", "Dresden", "英飛凌", "Infineon"],
     "eindhoven":  ["恩荷芬", "Eindhoven", "ASML", "艾司摩爾", "荷蘭"],
 }
