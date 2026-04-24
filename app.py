@@ -1836,6 +1836,10 @@ _RISK_TYPE_LABELS = {
 # Key fab keywords: ONLY critical fabs (TSMC, Samsung, SK Hynix)
 _KEY_FAB_KEYWORDS = ["台積電", "tsmc", "samsung", "三星", "sk海力士", "sk hynix", "hynix"]
 
+# Fab-related companies whose strikes matter for supply chain risk
+# (not all companies in _STRIKE_TARGETS are fabs)
+_FAB_COMPANIES = ["三星電子", "Samsung", "SK海力士", "SK Hynix", "富士康", "Foxconn"]
+
 # Event certainty keywords: indicates confirmed/imminent event (not pure forecast)
 _CONFIRMED_EVENT_KEYWORDS = ["宣布", "確認", "已發生", "發動", "啟動", "正在", "進行中", "將", "即將",
                              "announced", "confirmed", "occurred", "launched", "underway", "will"]
@@ -1968,6 +1972,15 @@ def api_risk():
         geo_risks = _geo_risk_cache.get("data", []) or []
 
     for event in strikes + geo_risks:
+        # Skip non-fab strikes (only count strikes from actual fab companies)
+        event_type = event.get("type", "")
+        if event_type == "strike":
+            # Extract company name from event title (format: "公司名 罷工事件")
+            title = event.get("title", "")
+            is_fab_strike = any(fab in title for fab in _FAB_COMPANIES)
+            if not is_fab_strike:
+                continue  # Skip non-fab company strikes
+
         # Check if event is recent (within 21 days)
         event_date_str = event.get("time", "")
         if not event_date_str:
@@ -1987,7 +2000,6 @@ def api_risk():
             time_multiplier_event = max(0.3, 1.0 - (days_old - 7) * 0.1)
 
         # Score the event based on its region and type
-        event_type = event.get("type", "")
         event_region = event.get("region", "")
 
         if event_type == "strike":
