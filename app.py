@@ -1907,13 +1907,17 @@ def api_risk():
     })
 
 
-# Start background threads (executed on module import, works with gunicorn)
-logger.info("Starting background threads...")
-threading.Thread(target=_refresh_live_prices, daemon=True).start()
-threading.Thread(target=_live_price_loop, daemon=True).start()
-threading.Thread(target=background_refresh_loop, daemon=True).start()
-threading.Thread(target=_risk_cache_preload_loop, daemon=True).start()
-logger.info("Background threads started")
+@app.before_first_request
+def init_background_threads():
+    """Initialize background threads on first request (works with gunicorn)."""
+    logger.info("Initializing background threads...")
+    threading.Thread(target=refresh_news, daemon=True).start()
+    threading.Thread(target=_live_price_loop, daemon=True).start()
+    logger.info("Background threads initialized")
 
 if __name__ == "__main__":
+    logger.info("Fetching initial live prices...")
+    _refresh_live_prices()
+    # Pre-warm risk caches in background so first page visit is fast
+    threading.Thread(target=_risk_cache_preload_loop, daemon=True).start()
     app.run(host="0.0.0.0", debug=False, port=5050, use_reloader=False)
