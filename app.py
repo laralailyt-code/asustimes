@@ -1826,6 +1826,17 @@ _CONFIRMED_EVENT_KEYWORDS = ["宣布", "確認", "已發生", "發動", "啟動"
 # Event duration keywords: indicates prolonged impact (>7 days)
 _PROLONGED_EVENT_KEYWORDS = ["18天", "两周", "一周", "持續", "ongoing", "continues", "week", "month"]
 
+# Map key fab companies to their regions (for automatic region inference from company mentions)
+_FAB_TO_REGIONS = {
+    "台積電": "台灣",
+    "tsmc": "台灣",
+    "samsung": "韓國",
+    "三星": "韓國",
+    "sk海力士": "韓國",
+    "sk hynix": "韓國",
+    "hynix": "韓國",
+}
+
 
 @app.route("/api/risk")
 def api_risk():
@@ -1869,8 +1880,10 @@ def api_risk():
         # 4. Detect event duration: prolonged impacts (>= 7 days)
         is_prolonged = any(kw.lower() in text for kw in _PROLONGED_EVENT_KEYWORDS)
 
-        # 5. Identify affected regions: only via cluster keywords (not broad region names)
+        # 5. Identify affected regions: via cluster keywords OR infer from company mentions
         affected_regions = set()
+
+        # First try: match cluster location keywords
         for cid, ckws in _CLUSTER_KEYWORDS.items():
             if any(kw.lower() in text for kw in ckws):
                 for region, cluster_list in _REGION_TO_CLUSTERS.items():
@@ -1878,8 +1891,15 @@ def api_risk():
                         affected_regions.add(region)
                         break
 
+        # Fallback: if no location found but key fab mentioned, infer region from company
         if not affected_regions:
-            continue  # Skip if no specific cluster detected
+            for fab, region in _FAB_TO_REGIONS.items():
+                if fab.lower() in text:
+                    affected_regions.add(region)
+                    break  # One fab is enough to infer region
+
+        if not affected_regions:
+            continue  # Skip if no region can be inferred
 
         # 6. Calculate time decay: reduce weight for older events
         time_multiplier = 1.0
