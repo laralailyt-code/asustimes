@@ -1281,11 +1281,6 @@ def _refresh_live_prices():
             logger.warning(f"Tungsten Powder fetch failed from SMM, keeping cached data ({len(prev)} points)")
         else:
             logger.error("Tungsten Powder: No price available and no cache")
-        else:
-            # No cache available - create placeholder
-            fresh[tungsten_name] = []
-            sources[tungsten_name] = tungsten_source
-            logger.warning("Tungsten Powder: fetch failed, no cache available")
 
     with _live_cache_lock:
         _live_commodity_cache.update(fresh)
