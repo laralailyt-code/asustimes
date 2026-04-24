@@ -937,21 +937,36 @@ def _fetch_ebaiyin_tungsten() -> tuple:
         return None, [], {}
 
 
-def _fetch_smm_tungsten_price() -> float | None:
-    """Fallback: scrape black tungsten concentrate average price from SMM h5 page."""
+def _fetch_smm_tungsten_powder_price() -> float | None:
+    """Fetch Chinese tungsten powder (国产钨粉) price from SMM h5 page.
+    Primary source for tungsten pricing (replaces ebaiyin).
+    Returns price in CNY/kg or None if fetch fails.
+    """
     import re
     try:
         r = req_lib.get(
-            "https://hq.smm.cn/h5/tungsten-ore-price",
+            "https://hq.smm.cn/h5/tungsten-powder-price",
             headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
                      "Accept-Language": "zh-CN,zh;q=0.9"},
             timeout=12
         )
-        m = re.search(r'[\d,]+\s*-\s*[\d,]+[^|]*\|\s*([\d,]+)\s*\|\s*[-\d,]+\s*\|\s*元/标吨', r.text)
-        if m:
-            return float(m.group(1).replace(',', ''))
+        # Look for price pattern in the page (may vary, adjust regex as needed)
+        # Pattern: "均价" or average price followed by number
+        patterns = [
+            r'均价[:\s]*([\d.]+)',  # 均价: 123.45
+            r'[\d,]+\s*-\s*[\d,]+[^|]*\|\s*([\d,]+)',  # Range | price | ...
+            r'([\d.]+)\s*元/千克',  # price 元/千克
+        ]
+        for pattern in patterns:
+            m = re.search(pattern, r.text)
+            if m:
+                price = float(m.group(1).replace(',', ''))
+                if price > 0:
+                    logger.info(f"SMM tungsten powder: {price} CNY/kg")
+                    return price
+        logger.warning(f"SMM tungsten powder: no price pattern matched in response")
     except Exception as e:
-        logger.warning(f"SMM tungsten fallback: {e}")
+        logger.warning(f"SMM tungsten powder fetch: {e}")
     return None
 
 
@@ -1159,45 +1174,35 @@ def _refresh_live_prices():
             else:
                 logger.warning("Aluminum price fetch failed from all sources and no cache available")
 
-    logger.info("[REFRESH] Starting Tungsten...")
-    try:
-        tungsten_latest, tungsten_history, tungsten_daily = _fetch_ebaiyin_tungsten()
-        logger.info(f"Tungsten fetch result: latest={tungsten_latest}, history={len(tungsten_history)} pts, daily={len(tungsten_daily)} pts")
-    except Exception as e:
-        logger.warning(f"Tungsten fetch error: {e}")
-        # Retry once
-        try:
-            logger.info("[REFRESH] Retrying Tungsten...")
-            tungsten_latest, tungsten_history, tungsten_daily = _fetch_ebaiyin_tungsten()
-            logger.info(f"Tungsten retry result: latest={tungsten_latest}, history={len(tungsten_history)} pts, daily={len(tungsten_daily)} pts")
-        except Exception as e2:
-            logger.warning(f"Tungsten retry error: {e2}")
-            tungsten_latest, tungsten_history, tungsten_daily = None, [], {}
-    tungsten_source = {"label": "中國白銀網 ebaiyin", "url": "https://www.ebaiyin.com/quote/wu.shtml"}
-    if tungsten_latest is None and not tungsten_history:
-        # ebaiyin unreachable (e.g. geo-blocked) — fall back to SMM latest price
-        smm_price = _fetch_smm_tungsten_price()
-        if smm_price is not None:
-            tungsten_latest = smm_price
-            tungsten_source = {"label": "上海有色網 SMM", "url": "https://hq.smm.cn/h5/tungsten-ore-price"}
-            logger.info(f"Tungsten SMM fallback: {smm_price}")
-    if tungsten_latest is not None or tungsten_history:
+    logger.info("[REFRESH] Starting Tungsten (国产钨粉 from SMM)...")
+    tungsten_name = "鎢"
+    tungsten_source = {"label": "上海有色網 SMM (钨粉)", "url": "https://hq.smm.cn/h5/tungsten-powder-price"}
+    tungsten_price = _fetch_smm_tungsten_powder_price()
+
+    if tungsten_price is not None:
+        tungsten_val = round(tungsten_price, 2)
         with _live_cache_lock:
-            prev = list(_live_commodity_cache.get(_TUNGSTEN_NAME, []))
-        # Use monthly history for past months, daily data for current month
-        # This way April shows daily prices (4/16, 4/17, 4/20, etc.) instead of just one monthly point
-        this_month = today[:7]  # "2026-04"
-        merged: dict = {d: p for d, p in tungsten_history if d[:7] != this_month}  # past months: monthly
-        # Add daily data for current month
-        for d, p in tungsten_daily.items():
-            if d[:7] == this_month:
-                merged[d] = p
-        for d, p in prev:
-            merged[d] = p
-        sorted_pts = sorted(merged.items())
-        fresh[_TUNGSTEN_NAME]   = sorted_pts
-        sources[_TUNGSTEN_NAME] = tungsten_source
-        logger.info(f"Tungsten: history={len(sorted_pts)} pts, src={tungsten_source['label']}")
+            prev = list(_live_commodity_cache.get(tungsten_name, []))
+        existing_dates = {d for d, _ in prev}
+        if today not in existing_dates:
+            prev.append((today, tungsten_val))
+            fresh[tungsten_name] = prev
+        else:
+            # Update today's price if it already exists
+            fresh[tungsten_name] = [(d if d != today else today, tungsten_val if d == today else p) for d, p in prev]
+        sources[tungsten_name] = tungsten_source
+        logger.info(f"Tungsten: {tungsten_val} CNY/kg from SMM")
+    else:
+        # If fetch fails, preserve existing cache
+        with _live_cache_lock:
+            existing = _live_commodity_cache.get(tungsten_name, [])
+            if existing:
+                fresh[tungsten_name] = list(existing)
+                sources[tungsten_name] = {"label": "上海有色網 SMM (钨粉) [cached]", "url": "https://hq.smm.cn/h5/tungsten-powder-price"}
+                logger.warning(f"Tungsten fetch failed, using cached data ({len(existing)} points)")
+            else:
+                # No existing cache — start fresh from 2026-03-25
+                logger.info("Tungsten: no historical data, will start recording from 2026-03-25")
 
     with _live_cache_lock:
         _live_commodity_cache.update(fresh)
