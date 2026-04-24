@@ -1222,83 +1222,39 @@ def _refresh_live_prices():
             else:
                 logger.warning("Aluminum price fetch failed from all sources and no cache available")
 
-    logger.info("[REFRESH] Starting Tungsten (SMM 当前价格 + ebaiyin 历史)...")
+    logger.info("[REFRESH] Starting Tungsten Powder (SMM 国产钨粉 only)...")
     tungsten_name = "鎢"
+    tungsten_source = {"label": "上海有色網 SMM (钨粉)", "url": "https://hq.smm.cn/h5/tungsten-powder-price"}
 
-    # Get current price from SMM
+    # Get current price from SMM only
     tungsten_price = _fetch_smm_tungsten_powder_price()
-
-    # Get historical data from ebaiyin (1#钨条 as historical baseline)
-    ebaiyin_price, ebaiyin_history, ebaiyin_daily = _fetch_ebaiyin_tungsten()
 
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(tungsten_name, []))
 
-    # Merge sources: SMM current + ebaiyin history
-    # If SMM fails, use ebaiyin as fallback for current price too
-    current_price = tungsten_price if tungsten_price is not None else ebaiyin_price
-
-    if current_price is not None or ebaiyin_history:
-        # Build historical data from ebaiyin
-        history_dates = {d: p for d, p in ebaiyin_history}
-        history_dates.update(ebaiyin_daily)  # Daily data overrides monthly
-
-        # Start with existing cache
+    if tungsten_price is not None:
+        # Update today's price from SMM
         existing_dates = {d for d, _ in prev}
-        updated_list = list(prev)
-
-        # Add ebaiyin historical data (from 2026-03-25 onwards)
-        cutoff_date = "2026-03-25"
-        for date_str in sorted(history_dates.keys()):
-            if date_str >= cutoff_date:
-                if date_str not in existing_dates:
-                    updated_list.append((date_str, history_dates[date_str]))
-                else:
-                    updated_list = [(d if d != date_str else date_str, history_dates[date_str] if d == date_str else p)
-                                   for d, p in updated_list]
-
-        # Update today's price from SMM (preferred) or ebaiyin (fallback)
         if today not in existing_dates:
-            if current_price is not None:
-                updated_list.append((today, current_price))
+            prev.append((today, tungsten_price))
         else:
-            if current_price is not None:
-                updated_list = [(d if d != today else today, current_price if d == today else p)
-                               for d, p in updated_list]
+            # Update today's price if it already exists
+            prev = [(d if d != today else today, tungsten_price if d == today else p) for d, p in prev]
 
-        fresh[tungsten_name] = updated_list
-
-        # Label source based on what we got
-        if tungsten_price is not None:
-            sources[tungsten_name] = {
-                "label": "SMM 國產鎢粉 + ebaiyin 歷史",
-                "url": "https://hq.smm.cn/h5/tungsten-powder-price"
-            }
-            data_points = len([d for d, _ in updated_list if d >= cutoff_date])
-            logger.info(f"Tungsten: SMM {tungsten_price} CNY/kg + {data_points} historical points from ebaiyin")
-        else:
-            sources[tungsten_name] = {
-                "label": "ebaiyin 1#鎢條 (歷史趨勢)",
-                "url": "https://www.ebaiyin.com/quote/wu.shtml"
-            }
-            data_points = len([d for d, _ in updated_list if d >= cutoff_date])
-            logger.info(f"Tungsten: ebaiyin {ebaiyin_price} CNY/kg + {data_points} historical points")
+        fresh[tungsten_name] = prev
+        sources[tungsten_name] = tungsten_source
+        logger.info(f"Tungsten Powder from SMM: {tungsten_price} CNY/kg ({len(prev)} historical points)")
     else:
-        # Fallback: use existing cache
+        # If fetch fails, preserve existing cache
         if prev:
             fresh[tungsten_name] = prev
-            sources[tungsten_name] = {
-                "label": "ebaiyin 歷史 [cached]",
-                "url": "https://www.ebaiyin.com/quote/wu.shtml"
-            }
-            logger.warning(f"Tungsten fetch failed, using cached data ({len(prev)} points)")
+            sources[tungsten_name] = {"label": "上海有色網 SMM (钨粉) [cached]", "url": "https://hq.smm.cn/h5/tungsten-powder-price"}
+            logger.warning(f"Tungsten Powder fetch failed, using cached data ({len(prev)} points)")
         else:
+            # No cache available - create placeholder
             fresh[tungsten_name] = []
-            sources[tungsten_name] = {
-                "label": "SMM / ebaiyin",
-                "url": "https://hq.smm.cn/h5/tungsten-powder-price"
-            }
-            logger.warning("Tungsten: fetch failed, no cache available")
+            sources[tungsten_name] = tungsten_source
+            logger.warning("Tungsten Powder: fetch failed, no cache available")
 
     with _live_cache_lock:
         _live_commodity_cache.update(fresh)
@@ -1616,14 +1572,32 @@ def api_risk_storms():
 
 @app.route("/api/risk/gdacs")
 def api_risk_gdacs():
-    """Proxy GDACS floods and volcanic events (Orange/Red alerts only)."""
+    """Proxy GDACS floods and volcanic events (Orange/Red alerts only), filtered to last 3 days."""
     try:
         r = req_lib.get(
             "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH"
             "?eventlist=FL;VO;TC&alertlevel=Orange;Red&limit=40",
             timeout=8,
         )
-        return r.content, r.status_code, {"Content-Type": "application/json"}
+        data = r.json()
+
+        # Filter to only events from last 3 days (per user requirement)
+        now = datetime.now(timezone(timedelta(hours=8))).date()
+        filtered_features = []
+
+        for feature in data.get("features", []):
+            try:
+                props = feature.get("properties", {})
+                event_date_str = props.get("fromdate", "")
+                if event_date_str:
+                    event_date = datetime.strptime(event_date_str[:10], "%Y-%m-%d").date()
+                    days_old = (now - event_date).days
+                    if days_old <= 3:
+                        filtered_features.append(feature)
+            except:
+                continue
+
+        return jsonify({"type": data.get("type"), "features": filtered_features}), 200, {"Content-Type": "application/json"}
     except Exception as e:
         logger.warning(f"GDACS proxy error: {e}")
         return jsonify({"features": []})

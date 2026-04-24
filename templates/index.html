@@ -2877,13 +2877,26 @@ async function _loadGDACS() {
     const r = await fetch('/api/risk/gdacs');
     const d = await r.json();
     const typeMap = { FL:'flood', VO:'flood', TC:'typhoon' };
+    const now = new Date();
+    const threeDaysAgo = new Date(now.getTime() - 3*24*60*60*1000);
+
     return (d.features||[])
       .filter(f => f.geometry?.coordinates)
       .filter(f => {
         const al = (f.properties.alertlevel||'').toUpperCase();
-        const et = (f.properties.eventtype||'').toUpperCase();
         // 颱風(TC)/洪水(FL)/火山(VO)：只顯示紅色 CRITICAL，警示少但意義重大
         return al === 'RED';
+      })
+      .filter(f => {
+        // Only show events from last 3 days (per user requirement: "洪水 氣旋 三天內才顯示")
+        const eventDateStr = (f.properties.fromdate || '').slice(0, 10);
+        if (!eventDateStr) return false;
+        try {
+          const eventDate = new Date(eventDateStr + 'T00:00:00');
+          return eventDate >= threeDaysAgo;
+        } catch {
+          return false;
+        }
       })
       .map(f => {
         const p = f.properties;
