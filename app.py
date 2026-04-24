@@ -155,6 +155,7 @@ def _ensure_bg_running():
 # ── Routes ─────────────────────────────────────────────────────────────────────
 @app.route("/")
 def index():
+    ensure_background_threads()
     return render_template("index.html", show_risk_page=_SHOW_RISK_PAGE)
 
 
@@ -1907,13 +1908,18 @@ def api_risk():
     })
 
 
-@app.before_first_request
-def init_background_threads():
-    """Initialize background threads on first request (works with gunicorn)."""
-    logger.info("Initializing background threads...")
-    threading.Thread(target=refresh_news, daemon=True).start()
+_threads_started = False
+
+def ensure_background_threads():
+    """Ensure background threads are running (safe to call multiple times)."""
+    global _threads_started
+    if _threads_started:
+        return
+    _threads_started = True
+    logger.info("Starting background threads...")
+    threading.Thread(target=background_refresh_loop, daemon=True).start()
     threading.Thread(target=_live_price_loop, daemon=True).start()
-    logger.info("Background threads initialized")
+    logger.info("Background threads started")
 
 if __name__ == "__main__":
     logger.info("Fetching initial live prices...")
