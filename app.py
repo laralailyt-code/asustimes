@@ -809,9 +809,8 @@ def _fetch_te_price(slug: str) -> float | None:
 
 
 def _fetch_cobalt_price() -> float | None:
-    """Fetch cobalt price from metals.live API (LME data).
-    Primary: metals.live API (LME settlement prices)
-    Fallback: Trading Economics
+    """Fetch cobalt price from metals.live API (LME data) only.
+    Pure LME source only - no fallbacks to avoid data mixing.
     """
     try:
         r = req_lib.get("https://api.metals.live/v1/spot/cobalt", timeout=10)
@@ -824,15 +823,6 @@ def _fetch_cobalt_price() -> float | None:
                     return price
     except Exception as e:
         logger.debug(f"metals.live cobalt fetch: {e}")
-
-    # Fallback: Try Trading Economics
-    try:
-        price = _fetch_te_price("cobalt")
-        if price and price > 0:
-            logger.info(f"Cobalt from Trading Economics (fallback): ${price}")
-            return price
-    except Exception as e:
-        logger.debug(f"Trading Economics cobalt fallback: {e}")
 
     return None
 
@@ -904,6 +894,34 @@ def _fetch_lme_metal_price(metal_name: str, metals_live_slug: str) -> float | No
     except Exception as e:
         logger.debug(f"metals.live {metal_name} fetch: {e}")
     return None
+
+
+# Tungsten historical data from user's Excel (2026-03-25 onwards)
+# Format: "YYYY-MM-DD": price (CNY/kg)
+_TUNGSTEN_HISTORY = {
+    "2026-03-25": 2385.0,
+    "2026-03-26": 2385.0,
+    "2026-03-27": 2370.0,
+    "2026-03-30": 2350.0,
+    "2026-03-31": 2330.0,
+    "2026-04-01": 2310.0,
+    "2026-04-02": 2290.0,
+    # 4/03-4/06 no data
+    "2026-04-07": 2260.0,
+    "2026-04-08": 2240.0,
+    "2026-04-09": 2220.0,
+    "2026-04-10": 2210.0,
+    "2026-04-13": 2200.0,
+    "2026-04-14": 2190.0,
+    "2026-04-15": 2183.0,
+    "2026-04-16": 2185.0,
+    "2026-04-17": 2170.0,
+    "2026-04-20": 2160.0,
+    "2026-04-21": 2160.0,
+    "2026-04-22": 2160.0,
+    "2026-04-23": 2160.0,
+    "2026-04-24": 2160.0,
+}
 
 
 def _fetch_ebaiyin_tungsten() -> tuple:
@@ -1170,7 +1188,7 @@ def _refresh_live_prices():
                     sources[csv_name] = {"label": "LME (cached)", "url": "https://www.lme.com"}
                     logger.warning(f"{csv_name} fetch failed, using cached data")
 
-    logger.info("[REFRESH] Starting Cobalt (website source)...")
+    logger.info("[REFRESH] Starting Cobalt (pure LME only)...")
     cobalt_name = "鈷 (cobalt) US$/tonne"
     cobalt_price = _fetch_cobalt_price()
     if cobalt_price is not None:
@@ -1181,20 +1199,22 @@ def _refresh_live_prices():
         if today not in existing_dates:
             prev.append((today, cobalt_val))
         fresh[cobalt_name]   = prev
-        sources[cobalt_name] = {"label": "LME (metals.live API fallback)",
+        sources[cobalt_name] = {"label": "LME (metals.live)",
                                 "url":   "https://www.lme.com"}
-        logger.info(f"Cobalt: {cobalt_name} = {cobalt_val}")
+        logger.info(f"Cobalt (pure LME): {cobalt_name} = {cobalt_val} ({len(prev)} points)")
     else:
-        # If fetch fails, preserve existing cache (don't drop it)
+        # If fetch fails, only preserve cache from today onwards (no old mixed data)
         with _live_cache_lock:
             existing = _live_commodity_cache.get(cobalt_name, [])
-            if existing:
-                fresh[cobalt_name] = list(existing)
-                sources[cobalt_name] = {"label": "LME (cached)",
+            # Filter to keep only recent data from 2026-04-24 onwards
+            recent = [(d, p) for d, p in existing if d >= "2026-04-24"]
+            if recent:
+                fresh[cobalt_name] = recent
+                sources[cobalt_name] = {"label": "LME (cached from 2026-04-24+)",
                                         "url":   "https://www.lme.com"}
-                logger.warning(f"Cobalt fetch failed, using cached data ({len(existing)} points)")
+                logger.warning(f"Cobalt fetch failed, keeping only recent data ({len(recent)} points from 2026-04-24+)")
             else:
-                logger.warning("Cobalt price fetch failed from all sources and no cache available")
+                logger.warning("Cobalt price fetch failed and no recent cached data available")
 
     logger.info("[REFRESH] Starting Aluminum (LME source)...")
     aluminum_name = "鋁 (aluminum) US$/tonne"
@@ -1226,30 +1246,41 @@ def _refresh_live_prices():
     tungsten_name = "鎢"
     tungsten_source = {"label": "上海有色網 SMM (钨粉)", "url": "https://hq.smm.cn/h5/tungsten-powder-price"}
 
-    # Get current price from SMM only
-    tungsten_price = _fetch_smm_tungsten_powder_price()
-
+    # Load historical data from user's Excel (2026-03-25 onwards)
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(tungsten_name, []))
 
+    # If cache is empty, initialize from _TUNGSTEN_HISTORY
+    if not prev:
+        prev = [(date, price) for date, price in sorted(_TUNGSTEN_HISTORY.items())]
+        logger.info(f"Initialized tungsten from user history: {len(prev)} points")
+
+    # Get today's price from SMM
+    tungsten_price = _fetch_smm_tungsten_powder_price()
+
     if tungsten_price is not None:
-        # Update today's price from SMM
+        # Always update/add today's price from SMM
         existing_dates = {d for d, _ in prev}
         if today not in existing_dates:
             prev.append((today, tungsten_price))
+            logger.info(f"Added new SMM price for {today}: {tungsten_price} CNY/kg")
         else:
-            # Update today's price if it already exists
+            # Update today's price if already exists
             prev = [(d if d != today else today, tungsten_price if d == today else p) for d, p in prev]
+            logger.info(f"Updated SMM price for {today}: {tungsten_price} CNY/kg")
 
         fresh[tungsten_name] = prev
         sources[tungsten_name] = tungsten_source
-        logger.info(f"Tungsten Powder from SMM: {tungsten_price} CNY/kg ({len(prev)} historical points)")
+        logger.info(f"Tungsten Powder: {len(prev)} historical points (latest: {tungsten_price} CNY/kg on {today})")
     else:
-        # If fetch fails, preserve existing cache
+        # If fetch fails today, keep existing cache but log warning
         if prev:
             fresh[tungsten_name] = prev
-            sources[tungsten_name] = {"label": "上海有色網 SMM (钨粉) [cached]", "url": "https://hq.smm.cn/h5/tungsten-powder-price"}
-            logger.warning(f"Tungsten Powder fetch failed, using cached data ({len(prev)} points)")
+            sources[tungsten_name] = {"label": "上海有色網 SMM (钨粉) [SMM unavailable]",
+                                     "url": "https://hq.smm.cn/h5/tungsten-powder-price"}
+            logger.warning(f"Tungsten Powder fetch failed from SMM, keeping cached data ({len(prev)} points)")
+        else:
+            logger.error("Tungsten Powder: No price available and no cache")
         else:
             # No cache available - create placeholder
             fresh[tungsten_name] = []
