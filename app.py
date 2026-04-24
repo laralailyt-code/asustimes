@@ -960,48 +960,59 @@ def _fetch_ebaiyin_tungsten() -> tuple:
 
 
 def _fetch_smm_tungsten_powder_price() -> float | None:
-    """Fetch tungsten POWDER (钨粉) price from SMM h5 page.
-    Primary: SMM (国产钨粉 domestic tungsten powder)
+    """Fetch tungsten POWDER (钨粉) price from SMM.
+    Source: SMM (上海有色網 - 国产钨粉 domestic tungsten powder)
     Returns price in CNY/kg or None if fetch fails.
     """
     import re
+    import json
     try:
+        # Try SMM API endpoint first (if available)
         r = req_lib.get(
             "https://hq.smm.cn/h5/tungsten-powder-price",
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
-                     "Accept-Language": "zh-CN,zh;q=0.9"},
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                     "Accept-Language": "zh-CN,zh;q=0.9",
+                     "Accept-Encoding": "gzip, deflate"},
             timeout=12
         )
 
-        # Look for tungsten powder prices in the page
-        # SMM页面包含多个价格（国产、出口等），需要从HTML中提取
-        # Pattern: Look for numbers in 1000-5000 range (typical for tungsten powder in CNY/kg)
+        # Look for price in multiple formats from SMM page
+        # The page contains: 国产钨粉价格, 钨粉出口价格, etc.
         patterns = [
-            r'>(\d{3,4}(?:\.\d+)?)\s*<',  # Numbers in HTML tags
-            r'(\d{3,4}(?:\.\d+)?)\s*元/千克',  # price 元/千克
-            r'均价[：:]\s*(\d+(?:\.\d+)?)',  # Average price pattern
+            # Try to find data in script tags (common for React apps)
+            r'"avg"\s*:\s*(\d+(?:\.\d+)?)',  # {"avg": 2340}
+            r'"price"\s*:\s*(\d+(?:\.\d+)?)',  # {"price": 2340}
+            r'均价[：:]\s*(\d+(?:\.\d+)?)',  # 均价: 2340
+            r'国产钨粉[^0-9]*(\d{3,4}(?:\.\d+)?)',  # 国产钨粉 2340
+            r'>(\d{3,4}(?:\.\d+)?)\s*<',  # >2340<
+            r'(\d{3,4}(?:\.\d+)?)\s*元/千克',  # 2340 元/千克
         ]
 
-        candidate_prices = []
+        best_price = None
         for pattern in patterns:
-            matches = re.findall(pattern, r.text)
-            for match in matches:
-                try:
-                    price = float(match.replace(',', ''))
-                    if 200 < price < 5000:  # Reasonable tungsten powder price range (CNY/kg)
-                        candidate_prices.append(price)
-                except (ValueError, AttributeError):
-                    continue
+            try:
+                matches = re.findall(pattern, r.text)
+                for match in matches:
+                    try:
+                        price = float(match.replace(',', ''))
+                        # Validate price range for tungsten powder (200-5000 CNY/kg typical)
+                        if 200 < price < 5000:
+                            best_price = price
+                            break
+                    except (ValueError, TypeError):
+                        continue
+                if best_price:
+                    break
+            except:
+                continue
 
-        # Return the most common or first valid price
-        if candidate_prices:
-            price = candidate_prices[0]  # Take first valid price
-            logger.info(f"Tungsten powder from SMM (钨粉): {price} CNY/kg")
-            return price
+        if best_price:
+            logger.info(f"Tungsten powder from SMM: {best_price} CNY/kg")
+            return best_price
 
-        logger.warning(f"SMM tungsten powder: no valid price pattern matched")
+        logger.warning(f"SMM tungsten powder: could not extract price from page")
     except Exception as e:
-        logger.warning(f"SMM tungsten powder fetch: {e}")
+        logger.warning(f"SMM tungsten powder fetch error: {e}")
 
     return None
 
@@ -1211,61 +1222,36 @@ def _refresh_live_prices():
             else:
                 logger.warning("Aluminum price fetch failed from all sources and no cache available")
 
-    logger.info("[REFRESH] Starting Tungsten Powder (SMM 国产钨粉)...")
+    logger.info("[REFRESH] Starting Tungsten Powder (SMM 国产钨粉 only)...")
     tungsten_name = "鎢"
     tungsten_source = {"label": "上海有色網 SMM (钨粉)", "url": "https://hq.smm.cn/h5/tungsten-powder-price"}
 
-    # Get current price from SMM
+    # Get current price from SMM (only source for tungsten powder)
     tungsten_price = _fetch_smm_tungsten_powder_price()
 
-    # Get historical data from ebaiyin (1#钨条 as proxy for historical trend)
-    _, tungsten_history, tungsten_daily = _fetch_ebaiyin_tungsten()
+    with _live_cache_lock:
+        prev = list(_live_commodity_cache.get(tungsten_name, []))
 
-    if tungsten_price is not None or tungsten_history:
-        # Merge monthly history with daily data
-        with _live_cache_lock:
-            prev = list(_live_commodity_cache.get(tungsten_name, []))
-
-        # Convert monthly history to list of (date, price) tuples
-        history_dates = {d: p for d, p in tungsten_history}
-        history_dates.update(tungsten_daily)  # Override monthly with daily data
-
-        # Start with existing cache, add/update with new data
+    if tungsten_price is not None:
+        # Update today's price
         existing_dates = {d for d, _ in prev}
-        updated_list = list(prev)
-
-        # Add all new dates from history (from 2026-03-25 onwards)
-        cutoff_date = "2026-03-25"
-        for date_str in sorted(history_dates.keys()):
-            if date_str >= cutoff_date:  # Only include from 3/25 onwards
-                if date_str not in existing_dates:
-                    updated_list.append((date_str, history_dates[date_str]))
-                else:
-                    # Update existing date
-                    updated_list = [(d if d != date_str else date_str, history_dates[date_str] if d == date_str else p) for d, p in updated_list]
-
-        # Add/update today's price from SMM
         if today not in existing_dates:
-            if tungsten_price is not None:
-                updated_list.append((today, tungsten_price))
+            prev.append((today, tungsten_price))
         else:
-            if tungsten_price is not None:
-                updated_list = [(d if d != today else today, tungsten_price if d == today else p) for d, p in updated_list]
+            # Update today's price if it already exists
+            prev = [(d if d != today else today, tungsten_price if d == today else p) for d, p in prev]
 
-        fresh[tungsten_name] = updated_list
+        fresh[tungsten_name] = prev
         sources[tungsten_name] = tungsten_source
-        data_points = len([d for d, _ in updated_list if d >= cutoff_date])
-        logger.info(f"Tungsten Powder: {data_points} data points since 2026-03-25 (current: {tungsten_price} CNY/kg from SMM)")
+        logger.info(f"Tungsten Powder from SMM: {tungsten_price} CNY/kg ({len(prev)} historical points)")
     else:
-        # If fetch fails, preserve existing cache or create placeholder
-        with _live_cache_lock:
-            existing = _live_commodity_cache.get(tungsten_name, [])
-        if existing:
-            fresh[tungsten_name] = list(existing)
+        # If fetch fails, preserve existing cache
+        if prev:
+            fresh[tungsten_name] = prev
             sources[tungsten_name] = {"label": "上海有色網 SMM (钨粉) [cached]", "url": "https://hq.smm.cn/h5/tungsten-powder-price"}
-            logger.warning(f"Tungsten Powder fetch failed, using cached data ({len(existing)} points)")
+            logger.warning(f"Tungsten Powder fetch failed, using cached data ({len(prev)} points)")
         else:
-            # No existing cache — create placeholder entry so tungsten appears in API
+            # No cache available
             fresh[tungsten_name] = []
             sources[tungsten_name] = tungsten_source
             logger.warning("Tungsten Powder: fetch failed, no cache available")
@@ -2294,8 +2280,28 @@ def api_risk():
         geo_risks = _geo_risk_cache.get("data", []) or []
 
     # Combine specific events (strikes + geo risks) for the map
+    # Filter out typhoon/flood events older than 3 days (per user requirement)
     specific_events = []
     for event in strikes + geo_risks:
+        event_type = event.get("type", "").lower()
+        event_title = event.get("title", "").lower()
+
+        # Check if this is a typhoon/flood/disaster event
+        is_disaster = any(kw in event_title for kw in ["颱風", "typhoon", "洪水", "flood", "氣旋", "cyclone"])
+
+        # Filter: skip old typhoon/flood events (keep only 3 days old or newer)
+        if is_disaster:
+            try:
+                event_date_str = event.get("time", "")
+                if event_date_str:
+                    event_date = datetime.strptime(event_date_str[:10], "%Y-%m-%d").date()
+                    days_old = (now.date() - event_date).days
+                    if days_old > 3:
+                        continue  # Skip this old disaster event
+            except:
+                # If date parsing fails, skip it to be safe
+                continue
+
         specific_events.append({
             "id": event.get("id"),
             "type": event.get("type"),
