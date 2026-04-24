@@ -1211,24 +1211,47 @@ def _refresh_live_prices():
             else:
                 logger.warning("Aluminum price fetch failed from all sources and no cache available")
 
-    logger.info("[REFRESH] Starting Tungsten (ebaiyin 1#钨条 + SMM fallback)...")
+    logger.info("[REFRESH] Starting Tungsten (ebaiyin 1#钨条 with history)...")
     tungsten_name = "鎢"
     tungsten_source = {"label": "八百易 ebaiyin (1#钨条)", "url": "https://www.ebaiyin.com/quote/wu.shtml"}
-    tungsten_price = _fetch_smm_tungsten_powder_price()
 
-    if tungsten_price is not None:
-        tungsten_val = round(tungsten_price, 2)
+    # Get both current price and monthly history from ebaiyin
+    tungsten_price, tungsten_history, tungsten_daily = _fetch_ebaiyin_tungsten()
+
+    if tungsten_price is not None or tungsten_history:
+        # Merge monthly history with daily data
         with _live_cache_lock:
             prev = list(_live_commodity_cache.get(tungsten_name, []))
+
+        # Convert monthly history to list of (date, price) tuples
+        history_dates = {d: p for d, p in tungsten_history}
+        history_dates.update(tungsten_daily)  # Override monthly with daily data
+
+        # Start with existing cache, add/update with new data
         existing_dates = {d for d, _ in prev}
+        updated_list = list(prev)
+
+        # Add all new dates from history (from 2026-03-25 onwards)
+        cutoff_date = "2026-03-25"
+        for date_str in sorted(history_dates.keys()):
+            if date_str >= cutoff_date:  # Only include from 3/25 onwards
+                if date_str not in existing_dates:
+                    updated_list.append((date_str, history_dates[date_str]))
+                else:
+                    # Update existing date
+                    updated_list = [(d if d != date_str else date_str, history_dates[date_str] if d == date_str else p) for d, p in updated_list]
+
+        # Add/update today's price
         if today not in existing_dates:
-            prev.append((today, tungsten_val))
-            fresh[tungsten_name] = prev
+            if tungsten_price is not None:
+                updated_list.append((today, tungsten_price))
         else:
-            # Update today's price if it already exists
-            fresh[tungsten_name] = [(d if d != today else today, tungsten_val if d == today else p) for d, p in prev]
+            if tungsten_price is not None:
+                updated_list = [(d if d != today else today, tungsten_price if d == today else p) for d, p in updated_list]
+
+        fresh[tungsten_name] = updated_list
         sources[tungsten_name] = tungsten_source
-        logger.info(f"Tungsten: {tungsten_val} CNY/kg (ebaiyin)")
+        logger.info(f"Tungsten: {len(updated_list)} data points from ebaiyin (current: {tungsten_price} CNY/kg)")
     else:
         # If fetch fails, preserve existing cache or create placeholder
         with _live_cache_lock:
@@ -1239,7 +1262,7 @@ def _refresh_live_prices():
             logger.warning(f"Tungsten fetch failed, using cached data ({len(existing)} points)")
         else:
             # No existing cache — create placeholder entry so tungsten appears in API
-            fresh[tungsten_name] = []  # Empty list, will be populated with CSV data if available
+            fresh[tungsten_name] = []
             sources[tungsten_name] = {"label": "八百易 ebaiyin (1#钨条)", "url": "https://www.ebaiyin.com/quote/wu.shtml"}
             logger.warning("Tungsten: fetch failed, no cache available")
 
