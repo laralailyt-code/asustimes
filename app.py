@@ -2260,6 +2260,30 @@ def api_risk():
         else:
             regional_events.append(item)
 
+    # Filter regional_events: remove typhoon/flood events older than 3 days
+    # Per user requirement: "洪水 氣旋 三天內才顯示"
+    filtered_regional_events = []
+    for event in regional_events:
+        risk_type_labels = event.get("risk_types", [])
+        # Check if this is a typhoon/flood event
+        has_typhoon_label = "🌊 天災" in risk_type_labels  # Disaster emoji label
+
+        if has_typhoon_label:
+            # Only keep if within 3 days
+            try:
+                event_date = datetime.strptime(event.get("published", "")[:10], "%Y-%m-%d").date()
+                days_old = (now.date() - event_date).days
+                if days_old <= 3:
+                    filtered_regional_events.append(event)
+            except:
+                # If date parsing fails, exclude it
+                pass
+        else:
+            # Keep non-disaster events
+            filtered_regional_events.append(event)
+
+    regional_events = filtered_regional_events
+
     clusters_out = [{**c, "risk_score": cluster_scores.get(c["id"], 0)}
                     for c in _SUPPLY_CHAIN_CLUSTERS]
 
