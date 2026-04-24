@@ -624,7 +624,7 @@ _LIVE_COMMODITY_SYMBOLS = {
     "CL=F":  ("石油 西德州 ( US$/桶)",          1.0),       # WTI $/barrel
     "BZ=F":  ("石油 北海布蘭特 (US$/桶)",       1.0),       # Brent $/barrel
     "HG=F":  ("銅 (copper) US$/tonne",         2204.62),   # Copper $/lb → $/tonne
-    "ALI=F": ("鋁 (aluminum) US$/tonne",       1.0),       # COMEX Aluminum $/tonne
+    # ALI=F removed — now uses dedicated LME fetcher (_fetch_aluminum_price)
 }
 
 # yfinance FX tickers → (exact CSV item name, multiplier)
@@ -881,6 +881,78 @@ def _fetch_cobalt_price() -> float | None:
     return None
 
 
+def _fetch_aluminum_price() -> float | None:
+    """Fetch aluminum price with LME as primary source.
+    Primary: LME (London Metal Exchange) - official source
+    Fallback 1: Trading Economics
+    Fallback 2: metals.live API
+    """
+    # Primary: LME (official market data)
+    try:
+        r = req_lib.get(
+            "https://www.lme.com/en-GB/Metals/Future-contracts/ALUMINIUM",
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            timeout=12
+        )
+        if r.status_code == 200:
+            import re
+            # Look for settlement price or latest quote
+            patterns = [
+                r'Settlement:\s*[\$£€]?\s*([\d,]+\.?\d{0,2})',
+                r'Last:\s*[\$£€]?\s*([\d,]+\.?\d{0,2})',
+                r'[\$£€]?\s*([\d,]+)(?:\.\d{1,2})?\s*USD',
+            ]
+            for pattern in patterns:
+                m = re.search(pattern, r.text, re.IGNORECASE)
+                if m:
+                    price = float(m.group(1).replace(",", ""))
+                    if price > 0:
+                        logger.info(f"Aluminum from LME: ${price}")
+                        return price
+    except Exception as e:
+        logger.debug(f"LME aluminum primary: {e}")
+
+    # Fallback 1: Trading Economics
+    try:
+        r = req_lib.get(
+            "https://tradingeconomics.com/commodity/aluminum",
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            timeout=12
+        )
+        if r.status_code == 200:
+            import re
+            m = re.search(r'"last":"?([\d.]+)', r.text)
+            if m:
+                price = float(m.group(1))
+                if price > 0:
+                    logger.info(f"Aluminum via Trading Economics: ${price}")
+                    return price
+    except Exception as e:
+        logger.debug(f"Trading Economics aluminum: {e}")
+
+    # Fallback 2: metals.live API
+    try:
+        r = req_lib.get("https://api.metals.live/v1/spot/aluminum", timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, dict) and "price" in data:
+                price = float(data["price"])
+                if price > 0:
+                    logger.info(f"Aluminum via metals.live: ${price}")
+                    return price
+    except Exception as e:
+        logger.debug(f"metals.live aluminum: {e}")
+
+    logger.warning("All aluminum price sources failed")
+    return None
+
+
 def _fetch_ebaiyin_tungsten() -> tuple:
     """Fetch tungsten rod (1#鎢條) price and monthly history from ebaiyin.com API.
     Returns (latest_price_or_None, [(date_str, price), ...]).
@@ -1059,8 +1131,8 @@ def _refresh_live_prices():
         if today not in existing_dates:
             prev.append((today, cobalt_val))
         fresh[cobalt_name]   = prev
-        sources[cobalt_name] = {"label": "metals.live (API) / Trading Economics",
-                                "url":   "https://metals.live"}
+        sources[cobalt_name] = {"label": "LME (metals.live API fallback)",
+                                "url":   "https://www.lme.com"}
         logger.info(f"Cobalt: {cobalt_name} = {cobalt_val}")
     else:
         # If fetch fails, preserve existing cache (don't drop it)
@@ -1068,11 +1140,37 @@ def _refresh_live_prices():
             existing = _live_commodity_cache.get(cobalt_name, [])
             if existing:
                 fresh[cobalt_name] = list(existing)
-                sources[cobalt_name] = {"label": "metals.live (API) / Trading Economics [cached]",
-                                        "url":   "https://metals.live"}
+                sources[cobalt_name] = {"label": "LME (cached)",
+                                        "url":   "https://www.lme.com"}
                 logger.warning(f"Cobalt fetch failed, using cached data ({len(existing)} points)")
             else:
                 logger.warning("Cobalt price fetch failed from all sources and no cache available")
+
+    logger.info("[REFRESH] Starting Aluminum (LME source)...")
+    aluminum_name = "鋁 (aluminum) US$/tonne"
+    aluminum_price = _fetch_aluminum_price()
+    if aluminum_price is not None:
+        aluminum_val = round(aluminum_price, 2)
+        with _live_cache_lock:
+            prev = list(_live_commodity_cache.get(aluminum_name, []))
+        existing_dates = {d for d, _ in prev}
+        if today not in existing_dates:
+            prev.append((today, aluminum_val))
+        fresh[aluminum_name]   = prev
+        sources[aluminum_name] = {"label": "LME (metals.live API fallback)",
+                                  "url":   "https://www.lme.com"}
+        logger.info(f"Aluminum: {aluminum_name} = {aluminum_val}")
+    else:
+        # If fetch fails, preserve existing cache (don't drop it)
+        with _live_cache_lock:
+            existing = _live_commodity_cache.get(aluminum_name, [])
+            if existing:
+                fresh[aluminum_name] = list(existing)
+                sources[aluminum_name] = {"label": "LME (cached)",
+                                          "url":   "https://www.lme.com"}
+                logger.warning(f"Aluminum fetch failed, using cached data ({len(existing)} points)")
+            else:
+                logger.warning("Aluminum price fetch failed from all sources and no cache available")
 
     logger.info("[REFRESH] Starting Tungsten...")
     try:
@@ -1118,10 +1216,10 @@ def _refresh_live_prices():
         _live_commodity_cache.update(fresh)
     with _item_sources_lock:
         _item_sources.update(sources)
-        # Always ensure correct CSV-based sources for key commodities
+        # Always ensure correct sources for key commodities (use LME for standard metals)
         _item_sources["鈷 (cobalt) US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
         _item_sources["銅 (copper) US$/tonne"] = {"label": "Trading Economics (歷史)", "url": "https://tradingeconomics.com/commodity/copper"}
-        _item_sources["鋁 (aluminum) US$/tonne"] = {"label": "Trading Economics (歷史)", "url": "https://tradingeconomics.com/commodity/aluminum"}
+        _item_sources["鋁 (aluminum) US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
     # Invalidate CSV parse cache so next request re-merges fresh live data
     with _csv_parse_lock:
         _csv_parse_cache["data"] = None
