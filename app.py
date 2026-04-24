@@ -2216,21 +2216,26 @@ def api_risk():
         seen.add(url)
         text = (article.get("title", "") + " " + article.get("summary", "")).lower()
 
-        # Detect risk types with special handling for typhoon/flood (require severity keywords)
+        # Calculate article age
+        pub_str = article.get("published") or article.get("fetched_at", "")
+        try:
+            pub_date = datetime.strptime(pub_str[:10], "%Y-%m-%d").date()
+            article_days_old = (now.date() - pub_date).days
+        except:
+            article_days_old = 0
+
+        # Detect risk types with special handling for typhoon/flood (require severity keywords + 3-day limit)
         risk_types = []
         for rt, rkws in _RISK_KEYWORDS.items():
             if any(rk.lower() in text for rk in rkws):
-                # For disaster: typhoon/flood only count if paired with severity keywords
-                if rt == "disaster" and any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
-                    if any(sk.lower() in text for sk in _DISASTER_SEVERITY_KEYWORDS):
-                        risk_types.append(rt)
-                elif rt == "disaster":
-                    # Other disasters (earthquake, tsunami, etc.) always count
-                    if not any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
-                        risk_types.append(rt)
-                    # Or earthquake/tsunami with severity
-                    elif any(sk.lower() in text for sk in _DISASTER_SEVERITY_KEYWORDS):
-                        risk_types.append(rt)
+                # For disaster: ONLY typhoon/flood within 3 days are shown
+                # Per user requirement: "洪水 氣旋 三天內才顯示 其餘一律不視為有風險"
+                if rt == "disaster":
+                    if any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
+                        # Typhoon/flood: only show if within 3 days AND has severity keywords
+                        if article_days_old <= 3 and any(sk.lower() in text for sk in _DISASTER_SEVERITY_KEYWORDS):
+                            risk_types.append(rt)
+                    # All other disasters: do NOT show on events/map (skip)
                 else:
                     risk_types.append(rt)
 
