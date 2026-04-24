@@ -1808,6 +1808,23 @@ _REGION_LABELS = {
     "JP": "🇯🇵 日本", "US": "🇺🇸 美國", "MY": "🇲🇾 東南亞", "EU": "🇪🇺 歐洲",
 }
 
+# Map broader geopolitical/event regions to specific fab cluster regions
+_GEO_REGION_TO_CLUSTERS = {
+    "東亞": ["台灣", "韓國", "日本"],  # Taiwan Strait tensions affect East Asia fabs
+    "中東/波斯灣": [],  # Shipping impact, no direct fab region
+    "葉門/紅海": [],  # Shipping impact, no direct fab region
+    "東歐": [],  # No fab clusters in Eastern Europe
+    "中非": [],  # Cobalt, but no direct fab impact
+    "中國": ["中國大陸"],  # Direct mapping for China
+    "台灣": ["台灣"],  # Taiwan fabs
+    "韓國": ["韓國"],  # Korean fabs
+    "日本": ["日本"],  # Japanese fabs
+    "馬來西亞": ["馬來西亞"],  # Malaysian fabs
+    "美國": ["美國"],  # US fabs
+    "德國": ["德國"],  # German fabs
+    "荷蘭": ["荷蘭"],  # Dutch fabs
+}
+
 _RISK_TYPE_LABELS = {
     "disaster":     "🌊 天災",
     "geopolitical": "🚨 地緣",
@@ -1943,6 +1960,56 @@ def api_risk():
                 for region in affected_regions:
                     for cid in _REGION_TO_CLUSTERS.get(region, []):
                         cluster_scores[cid] = min(100, cluster_scores[cid] + final_weight)
+
+    # Also score clusters based on cached strike and geopolitical events
+    with _strike_lock:
+        strikes = _strike_cache.get("data", []) or []
+    with _geo_risk_lock:
+        geo_risks = _geo_risk_cache.get("data", []) or []
+
+    for event in strikes + geo_risks:
+        # Check if event is recent (within 21 days)
+        event_date_str = event.get("time", "")
+        if not event_date_str:
+            continue
+        try:
+            event_date = datetime.strptime(event_date_str[:10], "%Y-%m-%d").date()
+        except:
+            continue
+
+        days_old = (now.date() - event_date).days
+        if days_old > 21:
+            continue
+
+        # Calculate time decay
+        time_multiplier_event = 1.0
+        if days_old > 7:
+            time_multiplier_event = max(0.3, 1.0 - (days_old - 7) * 0.1)
+
+        # Score the event based on its region and type
+        event_type = event.get("type", "")
+        event_region = event.get("region", "")
+
+        if event_type == "strike":
+            base_weight_event = weights.get("strike", 20)
+            final_weight_event = base_weight_event * time_multiplier_event
+        elif event_type in ["geopolitical", "war"]:
+            base_weight_event = weights.get("geopolitical", 20)
+            final_weight_event = base_weight_event * time_multiplier_event
+        else:
+            continue
+
+        # Map event region to actual fab cluster regions
+        fab_regions = _GEO_REGION_TO_CLUSTERS.get(event_region, [])
+        if not fab_regions:
+            # Try direct region mapping if geo mapping doesn't apply
+            if event_region in _REGION_TO_CLUSTERS:
+                fab_regions = [event_region]
+
+        # Score all clusters in the affected fab regions
+        for fab_region in fab_regions:
+            for cid in _REGION_TO_CLUSTERS.get(fab_region, []):
+                cluster_scores[cid] = min(100, cluster_scores[cid] + final_weight_event)
 
     # Tag articles for news walls
     regional_events, financial_warnings = [], []
