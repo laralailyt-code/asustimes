@@ -2091,6 +2091,9 @@ def api_risk():
             risk_found = False
             if rtype == "disaster" and any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
                 # Typhoon/flood only count if: (a) not pure forecast, AND (b) has severity keywords
+                # AND (c) within 3 days (as per user requirement)
+                if days_old > 3:
+                    continue  # Skip typhoon/flood events older than 3 days
                 if not is_typhoon_forecast and any(sk.lower() in text for sk in _DISASTER_SEVERITY_KEYWORDS):
                     risk_found = True
             elif rtype == "disaster":
