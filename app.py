@@ -809,61 +809,9 @@ def _fetch_te_price(slug: str) -> float | None:
 
 
 def _fetch_cobalt_price() -> float | None:
-    """Fetch cobalt price with LME as primary source.
-    Primary: LME (London Metal Exchange) - official source
-    Fallback 1: Trading Economics
-    Fallback 2: metals.live API
+    """Fetch cobalt price from metals.live API (LME data).
+    Primary: metals.live API (LME settlement prices)
     """
-    # Primary: LME (official market data)
-    try:
-        r = req_lib.get(
-            "https://www.lme.com/en-GB/Metals/Future-contracts/COBALT",
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-            timeout=12
-        )
-        if r.status_code == 200:
-            import re
-            # Look for settlement price or latest quote
-            patterns = [
-                r'Settlement:\s*[\$£€]?\s*([\d,]+\.?\d{0,2})',
-                r'Last:\s*[\$£€]?\s*([\d,]+\.?\d{0,2})',
-                r'[\$£€]?\s*([\d,]+)(?:\.\d{1,2})?\s*USD',
-            ]
-            for pattern in patterns:
-                m = re.search(pattern, r.text, re.IGNORECASE)
-                if m:
-                    price = float(m.group(1).replace(",", ""))
-                    if price > 0:
-                        logger.info(f"Cobalt from LME: ${price}")
-                        return price
-    except Exception as e:
-        logger.debug(f"LME cobalt primary: {e}")
-
-    # Fallback 1: Trading Economics
-    try:
-        r = req_lib.get(
-            "https://tradingeconomics.com/commodity/cobalt",
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-            timeout=12
-        )
-        if r.status_code == 200:
-            import re
-            m = re.search(r'"last":"?([\d.]+)', r.text)
-            if m:
-                price = float(m.group(1))
-                if price > 0:
-                    logger.info(f"Cobalt via Trading Economics: ${price}")
-                    return price
-    except Exception as e:
-        logger.debug(f"Trading Economics cobalt: {e}")
-
-    # Fallback 2: metals.live API
     try:
         r = req_lib.get("https://api.metals.live/v1/spot/cobalt", timeout=10)
         if r.status_code == 200:
@@ -871,71 +819,17 @@ def _fetch_cobalt_price() -> float | None:
             if isinstance(data, dict) and "price" in data:
                 price = float(data["price"])
                 if price > 0:
-                    logger.info(f"Cobalt via metals.live: ${price}")
+                    logger.info(f"Cobalt from metals.live (LME): ${price}")
                     return price
     except Exception as e:
-        logger.debug(f"metals.live cobalt: {e}")
-
-    logger.warning("All cobalt price sources failed")
+        logger.debug(f"metals.live cobalt fetch: {e}")
     return None
 
 
 def _fetch_aluminum_price() -> float | None:
-    """Fetch aluminum price with LME as primary source.
-    Primary: LME (London Metal Exchange) - official source
-    Fallback 1: Trading Economics
-    Fallback 2: metals.live API
+    """Fetch aluminum price from metals.live API (LME data).
+    Primary: metals.live API (LME settlement prices)
     """
-    # Primary: LME (official market data)
-    try:
-        r = req_lib.get(
-            "https://www.lme.com/en-GB/Metals/Future-contracts/ALUMINIUM",
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-            timeout=12
-        )
-        if r.status_code == 200:
-            import re
-            # Look for settlement price or latest quote
-            patterns = [
-                r'Settlement:\s*[\$£€]?\s*([\d,]+\.?\d{0,2})',
-                r'Last:\s*[\$£€]?\s*([\d,]+\.?\d{0,2})',
-                r'[\$£€]?\s*([\d,]+)(?:\.\d{1,2})?\s*USD',
-            ]
-            for pattern in patterns:
-                m = re.search(pattern, r.text, re.IGNORECASE)
-                if m:
-                    price = float(m.group(1).replace(",", ""))
-                    if price > 0:
-                        logger.info(f"Aluminum from LME: ${price}")
-                        return price
-    except Exception as e:
-        logger.debug(f"LME aluminum primary: {e}")
-
-    # Fallback 1: Trading Economics
-    try:
-        r = req_lib.get(
-            "https://tradingeconomics.com/commodity/aluminum",
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-            timeout=12
-        )
-        if r.status_code == 200:
-            import re
-            m = re.search(r'"last":"?([\d.]+)', r.text)
-            if m:
-                price = float(m.group(1))
-                if price > 0:
-                    logger.info(f"Aluminum via Trading Economics: ${price}")
-                    return price
-    except Exception as e:
-        logger.debug(f"Trading Economics aluminum: {e}")
-
-    # Fallback 2: metals.live API
     try:
         r = req_lib.get("https://api.metals.live/v1/spot/aluminum", timeout=10)
         if r.status_code == 200:
@@ -943,82 +837,50 @@ def _fetch_aluminum_price() -> float | None:
             if isinstance(data, dict) and "price" in data:
                 price = float(data["price"])
                 if price > 0:
-                    logger.info(f"Aluminum via metals.live: ${price}")
+                    logger.info(f"Aluminum from metals.live (LME): ${price}")
                     return price
     except Exception as e:
-        logger.debug(f"metals.live aluminum: {e}")
-
-    logger.warning("All aluminum price sources failed")
+        logger.debug(f"metals.live aluminum fetch: {e}")
     return None
 
 
 def _fetch_copper_price() -> float | None:
-    """Fetch copper price with LME as primary source.
-    Primary: LME (London Metal Exchange) - official source
-    Fallback: Yahoo Finance (COMEX)
+    """Fetch copper price from metals.live API (LME data).
+    Primary: metals.live API (uses LME settlement prices)
     """
-    # Primary: LME
     try:
-        r = req_lib.get(
-            "https://www.lme.com/en-GB/Metals/Future-contracts/COPPER",
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-            timeout=12
-        )
+        r = req_lib.get("https://api.metals.live/v1/spot/copper", timeout=10)
         if r.status_code == 200:
-            import re
-            patterns = [
-                r'Settlement:\s*[\$£€]?\s*([\d,]+\.?\d{0,2})',
-                r'Last:\s*[\$£€]?\s*([\d,]+\.?\d{0,2})',
-                r'[\$£€]?\s*([\d,]+)(?:\.\d{1,2})?\s*USD',
-            ]
-            for pattern in patterns:
-                m = re.search(pattern, r.text, re.IGNORECASE)
-                if m:
-                    price = float(m.group(1).replace(",", ""))
-                    if price > 0:
-                        logger.info(f"Copper from LME: ${price}")
-                        return price
+            data = r.json()
+            if isinstance(data, dict) and "price" in data:
+                price = float(data["price"])
+                if price > 0:
+                    logger.info(f"Copper from metals.live (LME): ${price}")
+                    return price
     except Exception as e:
-        logger.debug(f"LME copper fetch: {e}")
+        logger.debug(f"metals.live copper fetch: {e}")
     return None
 
 
-def _fetch_lme_metal_price(metal_name: str, metal_url_name: str) -> float | None:
-    """Generic LME metal price fetcher.
+def _fetch_lme_metal_price(metal_name: str, metals_live_slug: str) -> float | None:
+    """Generic LME metal price fetcher using metals.live API.
     Args:
         metal_name: Display name (e.g., "Tin", "Nickel")
-        metal_url_name: LME URL path (e.g., "TIN", "NICKEL")
+        metals_live_slug: metals.live API slug (e.g., "tin", "nickel")
     Returns:
         Price in USD or None if fetch fails
     """
     try:
-        r = req_lib.get(
-            f"https://www.lme.com/en-GB/Metals/Future-contracts/{metal_url_name}",
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-            timeout=12
-        )
+        r = req_lib.get(f"https://api.metals.live/v1/spot/{metals_live_slug}", timeout=10)
         if r.status_code == 200:
-            import re
-            patterns = [
-                r'Settlement:\s*[\$£€]?\s*([\d,]+\.?\d{0,2})',
-                r'Last:\s*[\$£€]?\s*([\d,]+\.?\d{0,2})',
-                r'[\$£€]?\s*([\d,]+)(?:\.\d{1,2})?\s*USD',
-            ]
-            for pattern in patterns:
-                m = re.search(pattern, r.text, re.IGNORECASE)
-                if m:
-                    price = float(m.group(1).replace(",", ""))
-                    if price > 0:
-                        logger.info(f"{metal_name} from LME: ${price}")
-                        return price
+            data = r.json()
+            if isinstance(data, dict) and "price" in data:
+                price = float(data["price"])
+                if price > 0:
+                    logger.info(f"{metal_name} from metals.live (LME): ${price}")
+                    return price
     except Exception as e:
-        logger.debug(f"LME {metal_name} fetch: {e}")
+        logger.debug(f"metals.live {metal_name} fetch: {e}")
     return None
 
 
@@ -1219,12 +1081,12 @@ def _refresh_live_prices():
 
     logger.info("[REFRESH] Starting LME metals (Tin, Nickel, Zinc)...")
     lme_metals = {
-        "錫 (tin) US$/tonne": ("TIN", 1.0),
-        "鎳 (nickel)  US$/tonne": ("NICKEL", 1.0),
-        "鋅 (zinc)  US$/tonne": ("ZINC", 1.0),
+        "錫 (tin) US$/tonne": ("Tin", "tin", 1.0),
+        "鎳 (nickel)  US$/tonne": ("Nickel", "nickel", 1.0),
+        "鋅 (zinc)  US$/tonne": ("Zinc", "zinc", 1.0),
     }
-    for csv_name, (url_name, mult) in lme_metals.items():
-        price = _fetch_lme_metal_price(csv_name.split("(")[1].strip().rstrip(")"), url_name)
+    for csv_name, (display_name, api_slug, mult) in lme_metals.items():
+        price = _fetch_lme_metal_price(display_name, api_slug)
         if price is not None:
             val = round(price * mult, 2)
             with _live_cache_lock:
