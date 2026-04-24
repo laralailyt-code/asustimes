@@ -806,24 +806,40 @@ def _fetch_te_price(slug: str) -> float | None:
 
 
 def _fetch_cobalt_price() -> float | None:
-    """Fetch cobalt price from multiple sources.
-    Primary: metals.live API
-    Fallback 1: Trading Economics (slower but stable)
-    Fallback 2: LME website
+    """Fetch cobalt price with LME as primary source.
+    Primary: LME (London Metal Exchange) - official source
+    Fallback 1: Trading Economics
+    Fallback 2: metals.live API
     """
-    # Primary: metals.live API
+    # Primary: LME (official market data)
     try:
-        r = req_lib.get("https://api.metals.live/v1/spot/cobalt", timeout=10)
+        r = req_lib.get(
+            "https://www.lme.com/en-GB/Metals/Future-contracts/COBALT",
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            timeout=12
+        )
         if r.status_code == 200:
-            data = r.json()
-            if isinstance(data, dict) and "price" in data:
-                price = float(data["price"])
-                if price > 0:
-                    return price
+            import re
+            # Look for settlement price or latest quote
+            patterns = [
+                r'Settlement:\s*[\$£€]?\s*([\d,]+\.?\d{0,2})',
+                r'Last:\s*[\$£€]?\s*([\d,]+\.?\d{0,2})',
+                r'[\$£€]?\s*([\d,]+)(?:\.\d{1,2})?\s*USD',
+            ]
+            for pattern in patterns:
+                m = re.search(pattern, r.text, re.IGNORECASE)
+                if m:
+                    price = float(m.group(1).replace(",", ""))
+                    if price > 0:
+                        logger.info(f"Cobalt from LME: ${price}")
+                        return price
     except Exception as e:
-        logger.debug(f"metals.live cobalt: {e}")
+        logger.debug(f"LME cobalt primary: {e}")
 
-    # Fallback 1: Trading Economics (reliable but slower)
+    # Fallback 1: Trading Economics
     try:
         r = req_lib.get(
             "https://tradingeconomics.com/commodity/cobalt",
@@ -839,27 +855,23 @@ def _fetch_cobalt_price() -> float | None:
             if m:
                 price = float(m.group(1))
                 if price > 0:
-                    logger.info(f"Cobalt via Trading Economics fallback: {price}")
+                    logger.info(f"Cobalt via Trading Economics: ${price}")
                     return price
     except Exception as e:
-        logger.debug(f"Trading Economics cobalt fallback: {e}")
+        logger.debug(f"Trading Economics cobalt: {e}")
 
-    # Fallback 2: LME website
+    # Fallback 2: metals.live API
     try:
-        r = req_lib.get(
-            "https://www.lme.com/en-GB/Metals/Future-contracts/COBALT",
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-            timeout=10
-        )
+        r = req_lib.get("https://api.metals.live/v1/spot/cobalt", timeout=10)
         if r.status_code == 200:
-            import re
-            m = re.search(r'[\$£€]?\s*([\d,]+\.?\d{0,2})', r.text)
-            if m:
-                price = float(m.group(1).replace(",", ""))
+            data = r.json()
+            if isinstance(data, dict) and "price" in data:
+                price = float(data["price"])
                 if price > 0:
+                    logger.info(f"Cobalt via metals.live: ${price}")
                     return price
     except Exception as e:
-        logger.debug(f"LME cobalt fallback: {e}")
+        logger.debug(f"metals.live cobalt: {e}")
 
     logger.warning("All cobalt price sources failed")
     return None
@@ -1226,8 +1238,12 @@ def _parse_commodity_csv() -> dict:
                     except Exception:
                         values.append(None)
 
-            # Pair dates with values, skip None dates
+            # Pair dates with values, skip None dates and leading empty values
             paired = [(d, v) for d, v in zip(dates, values) if d is not None]
+
+            # Skip leading None values (empty chart start)
+            while paired and paired[0][1] is None:
+                paired.pop(0)
 
             result[name] = {
                 "unit":     unit,
