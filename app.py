@@ -1767,9 +1767,10 @@ _RISK_KEYWORDS = {
 }
 
 # Typhoon only counts as disaster if paired with SERIOUS impact keywords (致災程度，不只是氣象預報)
-_DISASTER_SEVERITY_KEYWORDS = ["致災", "災害", "損失", "損害", "中斷", "停工", "罹難", "傷亡",
-                                "damage", "disruption", "impact", "closure", "casualty", "fatality"]
+_DISASTER_SEVERITY_KEYWORDS = ["致災", "災害", "損失", "損害", "中斷", "停工", "罹難", "傷亡", "淹水", "破壞",
+                                "damage", "disruption", "impact", "closure", "casualty", "fatality", "flooding", "destruction"]
 _TYPHOON_KEYWORDS = ["颱風", "typhoon"]
+_TYPHOON_FORECAST_KEYWORDS = ["預報", "預測", "警報", "警戒", "forecast", "warning", "alert", "prediction"]  # Exclude pure forecasts
 
 _CLUSTER_KEYWORDS = {
     "hsinchu":    ["新竹", "竹科", "台積電", "TSMC", "聯電", "UMC", "聯發科", "MediaTek"],
@@ -1779,14 +1780,27 @@ _CLUSTER_KEYWORDS = {
     "zhengzhou":  ["鄭州", "Zhengzhou", "富士康", "Foxconn", "鴻海"],
     "shanghai":   ["上海", "Shanghai", "張江", "浦東"],
     "penang":     ["檳城", "Penang", "馬來西亞", "Malaysia"],
-    "pyeongtaek": ["平澤", "Pyeongtaek", "三星", "Samsung"],
-    "icheon":     ["利川", "Icheon", "SK海力士", "SK Hynix", "海力士"],
+    "pyeongtaek": ["平澤", "Pyeongtaek", "三星", "Samsung", "韓國"],
+    "icheon":     ["利川", "Icheon", "SK海力士", "SK Hynix", "海力士", "韓國"],
     "kumamoto":   ["熊本", "Kumamoto", "TSMC日本", "JASM"],
     "osaka":      ["大阪", "Osaka", "夏普", "Sharp", "Japan Display", "JDI", "Sony"],
     "san_jose":   ["矽谷", "Silicon Valley", "聖荷西", "NVIDIA", "AMD", "Qualcomm", "加州"],
     "austin":     ["奧斯汀", "Austin", "德州", "Texas"],
     "dresden":    ["德勒斯登", "Dresden", "英飛凌", "Infineon"],
     "eindhoven":  ["恩荷芬", "Eindhoven", "ASML", "艾司摩爾", "荷蘭"],
+}
+
+# 根據供應商分布，對應集群的地區影響範圍
+_REGION_TO_CLUSTERS = {
+    "台灣": ["hsinchu", "taichung"],  # 台灣供應商集中在新竹、台中
+    "台北": ["hsinchu"],  # 台北新竹相近
+    "中國大陸": ["shenzhen", "kunshan", "zhengzhou", "shanghai"],  # 中國集群
+    "日本": ["kumamoto", "osaka"],  # 日本集群
+    "韓國": ["pyeongtaek", "icheon"],  # 韓國集群
+    "馬來西亞": ["penang"],  # 馬來西亞集群
+    "美國": ["san_jose", "austin"],  # 美國集群
+    "德國": ["dresden"],  # 德國集群
+    "荷蘭": ["eindhoven"],  # 荷蘭集群
 }
 
 _REGION_LABELS = {
@@ -1814,24 +1828,52 @@ def api_risk():
     recent = [a for a in articles
               if (a.get("published") or a.get("fetched_at", ""))[:10] >= cutoff_7d]
 
-    # Score each cluster: match cluster keywords + risk keywords in recent articles
+    # Score each cluster: ONLY increase score if event affects that region's suppliers
     weights = {"disaster": 30, "geopolitical": 20, "strike": 20, "operational": 15, "financial": 10}
     cluster_scores = {c["id"]: 0 for c in _SUPPLY_CHAIN_CLUSTERS}
     for article in recent:
         text = (article.get("title", "") + " " + article.get("summary", "")).lower()
-        for cid, ckws in _CLUSTER_KEYWORDS.items():
-            if any(kw.lower() in text for kw in ckws):
-                for rtype, rkws in _RISK_KEYWORDS.items():
-                    # Apply risk type with special rules for typhoon/flood
-                    risk_found = False
-                    if rtype == "disaster" and any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
-                        # Typhoon/flood only count with severity keywords
-                        if any(sk.lower() in text for sk in _DISASTER_SEVERITY_KEYWORDS):
-                            risk_found = True
-                    elif any(rk.lower() in text for rk in rkws):
-                        risk_found = True
 
-                    if risk_found:
+        # 1. Detect if typhoon is pure forecast (exclude these)
+        is_typhoon_forecast = False
+        if any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
+            if any(fk.lower() in text for fk in _TYPHOON_FORECAST_KEYWORDS):
+                is_typhoon_forecast = True
+
+        # 2. Identify affected regions from the article
+        affected_regions = set()
+        for region, clusters in _REGION_TO_CLUSTERS.items():
+            if region.lower() in text:
+                affected_regions.add(region)
+
+        # If no region detected from mapping, try direct cluster keyword matching
+        if not affected_regions:
+            for cid, ckws in _CLUSTER_KEYWORDS.items():
+                if any(kw.lower() in text for kw in ckws):
+                    # Find which region this cluster belongs to
+                    for region, cluster_list in _REGION_TO_CLUSTERS.items():
+                        if cid in cluster_list:
+                            affected_regions.add(region)
+                            break
+
+        # 3. Score only the affected region's clusters
+        for rtype, rkws in _RISK_KEYWORDS.items():
+            risk_found = False
+            if rtype == "disaster" and any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
+                # Typhoon/flood only count if: (a) not pure forecast, AND (b) has severity keywords
+                if not is_typhoon_forecast and any(sk.lower() in text for sk in _DISASTER_SEVERITY_KEYWORDS):
+                    risk_found = True
+            elif rtype == "disaster":
+                # Other disasters always count
+                if not any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
+                    risk_found = True
+            elif any(rk.lower() in text for rk in rkws):
+                risk_found = True
+
+            if risk_found and affected_regions:
+                # Only increase score for affected region's clusters
+                for region in affected_regions:
+                    for cid in _REGION_TO_CLUSTERS.get(region, []):
                         cluster_scores[cid] = min(100, cluster_scores[cid] + weights.get(rtype, 10))
 
     # Tag articles for news walls
