@@ -1,0 +1,134 @@
+[
+  {
+    "region": "中國大陸",
+    "part_category": "BATTERY、CABLE、COMMUNICATION、CONN、DISPLAY、I/O MODULE、IC、MECHANICAL、MEMORY、PACKING、POWER MODULE、STORAGE、SYS MODULE",
+    "lat": 30.5,
+    "lng": 114.3
+  },
+  {
+    "region": "印度尼西亞",
+    "part_category": "CABLE",
+    "lat": -6.21,
+    "lng": 106.85
+  },
+  {
+    "region": "台灣/台中",
+    "part_category": "MECH、MEMORY",
+    "lat": 24.14,
+    "lng": 120.68
+  },
+  {
+    "region": "台灣/台北",
+    "part_category": "CABLE、CHIPSET、COMMUNICATION、CPU、DISCRETE、DISPLAY、HDD、IC、MECH、MEMORY、PACK PART、SYS. MODULE",
+    "lat": 25.05,
+    "lng": 121.53
+  },
+  {
+    "region": "台灣/台南",
+    "part_category": "COMMUNICATION、MECH",
+    "lat": 23.0,
+    "lng": 120.21
+  },
+  {
+    "region": "台灣/宜蘭",
+    "part_category": "MEMORY",
+    "lat": 24.7,
+    "lng": 121.74
+  },
+  {
+    "region": "台灣/彰化",
+    "part_category": "PACK PART",
+    "lat": 24.08,
+    "lng": 120.54
+  },
+  {
+    "region": "台灣/新北",
+    "part_category": "COMMUNICATION、CONN、IC、MECH、MEMORY、PACK PART、SYS. MODULE",
+    "lat": 25.01,
+    "lng": 121.46
+  },
+  {
+    "region": "台灣/新竹",
+    "part_category": "CHIPSET、CPU、DISPLAY、IC、MEMORY、PACK PART、SYS. MODULE",
+    "lat": 24.8,
+    "lng": 121.0
+  },
+  {
+    "region": "台灣/桃園",
+    "part_category": "CONN、DISCRETE、IC、MEMORY、PACK PART、POWER MODULE、SYS. MODULE",
+    "lat": 25.0,
+    "lng": 121.3
+  },
+  {
+    "region": "台灣/竹南",
+    "part_category": "CABLE",
+    "lat": 24.7,
+    "lng": 120.88
+  },
+  {
+    "region": "台灣/苗栗",
+    "part_category": "MEMORY、SYS. MODULE",
+    "lat": 24.56,
+    "lng": 120.82
+  },
+  {
+    "region": "台灣/高雄",
+    "part_category": "CHIPSET、COMMUNICATION、MECH、MEMORY、SYS. MODULE",
+    "lat": 22.63,
+    "lng": 120.3
+  },
+  {
+    "region": "德國",
+    "part_category": "HDD",
+    "lat": 48.14,
+    "lng": 11.58
+  },
+  {
+    "region": "新加坡",
+    "part_category": "CONN",
+    "lat": 1.29,
+    "lng": 103.85
+  },
+  {
+    "region": "日本",
+    "part_category": "CHIPSET、CONN、MEMORY、PACK PART",
+    "lat": 35.68,
+    "lng": 139.69
+  },
+  {
+    "region": "泰國",
+    "part_category": "HDD",
+    "lat": 13.75,
+    "lng": 100.5
+  },
+  {
+    "region": "美國/麻薩諸塞",
+    "part_category": "CPU",
+    "lat": 42.36,
+    "lng": -71.06
+  },
+  {
+    "region": "菲律賓",
+    "part_category": "HDD、IC",
+    "lat": 14.6,
+    "lng": 121.0
+  },
+  {
+    "region": "越南",
+    "part_category": "CABLE",
+    "lat": 10.82,
+    "lng": 106.7
+  },
+  {
+    "region": "韓國",
+    "part_category": "DISPLAY",
+    "lat": 37.57,
+    "lng": 126.98
+  },
+  {
+    "region": "馬來西亞",
+    "part_category": "CPU、SYS MODULE",
+    "lat": 3.14,
+    "lng": 101.69
+  }
+]

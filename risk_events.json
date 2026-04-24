@@ -1,0 +1,30 @@
+[
+  {
+    "id": "editorial-redsea",
+    "type": "war",
+    "title": "紅海航運威脅（胡塞武裝）",
+    "lat": 14.5,
+    "lng": 42.5,
+    "impact": "CRITICAL",
+    "region": "葉門/紅海",
+    "status": "航運持續受威脅",
+    "time": "2023-11-01",
+    "supply": "亞歐航程延長10-14天，運費上漲200-400%，建議改走好望角或提前備貨",
+    "source": "BIMCO航運資訊",
+    "sourceUrl": "https://www.bimco.org"
+  },
+  {
+    "id": "editorial-taiwan-strait",
+    "type": "war",
+    "title": "台灣海峽地緣緊張",
+    "lat": 24.0,
+    "lng": 122.0,
+    "impact": "HIGH",
+    "region": "東亞",
+    "status": "軍事演習監測",
+    "time": "持續",
+    "supply": "全球半導體供應鏈最高風險區（TSMC等主要廠商集中於台灣）",
+    "source": "CSIS戰略與國際研究",
+    "sourceUrl": "https://www.csis.org/programs/technology-policy-program/strategic-technologies-program/taiwan"
+  }
+]

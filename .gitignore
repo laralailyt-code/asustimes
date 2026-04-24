@@ -8,3 +8,4 @@ ssh_out.txt
 ssh_err.txt
 *.bat
 jd_*
+.claude/

@@ -1813,8 +1813,19 @@ _RISK_TYPE_LABELS = {
     "geopolitical": "🚨 地緣",
     "strike":       "✊ 罷工",
     "operational":  "⚡ 停運",
-    "financial":    "💸 財警",
+    "financial":    "💸 財警",  # Financial: shown in news wall but NOT counted for risk scores
 }
+
+# Key fab keywords: only events affecting these count toward risk scoring
+_KEY_FAB_KEYWORDS = ["台積電", "tsmc", "samsung", "三星", "sk海力士", "sk hynix", "intel", "英特爾",
+                     "dram", "nand flash", "晶圓代工", "memory", "記憶體"]
+
+# Event certainty keywords: indicates confirmed/imminent event (not pure forecast)
+_CONFIRMED_EVENT_KEYWORDS = ["宣布", "確認", "已發生", "發動", "啟動", "正在", "進行中", "將", "即將",
+                             "announced", "confirmed", "occurred", "launched", "underway", "will"]
+
+# Event duration keywords: indicates prolonged impact (>7 days)
+_PROLONGED_EVENT_KEYWORDS = ["18天", "两周", "一周", "持續", "ongoing", "continues", "week", "month"]
 
 
 @app.route("/api/risk")
@@ -1824,40 +1835,65 @@ def api_risk():
         articles = list(_cache["articles"])
 
     now = datetime.now(timezone(timedelta(hours=8)))
-    cutoff_7d = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+    cutoff_21d = (now - timedelta(days=21)).strftime("%Y-%m-%d")  # Extended to 21 days for tracking
     recent = [a for a in articles
-              if (a.get("published") or a.get("fetched_at", ""))[:10] >= cutoff_7d]
+              if (a.get("published") or a.get("fetched_at", ""))[:10] >= cutoff_21d]
 
-    # Score each cluster: ONLY increase score if event affects that region's suppliers
-    weights = {"disaster": 30, "geopolitical": 20, "strike": 20, "operational": 15, "financial": 10}
+    # Risk scoring weights: Financial excluded (not counted for risk scores)
+    weights = {"disaster": 30, "geopolitical": 20, "strike": 20, "operational": 15}
     cluster_scores = {c["id"]: 0 for c in _SUPPLY_CHAIN_CLUSTERS}
+
     for article in recent:
+        pub_str = article.get("published") or article.get("fetched_at", "")
+        try:
+            pub_date = datetime.strptime(pub_str[:10], "%Y-%m-%d").date()
+        except:
+            continue
+
+        days_old = (now.date() - pub_date).days
         text = (article.get("title", "") + " " + article.get("summary", "")).lower()
 
-        # 1. Detect if typhoon is pure forecast (exclude these)
+        # 1. Filter: Only count if affects KEY fab (TSMC, Samsung, SK Hynix, etc.)
+        has_key_fab = any(kw.lower() in text for kw in _KEY_FAB_KEYWORDS)
+        if not has_key_fab:
+            continue  # Skip if not involving critical fab
+
+        # 2. Detect if typhoon is pure forecast (exclude these)
         is_typhoon_forecast = False
         if any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
             if any(fk.lower() in text for fk in _TYPHOON_FORECAST_KEYWORDS):
                 is_typhoon_forecast = True
 
-        # 2. Identify affected regions from the article
+        # 3. Detect event certainty: confirmed/imminent events only
+        is_confirmed = any(kw.lower() in text for kw in _CONFIRMED_EVENT_KEYWORDS)
+
+        # 4. Detect event duration: prolonged impacts (>= 7 days)
+        is_prolonged = any(kw.lower() in text for kw in _PROLONGED_EVENT_KEYWORDS)
+
+        # 5. Identify affected regions: only via cluster keywords (not broad region names)
         affected_regions = set()
-        for region, clusters in _REGION_TO_CLUSTERS.items():
-            if region.lower() in text:
-                affected_regions.add(region)
+        for cid, ckws in _CLUSTER_KEYWORDS.items():
+            if any(kw.lower() in text for kw in ckws):
+                for region, cluster_list in _REGION_TO_CLUSTERS.items():
+                    if cid in cluster_list:
+                        affected_regions.add(region)
+                        break
 
-        # If no region detected from mapping, try direct cluster keyword matching
         if not affected_regions:
-            for cid, ckws in _CLUSTER_KEYWORDS.items():
-                if any(kw.lower() in text for kw in ckws):
-                    # Find which region this cluster belongs to
-                    for region, cluster_list in _REGION_TO_CLUSTERS.items():
-                        if cid in cluster_list:
-                            affected_regions.add(region)
-                            break
+            continue  # Skip if no specific cluster detected
 
-        # 3. Score only the affected region's clusters
+        # 6. Calculate time decay: reduce weight for older events
+        time_multiplier = 1.0
+        if days_old > 7:
+            time_multiplier = max(0.3, 1.0 - (days_old - 7) * 0.1)  # Decrease 10% per day after day 7
+        if days_old > 21:
+            continue  # Don't score events older than 21 days
+
+        # 7. Score only the affected region's clusters
         for rtype, rkws in _RISK_KEYWORDS.items():
+            if rtype == "financial":
+                continue  # SKIP financial news for risk scoring
+
             risk_found = False
             if rtype == "disaster" and any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
                 # Typhoon/flood only count if: (a) not pure forecast, AND (b) has severity keywords
@@ -1870,11 +1906,24 @@ def api_risk():
             elif any(rk.lower() in text for rk in rkws):
                 risk_found = True
 
-            if risk_found and affected_regions:
+            if risk_found:
+                # Adjust weight based on certainty and duration
+                base_weight = weights.get(rtype, 10)
+
+                # If not confirmed/imminent, reduce weight
+                if not is_confirmed and rtype in ["strike", "geopolitical"]:
+                    base_weight *= 0.6
+
+                # If not prolonged (>7 days), reduce weight
+                if not is_prolonged and rtype in ["strike", "operational"]:
+                    base_weight *= 0.7
+
+                final_weight = base_weight * time_multiplier
+
                 # Only increase score for affected region's clusters
                 for region in affected_regions:
                     for cid in _REGION_TO_CLUSTERS.get(region, []):
-                        cluster_scores[cid] = min(100, cluster_scores[cid] + weights.get(rtype, 10))
+                        cluster_scores[cid] = min(100, cluster_scores[cid] + final_weight)
 
     # Tag articles for news walls
     regional_events, financial_warnings = [], []
