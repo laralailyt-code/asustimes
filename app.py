@@ -1784,10 +1784,10 @@ _CLUSTER_KEYWORDS = {
     "icheon":     ["利川", "Icheon", "SK海力士", "SK Hynix", "海力士", "韓國"],
     "kumamoto":   ["熊本", "Kumamoto", "TSMC日本", "JASM"],
     "osaka":      ["大阪", "Osaka", "夏普", "Sharp", "Japan Display", "JDI", "Sony"],
-    "san_jose":   ["矽谷", "Silicon Valley", "聖荷西", "NVIDIA", "AMD", "Qualcomm"],
+    "san_jose":   ["矽谷", "Silicon Valley", "聖荷西"],
     "austin":     ["奧斯汀", "Austin"],
-    "dresden":    ["德勒斯登", "Dresden", "英飛凌", "Infineon"],
-    "eindhoven":  ["恩荷芬", "Eindhoven", "ASML", "艾司摩爾", "荷蘭"],
+    "dresden":    ["德勒斯登", "Dresden"],
+    "eindhoven":  ["恩荷芬", "Eindhoven"],
 }
 
 # 根據供應商分布，對應集群的地區影響範圍
