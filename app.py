@@ -1194,16 +1194,19 @@ def _refresh_live_prices():
         sources[tungsten_name] = tungsten_source
         logger.info(f"Tungsten: {tungsten_val} CNY/kg from SMM")
     else:
-        # If fetch fails, preserve existing cache
+        # If fetch fails, preserve existing cache or create placeholder
         with _live_cache_lock:
             existing = _live_commodity_cache.get(tungsten_name, [])
-            if existing:
-                fresh[tungsten_name] = list(existing)
-                sources[tungsten_name] = {"label": "上海有色網 SMM (钨粉) [cached]", "url": "https://hq.smm.cn/h5/tungsten-powder-price"}
-                logger.warning(f"Tungsten fetch failed, using cached data ({len(existing)} points)")
-            else:
-                # No existing cache — start fresh from 2026-03-25
-                logger.info("Tungsten: no historical data, will start recording from 2026-03-25")
+        if existing:
+            fresh[tungsten_name] = list(existing)
+            sources[tungsten_name] = {"label": "上海有色網 SMM (钨粉) [cached]", "url": "https://hq.smm.cn/h5/tungsten-powder-price"}
+            logger.warning(f"Tungsten fetch failed, using cached data ({len(existing)} points)")
+        else:
+            # No existing cache — create placeholder entry so tungsten appears in API
+            # User said to start recording from 2026-03-25, but fetch failures shouldn't hide it
+            fresh[tungsten_name] = []  # Empty list, will be populated with CSV data if available
+            sources[tungsten_name] = {"label": "上海有色網 SMM (钨粉)", "url": "https://hq.smm.cn/h5/tungsten-powder-price"}
+            logger.warning("Tungsten: fetch failed, waiting for SMM data (will start recording from 2026-03-25)")
 
     with _live_cache_lock:
         _live_commodity_cache.update(fresh)
@@ -1383,6 +1386,11 @@ def _parse_commodity_csv() -> dict:
                     _item_sources[name] = {
                         "label": "LME (歷史)",
                         "url": "https://www.lme.com"
+                    }
+                elif "鎢" in name or "tungsten" in name:
+                    _item_sources[name] = {
+                        "label": "上海有色網 SMM (钨粉)",
+                        "url": "https://hq.smm.cn/h5/tungsten-powder-price"
                     }
                 elif name not in _item_sources:
                     # Default source for other CSV-only items
