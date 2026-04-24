@@ -1345,8 +1345,9 @@ def _parse_commodity_csv() -> dict:
             }
 
             # Set default source for CSV-only items
+            # Keep consistent with _refresh_live_prices() sources to avoid data inconsistency
             with _item_sources_lock:
-                # Special source mappings for specific commodities (always set these)
+                # LME metals: all use metals.live API (same source for consistency)
                 if "鈷" in name or "cobalt" in name:
                     _item_sources[name] = {
                         "label": "LME (歷史)",
@@ -1354,13 +1355,28 @@ def _parse_commodity_csv() -> dict:
                     }
                 elif "銅" in name or "copper" in name:
                     _item_sources[name] = {
-                        "label": "Trading Economics (歷史)",
-                        "url": "https://tradingeconomics.com/commodity/copper"
+                        "label": "LME (歷史)",
+                        "url": "https://www.lme.com"
+                    }
+                elif "錫" in name or "tin" in name:
+                    _item_sources[name] = {
+                        "label": "LME (歷史)",
+                        "url": "https://www.lme.com"
+                    }
+                elif "鎳" in name or "nickel" in name:
+                    _item_sources[name] = {
+                        "label": "LME (歷史)",
+                        "url": "https://www.lme.com"
+                    }
+                elif "鋅" in name or "zinc" in name:
+                    _item_sources[name] = {
+                        "label": "LME (歷史)",
+                        "url": "https://www.lme.com"
                     }
                 elif "鋁" in name or "aluminum" in name:
                     _item_sources[name] = {
-                        "label": "Trading Economics (歷史)",
-                        "url": "https://tradingeconomics.com/commodity/aluminum"
+                        "label": "LME (歷史)",
+                        "url": "https://www.lme.com"
                     }
                 elif name not in _item_sources:
                     # Default source for other CSV-only items
