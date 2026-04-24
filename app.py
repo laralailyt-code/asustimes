@@ -2115,17 +2115,17 @@ def api_risk():
                 continue  # SKIP financial news for risk scoring
 
             risk_found = False
-            if rtype == "disaster" and any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
-                # Typhoon/flood only count if: (a) not pure forecast, AND (b) has severity keywords
-                # AND (c) within 3 days (as per user requirement)
-                if days_old > 3:
-                    continue  # Skip typhoon/flood events older than 3 days
-                if not is_typhoon_forecast and any(sk.lower() in text for sk in _DISASTER_SEVERITY_KEYWORDS):
-                    risk_found = True
-            elif rtype == "disaster":
-                # Other disasters always count
-                if not any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
-                    risk_found = True
+            if rtype == "disaster":
+                # ONLY typhoon/flood count as disaster risk (per user requirement)
+                # Other disasters (earthquake, tsunami, etc.) are NOT counted as supply chain risk
+                if any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
+                    # Typhoon/flood only count if: (a) not pure forecast, AND (b) has severity keywords
+                    # AND (c) within 3 days (as per user requirement: "洪水 氣旋 三天內才顯示")
+                    if days_old > 3:
+                        continue  # Skip typhoon/flood events older than 3 days
+                    if not is_typhoon_forecast and any(sk.lower() in text for sk in _DISASTER_SEVERITY_KEYWORDS):
+                        risk_found = True
+                # All other disasters: skip (continue to next risk type)
             elif any(rk.lower() in text for rk in rkws):
                 risk_found = True
 
