@@ -1704,10 +1704,16 @@ function switchPage(page) {
       loadMarket(); window._marketLoaded = true;
     } else {
       setTimeout(() => {
+        // Ensure canvas has correct dimensions before rendering chart
+        const canvas = document.getElementById('marketChart');
+        if (canvas) {
+          canvas.width = canvas.offsetWidth;
+          canvas.height = canvas.offsetHeight;
+        }
         if (_chartInst) { _chartInst.destroy(); _chartInst = null; }
         if (_activeItem) renderChart();
         renderAnnotationDots();
-      }, 50);
+      }, 100);
     }
   } else if (page === 'guide') {
     guidePage.style.display = 'block';

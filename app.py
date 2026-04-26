@@ -1544,7 +1544,7 @@ def _refresh_live_prices():
             logger.error("Tungsten Powder: No price available and no cache")
 
     logger.info("[REFRESH] Starting PC (Polycarbonate from sci99.com)...")
-    pc_name = "聚碳酸酯 (PC) CNY$/tonne"
+    pc_name = "PC塑料 (SABIC) CNY$/tonne"
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(pc_name, []))
 
@@ -1627,7 +1627,7 @@ _COMMODITY_CATEGORIES = {
     "金屬": ["銅", "錫", "鋁", "鎳", "鋅", "鈷", "鋰", "鎢"],
     "貴金屬": ["金", "銀"],
     "能源": ["石油 西德州", "石油 北海布蘭特"],
-    "原物料": ["黃磷", "ABS聚合物", "PC塑料", "PC/ABS塑料", "NOREXECO 長纖紙漿", "瓦楞芯紙"],
+    "原物料": ["黃磷", "ABS聚合物", "PC塑料 (SABIC)", "PC/ABS塑料", "NOREXECO 長纖紙漿", "瓦楞芯紙"],
     "匯率": ["美元 / 台幣", "美元 / 人民幣", "美元 / 日圓", "美元 / 歐元",
               "美元 / 巴西里爾", "美元 / 韓圜", "美元 / 印尼盾", "美元 / 印度幣"],
 }
