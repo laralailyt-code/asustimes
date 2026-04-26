@@ -1164,7 +1164,7 @@ def _fetch_smm_tungsten_powder_price() -> float | None:
 
 
 def _fetch_pc_price_from_sci99() -> float | None:
-    """Fetch PC (Polycarbonate) price from sci99.com/monitor-678-0.html.
+    """Fetch PC (Polycarbonate) price from sci99.com/monitor-68-0.html.
     Returns price in CNY/tonne or None if fetch fails.
     """
     import re
@@ -1174,7 +1174,7 @@ def _fetch_pc_price_from_sci99() -> float | None:
             "Accept-Language": "zh-CN,zh;q=0.9",
         }
         r = req_lib.get(
-            "https://www.sci99.com/monitor-678-0.html",
+            "https://www.sci99.com/monitor-68-0.html",
             headers=headers,
             timeout=12
         )
@@ -1338,7 +1338,7 @@ def _refresh_live_prices():
 
     fresh[yp_name] = prev
     sources[yp_name] = {"label": "CSV 歷史紀錄（純 CSV，不混用來源）",
-                        "url":   "https://www.sci99.com/monitor-678-0.html"}
+                        "url":   "https://www.sci99.com/monitor-68-0.html"}
     logger.info(f"Yellow Phosphorus: {len(prev)} historical points (latest on {today})")
 
     logger.info("[REFRESH] Starting Copper (LME source)...")
@@ -1566,7 +1566,7 @@ def _refresh_live_prices():
             logger.info(f"Updated PC price for {today}: {pc_val} CNY/tonne")
         fresh[pc_name] = prev
         sources[pc_name] = {"label": "sci99.com",
-                            "url":   "https://www.sci99.com/monitor-678-0.html"}
+                            "url":   "https://www.sci99.com/monitor-68-0.html"}
         logger.info(f"PC: {len(prev)} historical points (latest: {pc_val} CNY/tonne on {today})")
     else:
         # If fetch fails, still update today with last known price
@@ -1580,7 +1580,7 @@ def _refresh_live_prices():
                 logger.error(f"PC fetch failed and no historical data available for {today}")
         fresh[pc_name] = prev
         sources[pc_name] = {"label": "sci99.com (cached)",
-                            "url":   "https://www.sci99.com/monitor-678-0.html"}
+                            "url":   "https://www.sci99.com/monitor-68-0.html"}
         logger.warning(f"PC fetch failed, preserved data ({len(prev)} points)")
 
     with _live_cache_lock:
