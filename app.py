@@ -809,9 +809,11 @@ def _fetch_te_price(slug: str) -> float | None:
 
 
 def _fetch_cobalt_price() -> float | None:
-    """Fetch cobalt price from metals.live API (LME data) only.
-    Pure LME source only - no fallbacks to avoid data mixing.
+    """Fetch cobalt price from metals.live API (LME data).
+    Primary: metals.live API
+    Fallback: Trading Economics (if metals.live fails)
     """
+    # Primary: metals.live
     try:
         r = req_lib.get("https://api.metals.live/v1/spot/cobalt", timeout=10)
         if r.status_code == 200:
@@ -822,7 +824,16 @@ def _fetch_cobalt_price() -> float | None:
                     logger.info(f"Cobalt from metals.live (LME): ${price}")
                     return price
     except Exception as e:
-        logger.debug(f"metals.live cobalt fetch: {e}")
+        logger.debug(f"metals.live cobalt fetch failed: {e}")
+
+    # Fallback: Trading Economics
+    try:
+        te_price = _fetch_te_price("cobalt")
+        if te_price and te_price > 0:
+            logger.info(f"Cobalt from Trading Economics (fallback): ${te_price}")
+            return te_price
+    except Exception as e:
+        logger.debug(f"Trading Economics cobalt fallback failed: {e}")
 
     return None
 
@@ -858,8 +869,10 @@ def _fetch_aluminum_price() -> float | None:
 
 def _fetch_copper_price() -> float | None:
     """Fetch copper price from metals.live API (LME data).
-    Primary: metals.live API (uses LME settlement prices)
+    Primary: metals.live API
+    Fallback: Trading Economics
     """
+    # Primary: metals.live
     try:
         r = req_lib.get("https://api.metals.live/v1/spot/copper", timeout=10)
         if r.status_code == 200:
@@ -870,7 +883,17 @@ def _fetch_copper_price() -> float | None:
                     logger.info(f"Copper from metals.live (LME): ${price}")
                     return price
     except Exception as e:
-        logger.debug(f"metals.live copper fetch: {e}")
+        logger.debug(f"metals.live copper fetch failed: {e}")
+
+    # Fallback: Trading Economics
+    try:
+        te_price = _fetch_te_price("copper")
+        if te_price and te_price > 0:
+            logger.info(f"Copper from Trading Economics (fallback): ${te_price}")
+            return te_price
+    except Exception as e:
+        logger.debug(f"Trading Economics copper fallback failed: {e}")
+
     return None
 
 
@@ -881,7 +904,10 @@ def _fetch_lme_metal_price(metal_name: str, metals_live_slug: str) -> float | No
         metals_live_slug: metals.live API slug (e.g., "tin", "nickel")
     Returns:
         Price in USD or None if fetch fails
+    Primary: metals.live API
+    Fallback: Trading Economics
     """
+    # Primary: metals.live
     try:
         r = req_lib.get(f"https://api.metals.live/v1/spot/{metals_live_slug}", timeout=10)
         if r.status_code == 200:
@@ -892,7 +918,18 @@ def _fetch_lme_metal_price(metal_name: str, metals_live_slug: str) -> float | No
                     logger.info(f"{metal_name} from metals.live (LME): ${price}")
                     return price
     except Exception as e:
-        logger.debug(f"metals.live {metal_name} fetch: {e}")
+        logger.debug(f"metals.live {metal_name} fetch failed: {e}")
+
+    # Fallback: Trading Economics
+    try:
+        te_slug = metals_live_slug.lower()
+        te_price = _fetch_te_price(te_slug)
+        if te_price and te_price > 0:
+            logger.info(f"{metal_name} from Trading Economics (fallback): ${te_price}")
+            return te_price
+    except Exception as e:
+        logger.debug(f"Trading Economics {metal_name} fallback failed: {e}")
+
     return None
 
 
@@ -1213,6 +1250,22 @@ def _fetch_pc_price_from_sci99() -> float | None:
     return None
 
 
+def _fetch_pc_price_fallback() -> float | None:
+    """Fallback: Fetch PC price from alternative source (buyplas.com).
+    Returns price in CNY/tonne or None if fetch fails.
+    """
+    try:
+        price = _fetch_buyplas_price("PC_SABIC")
+        if price and price > 0:
+            # buyplas.com may return in different unit, validate range
+            if 10000 < price < 25000:
+                logger.info(f"PC price from buyplas.com (fallback): {price} CNY/tonne")
+                return price
+    except Exception as e:
+        logger.debug(f"buyplas.com PC fallback failed: {e}")
+    return None
+
+
 def _refresh_live_prices():
     """Fetch commodity & FX prices with 1-year history. Called on startup and periodically."""
     logger.info("[REFRESH] Starting refresh...")
@@ -1315,7 +1368,7 @@ def _refresh_live_prices():
                                  "url":   f"https://tradingeconomics.com/commodity/{slug}"}
             logger.info(f"TradingEconomics: {csv_name} = {val}")
 
-    logger.info("[REFRESH] Starting Yellow Phosphorus (pure CSV source)...")
+    logger.info("[REFRESH] Starting Yellow Phosphorus...")
     yp_name = "黃磷 CNY$/tonne"
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(yp_name, []))
@@ -1325,21 +1378,38 @@ def _refresh_live_prices():
         prev = [(date, price) for date, price in sorted(_YELLOW_PHOSPHORUS_HISTORY.items())]
         logger.info(f"Initialized yellow phosphorus from CSV history: {len(prev)} points")
 
-    # ⚠️ Pure CSV source (NOT mixed with Trading Economics) to ensure data consistency
-    # If today's price is needed, use last known price fallback
-    existing_dates = {d for d, _ in prev}
-    if today not in existing_dates:
-        last_price = prev[-1][1] if prev else None
-        if last_price is not None:
-            prev.append((today, last_price))
-            logger.info(f"Yellow Phosphorus: Using last known price {last_price} for {today}")
+    # Try to fetch latest price from Trading Economics
+    yp_price = None
+    try:
+        yp_price = _fetch_te_price("phosphorus")
+        if yp_price and yp_price > 0:
+            yp_val = round(yp_price * 29.4274, 2)  # Convert from TE format
+            existing_dates = {d for d, _ in prev}
+            if today not in existing_dates:
+                prev.append((today, yp_val))
+                logger.info(f"Added new TE price for {today}: {yp_val} CNY/tonne")
+            else:
+                prev = [(d if d != today else today, yp_val if d == today else p) for d, p in prev]
+            fresh[yp_name] = prev
+            sources[yp_name] = {"label": "Trading Economics",
+                                "url":   "https://tradingeconomics.com/commodity/phosphorus"}
+            logger.info(f"Yellow Phosphorus: {len(prev)} historical points (latest: {yp_val} CNY/tonne on {today})")
         else:
-            logger.error(f"Yellow Phosphorus: No historical data available for {today}")
-
-    fresh[yp_name] = prev
-    sources[yp_name] = {"label": "CSV 歷史紀錄（純 CSV，不混用來源）",
-                        "url":   "https://www.sci99.com/monitor-68-0.html"}
-    logger.info(f"Yellow Phosphorus: {len(prev)} historical points (latest on {today})")
+            raise ValueError("TE price invalid")
+    except:
+        # Fallback: use last known price from CSV/cache
+        existing_dates = {d for d, _ in prev}
+        if today not in existing_dates:
+            last_price = prev[-1][1] if prev else None
+            if last_price is not None:
+                prev.append((today, last_price))
+                logger.warning(f"Yellow Phosphorus TE fetch failed, using last known price {last_price} for {today}")
+            else:
+                logger.error(f"Yellow Phosphorus fetch failed and no historical data available for {today}")
+        fresh[yp_name] = prev
+        sources[yp_name] = {"label": "CSV 歷史（TE 獲取失敗）",
+                            "url":   "https://www.sci99.com/monitor-68-0.html"}
+        logger.warning(f"Yellow Phosphorus fetch failed, preserved data ({len(prev)} points)")
 
     logger.info("[REFRESH] Starting Copper (LME source)...")
     copper_name = "銅 (copper) US$/tonne"
@@ -1554,6 +1624,10 @@ def _refresh_live_prices():
         logger.info(f"Initialized PC from user history: {len(prev)} points")
 
     pc_price = _fetch_pc_price_from_sci99()
+    if pc_price is None:
+        # Fallback: try alternative source
+        pc_price = _fetch_pc_price_fallback()
+
     if pc_price is not None:
         pc_val = round(pc_price, 2)
         existing_dates = {d for d, _ in prev}
@@ -1565,23 +1639,24 @@ def _refresh_live_prices():
             prev = [(d if d != today else today, pc_val if d == today else p) for d, p in prev]
             logger.info(f"Updated PC price for {today}: {pc_val} CNY/tonne")
         fresh[pc_name] = prev
-        sources[pc_name] = {"label": "sci99.com",
+        src_label = "sci99.com" if pc_price else "buyplas.com (fallback)"
+        sources[pc_name] = {"label": src_label,
                             "url":   "https://www.sci99.com/monitor-68-0.html"}
         logger.info(f"PC: {len(prev)} historical points (latest: {pc_val} CNY/tonne on {today})")
     else:
-        # If fetch fails, still update today with last known price
+        # If all sources fail, still update today with last known price
         existing_dates = {d for d, _ in prev}
         if today not in existing_dates:
             last_price = prev[-1][1] if prev else None
             if last_price is not None:
                 prev.append((today, last_price))
-                logger.warning(f"PC fetch failed, using last known price {last_price} for {today}")
+                logger.warning(f"PC fetch failed (all sources), using last known price {last_price} for {today}")
             else:
-                logger.error(f"PC fetch failed and no historical data available for {today}")
+                logger.error(f"PC fetch failed (all sources) and no historical data available for {today}")
         fresh[pc_name] = prev
-        sources[pc_name] = {"label": "sci99.com (cached)",
+        sources[pc_name] = {"label": "sci99.com + buyplas (cached)",
                             "url":   "https://www.sci99.com/monitor-68-0.html"}
-        logger.warning(f"PC fetch failed, preserved data ({len(prev)} points)")
+        logger.warning(f"PC fetch failed (all sources), preserved data ({len(prev)} points)")
 
     with _live_cache_lock:
         _live_commodity_cache.update(fresh)
