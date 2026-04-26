@@ -938,9 +938,17 @@ _COBALT_HISTORY = {
     "2026-04-10": 55360.0,
 }
 
-# Yellow Phosphorus historical data from CSV (2026-03-03 onwards)
-# Format: "YYYY-MM-DD": price (CNY/tonne)
+# Yellow Phosphorus historical data from CSV (2026-02-03 onwards)
+# Format: "YYYY-MM-DD": price (CNY/tonne) — 純 CSV 來源，統一數據不混用 TE
 _YELLOW_PHOSPHORUS_HISTORY = {
+    "2026-02-03": 23408.33,
+    "2026-02-06": 23391.67,
+    "2026-02-11": 23391.67,
+    "2026-02-13": 23391.67,
+    "2026-02-17": 23391.67,
+    "2026-02-20": 23391.67,
+    "2026-02-24": 23391.67,
+    "2026-02-27": 23850.0,
     "2026-03-03": 24883.33,
     "2026-03-06": 26750.0,
     "2026-03-10": 26883.33,
@@ -966,6 +974,81 @@ _PC_HISTORY = {
     "2026-04-20": 17350.0,
     "2026-04-21": 17350.0,
     "2026-04-22": 17350.0,
+}
+
+# LME Copper historical data from CSV (2026-03-13 onwards)
+# Format: "YYYY-MM-DD": price (USD/tonne)
+_COPPER_HISTORY = {
+    "2026-03-13": 12896.0,
+    "2026-03-17": 12759.0,
+    "2026-03-20": 11825.0,
+    "2026-03-24": 11890.0,
+    "2026-03-26": 12133.0,
+    "2026-03-27": 12107.5,
+    "2026-03-31": 12136.0,
+    "2026-04-03": 12146.0,
+    "2026-04-07": 12146.0,
+    "2026-04-10": 12450.0,
+}
+
+# LME Tin historical data from CSV (2026-03-13 onwards)
+# Format: "YYYY-MM-DD": price (USD/tonne)
+_TIN_HISTORY = {
+    "2026-03-13": 41300.0,
+    "2026-03-17": 41150.0,
+    "2026-03-20": 40650.0,
+    "2026-03-24": 40700.0,
+    "2026-03-26": 40900.0,
+    "2026-03-27": 40850.0,
+    "2026-03-31": 41000.0,
+    "2026-04-03": 41050.0,
+    "2026-04-07": 41050.0,
+    "2026-04-10": 41350.0,
+}
+
+# LME Aluminum historical data from CSV (2026-03-13 onwards)
+# Format: "YYYY-MM-DD": price (USD/tonne)
+_ALUMINUM_HISTORY = {
+    "2026-03-13": 2685.0,
+    "2026-03-17": 2655.0,
+    "2026-03-20": 2620.0,
+    "2026-03-24": 2630.0,
+    "2026-03-26": 2650.0,
+    "2026-03-27": 2645.0,
+    "2026-03-31": 2660.0,
+    "2026-04-03": 2670.0,
+    "2026-04-07": 2670.0,
+    "2026-04-10": 2700.0,
+}
+
+# LME Nickel historical data from CSV (2026-03-13 onwards)
+# Format: "YYYY-MM-DD": price (USD/tonne)
+_NICKEL_HISTORY = {
+    "2026-03-13": 18600.0,
+    "2026-03-17": 18450.0,
+    "2026-03-20": 18100.0,
+    "2026-03-24": 18200.0,
+    "2026-03-26": 18350.0,
+    "2026-03-27": 18300.0,
+    "2026-03-31": 18400.0,
+    "2026-04-03": 18450.0,
+    "2026-04-07": 18450.0,
+    "2026-04-10": 18650.0,
+}
+
+# LME Zinc historical data from CSV (2026-03-13 onwards)
+# Format: "YYYY-MM-DD": price (USD/tonne)
+_ZINC_HISTORY = {
+    "2026-03-13": 2980.0,
+    "2026-03-17": 2930.0,
+    "2026-03-20": 2880.0,
+    "2026-03-24": 2900.0,
+    "2026-03-26": 2930.0,
+    "2026-03-27": 2920.0,
+    "2026-03-31": 2950.0,
+    "2026-04-03": 2960.0,
+    "2026-04-07": 2960.0,
+    "2026-04-10": 3000.0,
 }
 
 
@@ -1232,7 +1315,7 @@ def _refresh_live_prices():
                                  "url":   f"https://tradingeconomics.com/commodity/{slug}"}
             logger.info(f"TradingEconomics: {csv_name} = {val}")
 
-    logger.info("[REFRESH] Starting Yellow Phosphorus (from CSV history)...")
+    logger.info("[REFRESH] Starting Yellow Phosphorus (pure CSV source)...")
     yp_name = "黃磷 CNY$/tonne"
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(yp_name, []))
@@ -1242,57 +1325,46 @@ def _refresh_live_prices():
         prev = [(date, price) for date, price in sorted(_YELLOW_PHOSPHORUS_HISTORY.items())]
         logger.info(f"Initialized yellow phosphorus from CSV history: {len(prev)} points")
 
-    # Try to fetch latest price from Trading Economics or sci99
-    try:
-        yp_price = _fetch_te_price("phosphorus")  # Get latest from TE as fallback
-    except:
-        yp_price = None
-
-    if yp_price is not None:
-        yp_val = round(yp_price * 29.4274, 2)  # Convert from TE format
-        existing_dates = {d for d, _ in prev}
-        if today not in existing_dates:
-            prev.append((today, yp_val))
-            logger.info(f"Added new price for {today}: {yp_val} CNY/tonne")
+    # ⚠️ Pure CSV source (NOT mixed with Trading Economics) to ensure data consistency
+    # If today's price is needed, use last known price fallback
+    existing_dates = {d for d, _ in prev}
+    if today not in existing_dates:
+        last_price = prev[-1][1] if prev else None
+        if last_price is not None:
+            prev.append((today, last_price))
+            logger.info(f"Yellow Phosphorus: Using last known price {last_price} for {today}")
         else:
-            prev = [(d if d != today else today, yp_val if d == today else p) for d, p in prev]
-        fresh[yp_name] = prev
-        sources[yp_name] = {"label": "Trading Economics (sci99.com fallback)",
-                            "url":   "https://www.sci99.com/monitor-678-0.html"}
-        logger.info(f"Yellow Phosphorus: {len(prev)} historical points (latest: {yp_val} CNY/tonne on {today})")
-    else:
-        # If fetch fails, still update today with last known price
-        existing_dates = {d for d, _ in prev}
-        if today not in existing_dates:
-            last_price = prev[-1][1] if prev else None
-            if last_price is not None:
-                prev.append((today, last_price))
-                logger.warning(f"Yellow Phosphorus fetch failed, using last known price {last_price} for {today}")
-            else:
-                logger.error(f"Yellow Phosphorus fetch failed and no historical data available for {today}")
-        fresh[yp_name] = prev
-        sources[yp_name] = {"label": "CSV history (cached)",
-                            "url":   "https://www.sci99.com/monitor-678-0.html"}
-        logger.warning(f"Yellow Phosphorus fetch failed, preserved data ({len(prev)} points)")
+            logger.error(f"Yellow Phosphorus: No historical data available for {today}")
+
+    fresh[yp_name] = prev
+    sources[yp_name] = {"label": "CSV 歷史紀錄（純 CSV，不混用來源）",
+                        "url":   "https://www.sci99.com/monitor-678-0.html"}
+    logger.info(f"Yellow Phosphorus: {len(prev)} historical points (latest on {today})")
 
     logger.info("[REFRESH] Starting Copper (LME source)...")
     copper_name = "銅 (copper) US$/tonne"
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(copper_name, []))
 
+    # Initialize from historical CSV if cache is empty
+    if not prev:
+        prev = [(date, price) for date, price in sorted(_COPPER_HISTORY.items())]
+        logger.info(f"Initialized copper from CSV history: {len(prev)} points")
+
     copper_price = _fetch_copper_price()
     if copper_price is not None:
-        # LME copper is in USD/tonne, convert from $/lb if needed
         copper_val = round(copper_price, 2)
         existing_dates = {d for d, _ in prev}
         if today not in existing_dates:
             prev.append((today, copper_val))
+            logger.info(f"Added new LME price for {today}: {copper_val} USD/tonne")
         else:
             prev = [(d if d != today else today, copper_val if d == today else p) for d, p in prev]
+            logger.info(f"Updated LME price for {today}: {copper_val} USD/tonne")
         fresh[copper_name] = prev
         sources[copper_name] = {"label": "LME (metals.live)",
                                 "url":   "https://www.lme.com"}
-        logger.info(f"Copper: {copper_name} = {copper_val} ({len(prev)} points)")
+        logger.info(f"Copper: {len(prev)} historical points (latest: {copper_val} USD/tonne on {today})")
     else:
         # If fetch fails, still update today with last known price
         existing_dates = {d for d, _ in prev}
@@ -1310,13 +1382,18 @@ def _refresh_live_prices():
 
     logger.info("[REFRESH] Starting LME metals (Tin, Nickel, Zinc)...")
     lme_metals = {
-        "錫 (tin) US$/tonne": ("Tin", "tin", 1.0),
-        "鎳 (nickel)  US$/tonne": ("Nickel", "nickel", 1.0),
-        "鋅 (zinc)  US$/tonne": ("Zinc", "zinc", 1.0),
+        "錫 (tin) US$/tonne": ("Tin", "tin", 1.0, _TIN_HISTORY),
+        "鎳 (nickel)  US$/tonne": ("Nickel", "nickel", 1.0, _NICKEL_HISTORY),
+        "鋅 (zinc)  US$/tonne": ("Zinc", "zinc", 1.0, _ZINC_HISTORY),
     }
-    for csv_name, (display_name, api_slug, mult) in lme_metals.items():
+    for csv_name, (display_name, api_slug, mult, history_dict) in lme_metals.items():
         with _live_cache_lock:
             prev = list(_live_commodity_cache.get(csv_name, []))
+
+        # Initialize from historical CSV if cache is empty
+        if not prev:
+            prev = [(date, price) for date, price in sorted(history_dict.items())]
+            logger.info(f"Initialized {display_name} from CSV history: {len(prev)} points")
 
         price = _fetch_lme_metal_price(display_name, api_slug)
         if price is not None:
@@ -1324,8 +1401,10 @@ def _refresh_live_prices():
             existing_dates = {d for d, _ in prev}
             if today not in existing_dates:
                 prev.append((today, val))
+                logger.info(f"Added new LME price for {today}: {val} USD/tonne")
             else:
                 prev = [(d if d != today else today, val if d == today else p) for d, p in prev]
+                logger.info(f"Updated LME price for {today}: {val} USD/tonne")
             fresh[csv_name] = prev
             sources[csv_name] = {"label": "LME (metals.live)",
                                 "url":   "https://www.lme.com"}
@@ -1390,18 +1469,25 @@ def _refresh_live_prices():
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(aluminum_name, []))
 
+    # Initialize from historical CSV if cache is empty
+    if not prev:
+        prev = [(date, price) for date, price in sorted(_ALUMINUM_HISTORY.items())]
+        logger.info(f"Initialized aluminum from CSV history: {len(prev)} points")
+
     aluminum_price = _fetch_aluminum_price()
     if aluminum_price is not None:
         aluminum_val = round(aluminum_price, 2)
         existing_dates = {d for d, _ in prev}
         if today not in existing_dates:
             prev.append((today, aluminum_val))
+            logger.info(f"Added new LME price for {today}: {aluminum_val} USD/tonne")
         else:
             prev = [(d if d != today else today, aluminum_val if d == today else p) for d, p in prev]
+            logger.info(f"Updated LME price for {today}: {aluminum_val} USD/tonne")
         fresh[aluminum_name] = prev
         sources[aluminum_name] = {"label": "LME (metals.live)",
                                   "url":   "https://www.lme.com"}
-        logger.info(f"Aluminum: {aluminum_name} = {aluminum_val} ({len(prev)} points)")
+        logger.info(f"Aluminum: {len(prev)} historical points (latest: {aluminum_val} USD/tonne on {today})")
     else:
         # If fetch fails, still update today with last known price
         existing_dates = {d for d, _ in prev}
