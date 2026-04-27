@@ -649,7 +649,8 @@ _LIVE_COMMODITY_SYMBOLS = {
     "SI=F":  ("銀 (silver) US$/盎司",          1.0),       # Silver $/oz
     "CL=F":  ("石油 西德州 ( US$/桶)",          1.0),       # WTI $/barrel
     "BZ=F":  ("石油 北海布蘭特 (US$/桶)",       1.0),       # Brent $/barrel
-    # HG=F, ALI=F removed — now uses dedicated LME fetchers
+    "HG=F":  ("銅 (copper) US$/tonne",         100.0),    # Copper (convert from ¢/lb to USD/tonne)
+    "ALI=F": ("鋁 (aluminum) US$/tonne",       220.0),    # Aluminum (convert from ¢/lb to USD/tonne)
 }
 
 # yfinance FX tickers → (exact CSV item name, multiplier)
@@ -865,10 +866,25 @@ def _fetch_cobalt_price() -> float | None:
 
 
 def _fetch_aluminum_price() -> float | None:
-    """Fetch aluminum price from metals.live API (LME data).
-    Primary: metals.live API (LME settlement prices)
-    Fallback: Trading Economics
+    """Fetch aluminum price from yfinance ALI=F (most reliable on Render).
+    Primary: yfinance ALI=F (CME futures in ¢/lb, convert to USD/tonne)
+    Fallback: metals.live API → Trading Economics
     """
+    # Primary: yfinance (more reliable on Render than external APIs)
+    try:
+        if _YF_AVAILABLE:
+            hist = yf.Ticker("ALI=F").history(period="1d", interval="1d", auto_adjust=True)
+            if not hist.empty and "Close" in hist.columns:
+                price_cents_per_lb = float(hist["Close"].iloc[-1])
+                # Convert: ¢/lb → USD/tonne (multiply by 100 for $ to ¢, then by 2204.62 for lb to tonne)
+                price_usd_per_tonne = (price_cents_per_lb / 100) * 2204.62
+                if price_usd_per_tonne > 1000:  # Sanity check: aluminum should be 2000-5000 USD/tonne
+                    logger.info(f"Aluminum from yfinance ALI=F: ${price_usd_per_tonne:.2f}/tonne")
+                    return price_usd_per_tonne
+    except Exception as e:
+        logger.debug(f"yfinance aluminum fetch failed: {e}")
+
+    # Fallback 1: metals.live
     try:
         r = req_lib.get("https://api.metals.live/v1/spot/aluminum", timeout=10)
         if r.status_code == 200:
@@ -876,12 +892,12 @@ def _fetch_aluminum_price() -> float | None:
             if isinstance(data, dict) and "price" in data:
                 price = float(data["price"])
                 if price > 0:
-                    logger.info(f"Aluminum from metals.live (LME): ${price}")
+                    logger.info(f"Aluminum from metals.live (fallback): ${price}")
                     return price
     except Exception as e:
-        logger.debug(f"metals.live aluminum fetch: {e}")
+        logger.debug(f"metals.live aluminum fetch failed: {e}")
 
-    # Fallback: Try Trading Economics
+    # Fallback 2: Trading Economics
     try:
         price = _fetch_te_price("aluminum")
         if price and price > 0:
@@ -894,11 +910,25 @@ def _fetch_aluminum_price() -> float | None:
 
 
 def _fetch_copper_price() -> float | None:
-    """Fetch copper price from metals.live API (LME data).
-    Primary: metals.live API
-    Fallback: Trading Economics
+    """Fetch copper price from yfinance HG=F (most reliable on Render).
+    Primary: yfinance HG=F (CME futures in ¢/lb, convert to USD/tonne)
+    Fallback: metals.live API → Trading Economics
     """
-    # Primary: metals.live
+    # Primary: yfinance (more reliable on Render than external APIs)
+    try:
+        if _YF_AVAILABLE:
+            hist = yf.Ticker("HG=F").history(period="1d", interval="1d", auto_adjust=True)
+            if not hist.empty and "Close" in hist.columns:
+                price_cents_per_lb = float(hist["Close"].iloc[-1])
+                # Convert: ¢/lb → USD/tonne (multiply by 100 for $ to ¢, then by 2204.62 for lb to tonne)
+                price_usd_per_tonne = (price_cents_per_lb / 100) * 2204.62
+                if price_usd_per_tonne > 1000:  # Sanity check: copper should be 5000-15000 USD/tonne
+                    logger.info(f"Copper from yfinance HG=F: ${price_usd_per_tonne:.2f}/tonne")
+                    return price_usd_per_tonne
+    except Exception as e:
+        logger.debug(f"yfinance copper fetch failed: {e}")
+
+    # Fallback 1: metals.live
     try:
         r = req_lib.get("https://api.metals.live/v1/spot/copper", timeout=10)
         if r.status_code == 200:
@@ -906,12 +936,12 @@ def _fetch_copper_price() -> float | None:
             if isinstance(data, dict) and "price" in data:
                 price = float(data["price"])
                 if price > 0:
-                    logger.info(f"Copper from metals.live (LME): ${price}")
+                    logger.info(f"Copper from metals.live (fallback): ${price}")
                     return price
     except Exception as e:
         logger.debug(f"metals.live copper fetch failed: {e}")
 
-    # Fallback: Trading Economics
+    # Fallback 2: Trading Economics
     try:
         te_price = _fetch_te_price("copper")
         if te_price and te_price > 0:
