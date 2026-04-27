@@ -58,12 +58,35 @@ def refresh_news():
             return
         _cache["loading"] = True
     try:
-        articles = fetch_all_news()
+        # Fetch fresh articles
+        fresh_articles = fetch_all_news()
+
+        # Save fresh articles to archive for persistent storage
+        _save_articles_to_archive(fresh_articles)
+
+        # Load archived articles (past 2 years)
+        archived_articles = _load_archived_articles()
+
+        # Merge fresh + archived, deduplicate by URL
+        merged = {}
+        for article in archived_articles:
+            url = article.get("source_url", "")
+            if url:
+                merged[url] = article
+
+        for article in fresh_articles:
+            url = article.get("source_url", "")
+            if url:
+                merged[url] = article  # Fresh articles overwrite archived ones
+
+        articles = list(merged.values())
+        articles.sort(key=lambda a: a.get("published") or a.get("fetched_at", ""), reverse=True)
+
         with _cache_lock:
             _cache["articles"] = articles
             _cache["last_updated"] = datetime.now(TW_TZ).strftime("%Y-%m-%d %H:%M:%S")
             _cache["loading"] = False
-        logger.info(f"Cache refreshed: {len(articles)} articles")
+        logger.info(f"Cache refreshed: {len(articles)} articles ({len(fresh_articles)} fresh, {len(archived_articles)} archived)")
     except Exception as e:
         logger.error(f"refresh_news error: {e}")
         with _cache_lock:
@@ -1976,6 +1999,102 @@ def _save_commodity_csv():
         logger.info(f"Saved commodity CSV: {len(cache_copy)} items, {len(sorted_dates)} dates")
     except Exception as e:
         logger.error(f"Commodity CSV save error: {e}", exc_info=True)
+
+
+# ── News archive for persistent storage ────────────────────────────────────────
+_NEWS_ARCHIVE = os.path.join(os.path.dirname(__file__), "news_archive.json")
+_NEWS_ARCHIVE_LOCK = threading.Lock()
+_ARTICLE_RETENTION_DAYS = 730  # Keep articles for 2 years
+
+def _load_archived_articles() -> list[dict]:
+    """Load articles from persistent archive, filtering for articles from past 2 years."""
+    try:
+        if not os.path.exists(_NEWS_ARCHIVE):
+            return []
+
+        with open(_NEWS_ARCHIVE, "r", encoding="utf-8") as f:
+            all_articles = json.load(f)
+
+        if not isinstance(all_articles, list):
+            return []
+
+        # Filter for articles from past 2 years
+        now = datetime.now(TW_TZ)
+        cutoff_date = now - timedelta(days=_ARTICLE_RETENTION_DAYS)
+
+        filtered = []
+        for article in all_articles:
+            try:
+                date_str = article.get("published") or article.get("fetched_at", "")
+                if date_str:
+                    # Parse date: expected format "YYYY-MM-DD HH:MM" or "YYYY-MM-DD HH:MM:SS"
+                    article_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                    article_date = article_date.astimezone(TW_TZ)
+                    if article_date >= cutoff_date:
+                        filtered.append(article)
+            except Exception:
+                # If date parsing fails, include the article anyway (might be old format)
+                filtered.append(article)
+
+        logger.info(f"Loaded {len(filtered)} archived articles from past 2 years (total in archive: {len(all_articles)})")
+        return filtered
+    except Exception as e:
+        logger.warning(f"News archive load error: {e}")
+        return []
+
+
+def _save_articles_to_archive(new_articles: list[dict]):
+    """Append new articles to persistent archive, removing duplicates and old articles."""
+    try:
+        with _NEWS_ARCHIVE_LOCK:
+            # Load existing archive
+            try:
+                if os.path.exists(_NEWS_ARCHIVE):
+                    with open(_NEWS_ARCHIVE, "r", encoding="utf-8") as f:
+                        archive = json.load(f)
+                        if not isinstance(archive, list):
+                            archive = []
+                else:
+                    archive = []
+            except Exception:
+                archive = []
+
+            # Deduplicate by URL (most reliable key)
+            archive_urls = {article.get("source_url", ""): article for article in archive if article.get("source_url")}
+
+            # Add new articles if they're not already in archive
+            added_count = 0
+            for article in new_articles:
+                url = article.get("source_url", "")
+                if url and url not in archive_urls:
+                    archive.append(article)
+                    archive_urls[url] = article
+                    added_count += 1
+
+            # Filter archive to keep only articles from past 2 years
+            now = datetime.now(TW_TZ)
+            cutoff_date = now - timedelta(days=_ARTICLE_RETENTION_DAYS)
+            filtered_archive = []
+            for article in archive:
+                try:
+                    date_str = article.get("published") or article.get("fetched_at", "")
+                    if date_str:
+                        article_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                        article_date = article_date.astimezone(TW_TZ)
+                        if article_date >= cutoff_date:
+                            filtered_archive.append(article)
+                except Exception:
+                    # Keep articles with unparseable dates
+                    filtered_archive.append(article)
+
+            # Write archive (sorted by date, newest first)
+            filtered_archive.sort(key=lambda a: a.get("published") or a.get("fetched_at", ""), reverse=True)
+            with open(_NEWS_ARCHIVE, "w", encoding="utf-8") as f:
+                json.dump(filtered_archive, f, ensure_ascii=False, indent=2)
+
+            logger.info(f"News archive updated: +{added_count} new articles, {len(filtered_archive)} total in archive")
+    except Exception as e:
+        logger.error(f"News archive save error: {e}", exc_info=True)
 
 
 @app.route("/api/commodity-news")
