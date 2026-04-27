@@ -2071,31 +2071,47 @@ _GEO_RISKS = [
 def _scan_one_geo_risk(risk, headers, cutoff):
     """Scan Google News for one geopolitical risk entry. Returns result dict or None."""
     import xml.etree.ElementTree as ET
+    import re
+    import time as _time
     from urllib.parse import quote
     from email.utils import parsedate_to_datetime
     found_date = ""
     for kw in risk["kw"]:
-        try:
-            url = f"https://news.google.com/rss/search?q={quote(kw)}&hl=en-US&gl=US&ceid=US:en"
-            r = req_lib.get(url, timeout=15, headers=headers)
-            items = ET.fromstring(r.content).findall('.//item')[:5]
-            logger.info(f"[GEO] {risk['title']} + '{kw}': {len(items)} items (status {r.status_code})")
-            for item in items:
-                pub = item.findtext('pubDate', '')
-                try:
-                    dt = parsedate_to_datetime(pub)
-                    if dt >= cutoff:
-                        found_date = str(dt.date())
-                        logger.info(f"[GEO] ✓ {risk['title']}: found recent article")
-                        break
-                except Exception:
-                    found_date = "持續"
-                    logger.info(f"[GEO] ✓ {risk['title']}: ongoing (no date)")
+        for attempt in range(3):
+            try:
+                url = f"https://news.google.com/rss/search?q={quote(kw)}&hl=en-US&gl=US&ceid=US:en"
+                r = req_lib.get(url, timeout=15, headers=headers)
+                if r.status_code == 429:
+                    logger.warning(f"[GEO] {risk['title']} rate-limited (429), retry {attempt+1}/3")
+                    _time.sleep(3 * (attempt + 1))
+                    continue
+                if r.status_code != 200:
+                    logger.warning(f"[GEO] {risk['title']} HTTP {r.status_code}, skip")
                     break
-            if found_date:
+                snippet = r.content[:200].lstrip()
+                if not (snippet.startswith(b'<?xml') or snippet.startswith(b'<rss')):
+                    logger.warning(f"[GEO] {risk['title']} non-XML response ({len(r.content)}B), skip")
+                    break
+                clean = re.sub(rb'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', b'', r.content)
+                items = ET.fromstring(clean).findall('.//item')[:5]
+                logger.info(f"[GEO] {risk['title']} + '{kw}': {len(items)} items (status {r.status_code})")
+                for item in items:
+                    pub = item.findtext('pubDate', '')
+                    try:
+                        dt = parsedate_to_datetime(pub)
+                        if dt >= cutoff:
+                            found_date = str(dt.date())
+                            logger.info(f"[GEO] ✓ {risk['title']}: found recent article")
+                            break
+                    except (ValueError, TypeError):
+                        pass
                 break
-        except Exception as e:
-            logger.warning(f"[GEO] {risk['title']} + '{kw}' ERROR: {type(e).__name__}: {e}")
+            except ET.ParseError as e:
+                logger.warning(f"[GEO] {risk['title']} ParseError on attempt {attempt+1}: {e}")
+                _time.sleep(2)
+            except Exception as e:
+                logger.warning(f"[GEO] {risk['title']} + '{kw}' ERROR: {type(e).__name__}: {e}")
+                break
     if not found_date:
         logger.info(f"[GEO] ✗ {risk['title']}: no matching articles")
         return None
@@ -2120,7 +2136,7 @@ def _do_geo_scan():
     }
     cutoff = datetime.now(timezone.utc) - timedelta(days=45)
     results = []
-    executor = ThreadPoolExecutor(max_workers=min(3, len(_GEO_RISKS)))  # Limit to 3 parallel
+    executor = ThreadPoolExecutor(max_workers=min(2, len(_GEO_RISKS)))  # Limit to 2 parallel (reduce rate-limit triggers)
     try:
         futs = [executor.submit(_scan_one_geo_risk, risk, headers, cutoff)
                 for risk in _GEO_RISKS]
@@ -2188,34 +2204,52 @@ _strike_lock  = threading.Lock()
 def _scan_one_strike(target, headers, cutoff):
     """Scan Google News for one strike target. Returns result dict or None."""
     import xml.etree.ElementTree as ET
+    import re
+    import time as _time
     from urllib.parse import quote
     from email.utils import parsedate_to_datetime
     found_article = None
     for kw in target["kw"]:
-        try:
-            url = f"https://news.google.com/rss/search?q={quote(kw)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
-            r = req_lib.get(url, timeout=15, headers=headers)
-            root = ET.fromstring(r.content)
-            items = root.findall(".//item")[:5]
-            logger.info(f"[STRIKE] {target['company']} + '{kw}': {len(items)} items (status {r.status_code})")
-            for item in items:
-                pub = item.findtext("pubDate", "")
-                try:
-                    dt = parsedate_to_datetime(pub)
-                    if dt >= cutoff:
-                        found_article = {
-                            "title": item.findtext("title", ""),
-                            "url":   item.findtext("link", ""),
-                            "date":  str(dt.date()),
-                        }
-                        logger.info(f"[STRIKE] ✓ {target['company']}: {found_article['title'][:60]}")
-                        break
-                except Exception:
-                    pass
-            if found_article:
+        for attempt in range(3):
+            try:
+                url = f"https://news.google.com/rss/search?q={quote(kw)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+                r = req_lib.get(url, timeout=15, headers=headers)
+                if r.status_code == 429:
+                    logger.warning(f"[STRIKE] {target['company']} rate-limited (429), retry {attempt+1}/3")
+                    _time.sleep(3 * (attempt + 1))
+                    continue
+                if r.status_code != 200:
+                    logger.warning(f"[STRIKE] {target['company']} HTTP {r.status_code}, skip")
+                    break
+                snippet = r.content[:200].lstrip()
+                if not (snippet.startswith(b'<?xml') or snippet.startswith(b'<rss')):
+                    logger.warning(f"[STRIKE] {target['company']} non-XML response ({len(r.content)}B), skip")
+                    break
+                clean = re.sub(rb'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', b'', r.content)
+                root = ET.fromstring(clean)
+                items = root.findall(".//item")[:5]
+                logger.info(f"[STRIKE] {target['company']} + '{kw}': {len(items)} items (status {r.status_code})")
+                for item in items:
+                    pub = item.findtext("pubDate", "")
+                    try:
+                        dt = parsedate_to_datetime(pub)
+                        if dt >= cutoff:
+                            found_article = {
+                                "title": item.findtext("title", ""),
+                                "url":   item.findtext("link", ""),
+                                "date":  str(dt.date()),
+                            }
+                            logger.info(f"[STRIKE] ✓ {target['company']}: {found_article['title'][:60]}")
+                            break
+                    except Exception:
+                        pass
                 break
-        except Exception as e:
-            logger.warning(f"[STRIKE] {target['company']} + '{kw}' ERROR: {type(e).__name__}: {e}")
+            except ET.ParseError as e:
+                logger.warning(f"[STRIKE] {target['company']} ParseError on attempt {attempt+1}: {e}")
+                _time.sleep(2)
+            except Exception as e:
+                logger.warning(f"[STRIKE] {target['company']} + '{kw}' ERROR: {type(e).__name__}: {e}")
+                break
     if not found_article:
         logger.info(f"[STRIKE] ✗ {target['company']}: no matching articles")
         return None
@@ -2242,7 +2276,7 @@ def _do_strike_scan():
     }
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
     results = []
-    executor = ThreadPoolExecutor(max_workers=min(3, len(_STRIKE_TARGETS)))  # Limit to 3 parallel
+    executor = ThreadPoolExecutor(max_workers=min(2, len(_STRIKE_TARGETS)))  # Limit to 2 parallel (reduce rate-limit triggers)
     try:
         futs = [executor.submit(_scan_one_strike, t, headers, cutoff)
                 for t in _STRIKE_TARGETS]
