@@ -140,22 +140,59 @@ _SUPPLY_CHAIN_RISK_KEYWORDS = {
 }
 
 
-def is_chinese_article(title: str, summary: str = "") -> bool:
-    """Check if article is in Chinese or mixed language (allow Digitimes English articles).
-    Returns True if article contains ANY Chinese characters (title is in Chinese).
-    Digitimes often has English titles with Chinese content, so allow those too.
-    """
-    # Check if title has ANY Chinese characters
-    title_has_chinese = any('一' <= char <= '鿿' for char in title)
-    if title_has_chinese:
-        return True
+def is_chinese_text(text: str) -> bool:
+    """Check if text contains Chinese characters."""
+    return any('一' <= char <= '鿿' for char in text)
 
-    # If title is English but summary has lots of Chinese, allow it
-    text = f"{title} {summary}"
-    chinese_char_count = sum(1 for char in text if '一' <= char <= '鿿')
-    total_chars = len(text)
-    # If >15% Chinese chars, consider it Chinese article
-    return chinese_char_count > total_chars * 0.15
+
+def translate_to_chinese(title: str, summary: str = "") -> tuple[str, str]:
+    """Translate English title and summary to Chinese using Claude API.
+    Returns: (translated_title, translated_summary)
+    If translation fails or text is already Chinese, returns original.
+    """
+    try:
+        import anthropic
+
+        # Skip if already has significant Chinese
+        if is_chinese_text(title) and is_chinese_text(summary):
+            return title, summary
+
+        # Build translation prompt
+        prompt = f"""Translate the following to Traditional Chinese (繁體中文). Keep it concise.
+
+Title: {title}
+Summary: {summary}
+
+Respond ONLY in this format (no other text):
+TITLE: [translated title]
+SUMMARY: [translated summary]"""
+
+        client = anthropic.Anthropic()
+        message = client.messages.create(
+            model="claude-3-5-haiku-20241022",
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        response = message.content[0].text
+
+        # Parse response
+        lines = response.strip().split('\n')
+        translated_title = title
+        translated_summary = summary
+
+        for line in lines:
+            if line.startswith("TITLE:"):
+                translated_title = line.replace("TITLE:", "").strip()
+            elif line.startswith("SUMMARY:"):
+                translated_summary = line.replace("SUMMARY:", "").strip()
+
+        logger.debug(f"Translated: '{title[:30]}...' → '{translated_title[:30]}...'")
+        return translated_title, translated_summary
+
+    except Exception as e:
+        logger.debug(f"Translation failed: {e}")
+        return title, summary
 
 
 def classify_category(title: str, summary: str = "", hint: str = "") -> str | None:
@@ -259,9 +296,8 @@ def parse_rss(url: str, source_name: str, hint: str = "") -> list[dict]:
                 if len(title) < 8:
                     continue
 
-                # Filter for Chinese articles only (exclude English)
-                if not is_chinese_article(title, summary):
-                    continue  # not Chinese, skip
+                # Translate to Chinese if needed
+                title, summary = translate_to_chinese(title, summary)
 
                 category = classify_category(title, summary, hint)
                 if category is None:
