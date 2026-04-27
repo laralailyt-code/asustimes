@@ -866,6 +866,31 @@ def _fetch_cobalt_price() -> float | None:
     return None
 
 
+def _fetch_1year_lme_history(yf_symbol: str, multiplier: float = 1.0) -> list[tuple[str, float]]:
+    """Fetch 1 year of LME metal price history from yfinance for initialization.
+    Returns: [(date_str, price), ...] sorted chronologically
+    """
+    try:
+        if not _YF_AVAILABLE:
+            return []
+        hist = yf.Ticker(yf_symbol).history(period="1y", interval="1d", auto_adjust=True)
+        if hist.empty or "Close" not in hist.columns:
+            return []
+
+        points = []
+        for date_ts, close_price in hist["Close"].items():
+            date_str = str(date_ts.date())
+            price = round(float(close_price) * multiplier, 2)
+            if price > 0:
+                points.append((date_str, price))
+
+        logger.info(f"Fetched {len(points)} points from yfinance {yf_symbol}")
+        return sorted(points)  # Ensure chronological order
+    except Exception as e:
+        logger.warning(f"Failed to fetch 1-year history from yfinance {yf_symbol}: {e}")
+        return []
+
+
 def _fetch_aluminum_price() -> float | None:
     """Fetch aluminum price from LME (metals.live primary, with retries).
     Only use reliable sources with proper unit handling.
@@ -1450,9 +1475,11 @@ def _refresh_live_prices():
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(copper_name, []))
 
-    # Start fresh from LME API only (don't use CSV history which may be corrupted)
+    # Initialize with 1-year yfinance history if cache is empty
     if not prev:
-        logger.info(f"Initializing copper with LME API only (empty history)")
+        # HG=F is in ¢/lb, convert to USD/tonne: (¢/lb ÷ 100) × 2204.62
+        prev = _fetch_1year_lme_history("HG=F", multiplier=2204.62 / 100)
+        logger.info(f"Initialized copper with {len(prev)} points from yfinance (1-year history)")
 
     copper_price = _fetch_copper_price()
     if copper_price is not None:
@@ -1485,9 +1512,16 @@ def _refresh_live_prices():
         with _live_cache_lock:
             prev = list(_live_commodity_cache.get(csv_name, []))
 
-        # Start fresh from LME API only (don't use CSV history which may be corrupted)
+        # Initialize with 1-year yfinance history if cache is empty
         if not prev:
-            logger.info(f"Initializing {display_name} with LME API only (empty history)")
+            yf_symbols = {"Tin": "ZS=F", "Nickel": "NI=F", "Zinc": "ZC=F"}
+            yf_symbol = yf_symbols.get(display_name)
+            if yf_symbol:
+                prev = _fetch_1year_lme_history(yf_symbol, multiplier=1.0)
+                if prev:
+                    logger.info(f"Initialized {display_name} with {len(prev)} points from yfinance (1-year history)")
+                else:
+                    logger.info(f"Initializing {display_name} with LME API only (yfinance unavailable)")
 
         price = _fetch_lme_metal_price(display_name, api_slug)
         if price is not None:
@@ -1523,9 +1557,11 @@ def _refresh_live_prices():
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(cobalt_name, []))
 
-    # Start fresh from LME API only (don't use CSV history which may be corrupted)
+    # Initialize with 1-year history if cache is empty
     if not prev:
-        logger.info(f"Initializing cobalt with LME API only (empty history)")
+        # Cobalt doesn't have direct yfinance futures, use Trading Economics as fallback source
+        # For now, just initialize empty and let LME API populate it
+        logger.info(f"Initializing cobalt (will be populated by LME API)")
 
     cobalt_price = _fetch_cobalt_price()
     if cobalt_price is not None:
@@ -1554,9 +1590,11 @@ def _refresh_live_prices():
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(aluminum_name, []))
 
-    # Start fresh from LME API only (don't use CSV history which may be corrupted)
+    # Initialize with 1-year yfinance history if cache is empty
     if not prev:
-        logger.info(f"Initializing aluminum with LME API only (empty history)")
+        # ALI=F is in ¢/lb, convert to USD/tonne: (¢/lb ÷ 100) × 2204.62
+        prev = _fetch_1year_lme_history("ALI=F", multiplier=2204.62 / 100)
+        logger.info(f"Initialized aluminum with {len(prev)} points from yfinance (1-year history)")
 
     aluminum_price = _fetch_aluminum_price()
     if aluminum_price is not None:
