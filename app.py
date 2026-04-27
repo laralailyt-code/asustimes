@@ -1607,37 +1607,23 @@ def _refresh_live_prices():
                                 "url":   "https://www.lme.com"}
             logger.warning(f"{csv_name} fetch failed, preserved data ({len(prev)} points)")
 
-    logger.info("[REFRESH] Starting Cobalt (LME source)...")
+    logger.info("[REFRESH] Starting Cobalt (LME only, no CSV)...")
     cobalt_name = "鈷 (cobalt) US$/tonne"
-    with _live_cache_lock:
-        prev = list(_live_commodity_cache.get(cobalt_name, []))
 
-    # Initialize with 1-year history if cache is empty
-    if not prev:
-        # Cobalt doesn't have direct yfinance futures, use Trading Economics as fallback source
-        # For now, just initialize empty and let LME API populate it
-        logger.info(f"Initializing cobalt (will be populated by LME API)")
-
+    # Fetch fresh LME price (no CSV fallback)
     cobalt_price = _fetch_cobalt_price()
     if cobalt_price is not None:
         cobalt_val = round(cobalt_price, 2)
-        existing_dates = {d for d, _ in prev}
-        if today not in existing_dates:
-            prev.append((today, cobalt_val))
-            logger.info(f"Added new LME price for {today}: {cobalt_val} USD/tonne")
-        else:
-            # Update today if already exists
-            prev = [(d if d != today else today, cobalt_val if d == today else p) for d, p in prev]
-            logger.info(f"Updated LME price for {today}: {cobalt_val} USD/tonne")
-        fresh[cobalt_name] = prev
+        fresh[cobalt_name] = [(today, cobalt_val)]  # Only today's price
         sources[cobalt_name] = {"label": "LME (metals.live)",
                                 "url":   "https://www.lme.com"}
-        logger.info(f"Cobalt: {len(prev)} historical points (latest: {cobalt_val} USD/tonne on {today})")
+        logger.info(f"✓ Cobalt: {cobalt_val} USD/tonne on {today}")
     else:
-        # If fetch fails, preserve data without appending stale prices
-        fresh[cobalt_name] = prev
-        sources[cobalt_name] = {"label": "LME (verified data only)",
+        # If fetch fails, return empty (no stale data)
+        fresh[cobalt_name] = []
+        sources[cobalt_name] = {"label": "LME (fetch failed)",
                                 "url":   "https://www.lme.com"}
+        logger.warning(f"✗ Cobalt: LME API failed, no data for {today}")
         logger.warning(f"Cobalt fetch failed, preserved verified data only ({len(prev)} points)")
 
     logger.info("[REFRESH] Starting Aluminum (LME source)...")
