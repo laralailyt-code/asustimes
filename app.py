@@ -1485,7 +1485,7 @@ def _refresh_live_prices():
                                  "url":   f"https://tradingeconomics.com/commodity/{slug}"}
             logger.info(f"TradingEconomics: {csv_name} = {val}")
 
-    logger.info("[REFRESH] Starting Yellow Phosphorus...")
+    logger.info("[REFRESH] Starting Yellow Phosphorus (SCI99 only)...")
     yp_name = "黃磷 CNY$/tonne"
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(yp_name, []))
@@ -1495,29 +1495,48 @@ def _refresh_live_prices():
         prev = [(date, price) for date, price in sorted(_YELLOW_PHOSPHORUS_HISTORY.items())]
         logger.info(f"Initialized yellow phosphorus from CSV history: {len(prev)} points")
 
-    # Try to fetch latest price from Trading Economics
+    # Fetch from SCI99 (FIXED SOURCE - monitor-678-0.html)
     yp_price = None
     try:
-        yp_price = _fetch_te_price("phosphorus")
-        if yp_price and yp_price > 0:
-            yp_val = round(yp_price * 29.4274, 2)  # Convert from TE format
-            existing_dates = {d for d, _ in prev}
-            if today not in existing_dates:
-                prev.append((today, yp_val))
-                logger.info(f"Added new TE price for {today}: {yp_val} CNY/tonne")
-            else:
-                prev = [(d if d != today else today, yp_val if d == today else p) for d, p in prev]
-            fresh[yp_name] = prev
-            sources[yp_name] = {"label": "Trading Economics",
-                                "url":   "https://tradingeconomics.com/commodity/phosphorus"}
-            logger.info(f"Yellow Phosphorus: {len(prev)} historical points (latest: {yp_val} CNY/tonne on {today})")
+        r = req_lib.get("https://www.sci99.com/monitor-678-0.html", timeout=10, headers=HEADERS)
+        if r.status_code == 200:
+            soup = _BS(r.content, "html.parser")
+            # Look for price in table/text (adjust selector if needed)
+            # sci99 typically shows prices in <td> or <span> elements
+            price_elements = soup.find_all(["td", "span"])
+            for elem in price_elements:
+                text = elem.get_text(strip=True)
+                # Try to extract numeric price (format: "23400" or "23,400" CNY)
+                price_match = _re.search(r'(\d{4,5}(?:,\d{3})?)', text)
+                if price_match:
+                    try:
+                        price_str = price_match.group(1).replace(",", "")
+                        yp_price = float(price_str)
+                        if yp_price > 0:
+                            logger.info(f"Yellow Phosphorus from SCI99: {yp_price} CNY/tonne")
+                            break
+                    except:
+                        continue
+    except Exception as e:
+        logger.debug(f"SCI99 yellow phosphorus fetch failed: {e}")
+
+    if yp_price and yp_price > 0:
+        yp_val = round(yp_price, 2)
+        existing_dates = {d for d, _ in prev}
+        if today not in existing_dates:
+            prev.append((today, yp_val))
+            logger.info(f"Added new SCI99 price for {today}: {yp_val} CNY/tonne")
         else:
-            raise ValueError("TE price invalid")
-    except:
+            prev = [(d if d != today else today, yp_val if d == today else p) for d, p in prev]
+        fresh[yp_name] = prev
+        sources[yp_name] = {"label": "SCI99（固定來源）",
+                            "url":   "https://www.sci99.com/monitor-678-0.html"}
+        logger.info(f"Yellow Phosphorus: {len(prev)} historical points (latest: {yp_val} CNY/tonne on {today})")
+    else:
         # Preserve verified data without appending stale prices
         fresh[yp_name] = prev
-        sources[yp_name] = {"label": "CSV 歷史（TE 獲取失敗）",
-                            "url":   "https://www.sci99.com/monitor-68-0.html"}
+        sources[yp_name] = {"label": "SCI99 CSV 歷史（獲取失敗）",
+                            "url":   "https://www.sci99.com/monitor-678-0.html"}
         logger.warning(f"Yellow Phosphorus fetch failed, preserved verified data only ({len(prev)} points)")
 
     logger.info("[REFRESH] Starting Copper (LME source)...")
