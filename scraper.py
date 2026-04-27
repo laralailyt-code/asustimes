@@ -278,30 +278,27 @@ FEEDS = [
     {"url": "https://tw.news.yahoo.com/rss/finance",          "source": "Yahoo財經",   "hint": "科技"},
     {"url": "https://www.ctee.com.tw/rss.xml",                "source": "工商時報",    "hint": "科技"},
 
-    # ── Digitimes 關鍵詞搜尋（Bing News）────────────────────────────────────
-    {"url": GN + "Digitimes+AI+芯片",                         "source": "Digitimes",   "hint": "AI 產業"},
-    {"url": GN + "Digitimes+半導體+晶圓",                     "source": "Digitimes",   "hint": "半導體"},
-    {"url": GN + "Digitimes+記憶體+DRAM",                     "source": "Digitimes",   "hint": "記憶體/儲存"},
-    {"url": GN + "Digitimes+台積電+製程",                     "source": "Digitimes",   "hint": "半導體"},
-    {"url": GN + "Digitimes+PC+筆電",                         "source": "Digitimes",   "hint": "PC / NB"},
-    {"url": GN + "Digitimes+伺服器+資料中心",                 "source": "Digitimes",   "hint": "伺服器/雲端"},
-    {"url": GN + "Digitimes+面板+OLED",                       "source": "Digitimes",   "hint": "面板/顯示"},
-    {"url": GN + "Digitimes+財報+營收",                       "source": "Digitimes",   "hint": "財報/法說"},
-
-    # ── 科技新聞關鍵詞搜尋────────────────────────────────────────────────────
-    {"url": GN + "AI+芯片+臺灣",                              "source": "科技新聞",    "hint": "AI 產業"},
-    {"url": GN + "記憶體+HBM+AI",                             "source": "科技新聞",    "hint": "記憶體/儲存"},
-    {"url": GN + "台積電+先進製程+5nm",                       "source": "科技新聞",    "hint": "半導體"},
-    {"url": GN + "顯卡+GPU+NVIDIA",                           "source": "科技新聞",    "hint": "電競/ROG"},
-    {"url": GN + "筆電+NB+出貨",                              "source": "科技新聞",    "hint": "PC / NB"},
-    {"url": GN + "OLED+屏幕+顯示器",                          "source": "科技新聞",    "hint": "面板/顯示"},
-    {"url": GN + "供應鏈+關稅+貿易",                          "source": "科技新聞",    "hint": "供應鏈/關稅"},
-    {"url": GN + "財報+毛利率+營收",                          "source": "科技新聞",    "hint": "財報/法說"},
-
-    # ── 英文科技新聞──────────────────────────────────────────────────────────
+    # ── Bing News 搜尋（site: 操作符有效）────────────────────────────────────
+    {"url": GN + "site:digitimes.com",                    "source": "Digitimes",   "hint": "AI 產業"},
+    {"url": GN + "site:digitimes.com+AI+人工智慧",         "source": "Digitimes",   "hint": "AI 產業"},
+    {"url": GN + "site:digitimes.com+半導體+晶片",         "source": "Digitimes",   "hint": "半導體"},
+    {"url": GN + "site:digitimes.com+台積電+TSMC",         "source": "Digitimes",   "hint": "半導體"},
+    {"url": GN + "site:digitimes.com+筆電+PC",             "source": "Digitimes",   "hint": "PC / NB"},
+    {"url": GN + "site:digitimes.com+伺服器+資料中心",     "source": "Digitimes",   "hint": "伺服器/雲端"},
+    {"url": GN + "site:digitimes.com+記憶體+DRAM+HBM",    "source": "Digitimes",   "hint": "記憶體/儲存"},
+    {"url": GN + "site:digitimes.com+面板+OLED+LCD",      "source": "Digitimes",   "hint": "面板/顯示"},
+    {"url": GN + "site:digitimes.com+財報+營收+法說",      "source": "Digitimes",   "hint": "財報/法說"},
+    {"url": GN + "site:ctee.com.tw+科技",                    "source": "工商時報",    "hint": "科技"},
+    {"url": GN + "AI+伺服器+臺灣",                           "source": "科技新聞",    "hint": "伺服器/雲端"},
+    {"url": GN + "HBM+記憶體+AI",                            "source": "科技新聞",    "hint": "記憶體/儲存"},
+    {"url": GN + "台積電+先進製程",                          "source": "科技新聞",    "hint": "半導體"},
+    {"url": GN + "電競+顯卡+RTX",                            "source": "科技新聞",    "hint": "電競/ROG"},
+    {"url": GN + "筆電+出貨+PC市場",                         "source": "科技新聞",    "hint": "PC / NB"},
+    {"url": GN + "OLED+面板+顯示器",                         "source": "科技新聞",    "hint": "面板/顯示"},
+    {"url": GN + "法說會+營收+科技",                         "source": "科技新聞",    "hint": "財報/法說"},
+    {"url": GN + "財報+EPS+毛利率",                          "source": "科技新聞",    "hint": "財報/法說"},
     {"url": GN_EN + "TSMC+semiconductor+AI",                 "source": "Global Tech", "hint": "半導體"},
     {"url": GN_EN + "NVIDIA+GPU+data+center",                "source": "Global Tech", "hint": "AI 產業"},
-    {"url": GN_EN + "graphics+card+GPU+gaming",              "source": "Global Tech", "hint": "電競/ROG"},
     {"url": GN_EN + "earnings+semiconductor+quarterly",      "source": "Global Tech", "hint": "財報/法說"},
 
     # ── Supply chain risks: strikes, conflicts, disasters ───────────────────
