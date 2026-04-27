@@ -1668,6 +1668,8 @@ def _refresh_live_prices():
         _item_sources["錫 (tin) US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
         _item_sources["鎳 (nickel)  US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
         _item_sources["鋅 (zinc)  US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
+    # Persist updated prices back to CSV file
+    _save_commodity_csv()
     # Invalidate CSV parse cache so next request re-merges fresh live data
     with _csv_parse_lock:
         _csv_parse_cache["data"] = None
@@ -1899,6 +1901,81 @@ def _parse_commodity_csv() -> dict:
             result[key]["values"] = [p[1] for p in paired]
 
     return result
+
+
+def _save_commodity_csv():
+    """Save current _live_commodity_cache back to CSV file in wide-format."""
+    try:
+        with _live_cache_lock:
+            cache_copy = dict(_live_commodity_cache)
+
+        if not cache_copy:
+            logger.warning("Commodity cache is empty, skipping CSV save")
+            return
+
+        # Collect all unique dates from all items
+        all_dates = set()
+        for item_name, price_list in cache_copy.items():
+            for date_str, _ in price_list:
+                all_dates.add(date_str)
+
+        if not all_dates:
+            logger.warning("No dates found in commodity cache, skipping CSV save")
+            return
+
+        # Sort dates chronologically
+        sorted_dates = sorted(all_dates)
+
+        # Build rows for CSV (wide format: items in rows, dates in columns)
+        rows = []
+
+        # Header row: "項目" + dates in YYYY/M/D format
+        header = ["項目"]
+        for date_str in sorted_dates:
+            # Convert YYYY-MM-DD to YYYY/M/D format
+            try:
+                parts = date_str.split("-")
+                if len(parts) == 3:
+                    year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+                    # Remove leading zeros from month and day for compact format
+                    formatted_date = f"{year}/{month}/{day}"
+                    header.append(formatted_date)
+                else:
+                    header.append(date_str)
+            except Exception:
+                header.append(date_str)
+        rows.append(header)
+
+        # Data rows: one per commodity item
+        for item_name in sorted(cache_copy.keys()):
+            price_list = cache_copy[item_name]
+            # Build a dict of date->price for fast lookup
+            date_price = {date_str: price for date_str, price in price_list}
+
+            row = [item_name]
+            for date_str in sorted_dates:
+                if date_str in date_price:
+                    price = date_price[date_str]
+                    # Format price: remove decimals if whole number, otherwise keep 2 decimals
+                    if isinstance(price, float):
+                        if price == int(price):
+                            row.append(str(int(price)))
+                        else:
+                            row.append(str(round(price, 2)))
+                    else:
+                        row.append(str(price))
+                else:
+                    row.append("")
+            rows.append(row)
+
+        # Write to CSV with utf-8-sig encoding (preserves BOM for Excel compatibility)
+        with open(_COMMODITY_CSV, "w", encoding="utf-8-sig", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerows(rows)
+
+        logger.info(f"Saved commodity CSV: {len(cache_copy)} items, {len(sorted_dates)} dates")
+    except Exception as e:
+        logger.error(f"Commodity CSV save error: {e}", exc_info=True)
 
 
 @app.route("/api/commodity-news")
