@@ -1333,6 +1333,20 @@ def _fetch_pc_price_fallback() -> float | None:
     return None
 
 
+def _load_commodity_csv_to_cache():
+    """Load CSV historical data into live cache on startup."""
+    global _live_commodity_cache
+    csv_data = _parse_commodity_csv()
+    with _live_cache_lock:
+        for item_name, item_data in csv_data.items():
+            dates = item_data.get("dates", [])
+            values = item_data.get("values", [])
+            if dates and values:
+                # Store as [(date, value), ...] tuples
+                _live_commodity_cache[item_name] = list(zip(dates, values))
+                logger.info(f"Loaded {item_name} from CSV: {len(dates)} historical points")
+
+
 def _refresh_live_prices():
     """Fetch commodity & FX prices with 1-year history. Called on startup and periodically."""
     logger.info("[REFRESH] Starting refresh...")
@@ -1725,6 +1739,8 @@ def _refresh_live_prices():
 
 
 def _live_price_loop():
+    # Load CSV historical data first, then fetch fresh prices
+    _load_commodity_csv_to_cache()
     _refresh_live_prices()
     # Refresh at 07:00, 09:00, 11:00, 13:00, 15:00, 17:00 Taiwan time (UTC+8) every day
     # This ensures ~2+ data points per 7 days for cobalt and other commodities

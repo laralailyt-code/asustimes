@@ -191,7 +191,7 @@ SUMMARY: [translated summary]"""
         return translated_title, translated_summary
 
     except Exception as e:
-        logger.debug(f"Translation failed: {e}")
+        logger.warning(f"Translation failed for '{title[:40]}...': {type(e).__name__}: {e}")
         return title, summary
 
 
