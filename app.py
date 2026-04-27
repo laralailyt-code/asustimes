@@ -1419,19 +1419,11 @@ def _refresh_live_prices():
         else:
             raise ValueError("TE price invalid")
     except:
-        # Fallback: use last known price from CSV/cache
-        existing_dates = {d for d, _ in prev}
-        if today not in existing_dates:
-            last_price = prev[-1][1] if prev else None
-            if last_price is not None:
-                prev.append((today, last_price))
-                logger.warning(f"Yellow Phosphorus TE fetch failed, using last known price {last_price} for {today}")
-            else:
-                logger.error(f"Yellow Phosphorus fetch failed and no historical data available for {today}")
+        # Preserve verified data without appending stale prices
         fresh[yp_name] = prev
         sources[yp_name] = {"label": "CSV 歷史（TE 獲取失敗）",
                             "url":   "https://www.sci99.com/monitor-68-0.html"}
-        logger.warning(f"Yellow Phosphorus fetch failed, preserved data ({len(prev)} points)")
+        logger.warning(f"Yellow Phosphorus fetch failed, preserved verified data only ({len(prev)} points)")
 
     logger.info("[REFRESH] Starting Copper (LME source)...")
     copper_name = "銅 (copper) US$/tonne"
@@ -1458,19 +1450,11 @@ def _refresh_live_prices():
                                 "url":   "https://www.lme.com"}
         logger.info(f"Copper: {len(prev)} historical points (latest: {copper_val} USD/tonne on {today})")
     else:
-        # If fetch fails, still update today with last known price
-        existing_dates = {d for d, _ in prev}
-        if today not in existing_dates:
-            last_price = prev[-1][1] if prev else None
-            if last_price is not None:
-                prev.append((today, last_price))
-                logger.warning(f"Copper fetch failed, using last known price {last_price} for {today}")
-            else:
-                logger.error(f"Copper fetch failed and no historical data available for {today}")
+        # If fetch fails, preserve data without appending stale prices
         fresh[copper_name] = prev
-        sources[copper_name] = {"label": "LME (cached)",
+        sources[copper_name] = {"label": "LME (verified data only)",
                                 "url":   "https://www.lme.com"}
-        logger.warning(f"Copper fetch failed, preserved data ({len(prev)} points)")
+        logger.warning(f"Copper fetch failed, preserved verified data only ({len(prev)} points)")
 
     logger.info("[REFRESH] Starting LME metals (Tin, Nickel, Zinc)...")
     lme_metals = {
@@ -1542,19 +1526,11 @@ def _refresh_live_prices():
                                 "url":   "https://www.lme.com"}
         logger.info(f"Cobalt: {len(prev)} historical points (latest: {cobalt_val} USD/tonne on {today})")
     else:
-        # If fetch fails, still need to update today with last known price
-        existing_dates = {d for d, _ in prev}
-        if today not in existing_dates:
-            last_price = prev[-1][1] if prev else None
-            if last_price is not None:
-                prev.append((today, last_price))
-                logger.warning(f"Cobalt fetch failed, using last known price {last_price} for {today}")
-            else:
-                logger.error(f"Cobalt fetch failed and no historical data available for {today}")
+        # If fetch fails, preserve data without appending stale prices
         fresh[cobalt_name] = prev
-        sources[cobalt_name] = {"label": "LME (metals.live) [may have failed]",
+        sources[cobalt_name] = {"label": "LME (verified data only)",
                                 "url":   "https://www.lme.com"}
-        logger.warning(f"Cobalt fetch failed, preserved data ({len(prev)} points)")
+        logger.warning(f"Cobalt fetch failed, preserved verified data only ({len(prev)} points)")
 
     logger.info("[REFRESH] Starting Aluminum (LME source)...")
     aluminum_name = "鋁 (aluminum) US$/tonne"
@@ -1646,17 +1622,11 @@ def _refresh_live_prices():
         logger.info(f"Initialized Long Fiber Pulp from approximation: {len(prev)} points")
 
     # No live price fetcher for long fiber pulp (BCD API corrupted)
-    # Update with last known price to ensure daily data point
-    existing_dates = {d for d, _ in prev}
-    if today not in existing_dates and prev:
-        last_price = prev[-1][1]
-        prev.append((today, last_price))
-        logger.info(f"Added placeholder for {today}: {last_price} USD/T (no live source available)")
-
+    # Preserve verified data without appending stale prices to avoid data discontinuity
     fresh[pulp_name] = prev
-    sources[pulp_name] = {"label": "MoneyDJ (歷史資料, BCD API已損壞)",
+    sources[pulp_name] = {"label": "MoneyDJ (verified data only)",
                          "url": "https://concords.moneydj.com/z/ze/zeq/zeqa_D0190400.djhtm"}
-    logger.info(f"Long Fiber Pulp: {len(prev)} historical points")
+    logger.info(f"Long Fiber Pulp: {len(prev)} verified historical points (no live source)")
 
     logger.info("[REFRESH] Starting PC (Polycarbonate from sci99.com)...")
     pc_name = "PC塑料 (SABIC) CNY$/tonne"
@@ -1689,19 +1659,11 @@ def _refresh_live_prices():
                             "url":   "https://www.sci99.com/monitor-68-0.html"}
         logger.info(f"PC: {len(prev)} historical points (latest: {pc_val} CNY/tonne on {today})")
     else:
-        # If all sources fail, still update today with last known price
-        existing_dates = {d for d, _ in prev}
-        if today not in existing_dates:
-            last_price = prev[-1][1] if prev else None
-            if last_price is not None:
-                prev.append((today, last_price))
-                logger.warning(f"PC fetch failed (all sources), using last known price {last_price} for {today}")
-            else:
-                logger.error(f"PC fetch failed (all sources) and no historical data available for {today}")
+        # If all sources fail, preserve verified data without appending stale prices
         fresh[pc_name] = prev
-        sources[pc_name] = {"label": "sci99.com + buyplas (cached)",
+        sources[pc_name] = {"label": "sci99.com + buyplas (verified data only)",
                             "url":   "https://www.sci99.com/monitor-68-0.html"}
-        logger.warning(f"PC fetch failed (all sources), preserved data ({len(prev)} points)")
+        logger.warning(f"PC fetch failed (all sources), preserved verified data only ({len(prev)} points)")
 
     with _live_cache_lock:
         _live_commodity_cache.update(fresh)
@@ -2115,7 +2077,7 @@ def _scan_one_geo_risk(risk, headers, cutoff):
     for kw in risk["kw"]:
         try:
             url = f"https://news.google.com/rss/search?q={quote(kw)}&hl=en-US&gl=US&ceid=US:en"
-            r = req_lib.get(url, timeout=5, headers=headers)
+            r = req_lib.get(url, timeout=15, headers=headers)
             items = ET.fromstring(r.content).findall('.//item')[:5]
             logger.info(f"[GEO] {risk['title']} + '{kw}': {len(items)} items (status {r.status_code})")
             for item in items:
@@ -2176,7 +2138,11 @@ def _do_geo_scan():
     finally:
         executor.shutdown(wait=False)
     with _geo_risk_lock:
-        _geo_risk_cache["data"] = results
+        # Fallback: if scan returns no results, keep last cached data
+        if results:
+            _geo_risk_cache["data"] = results
+        elif _geo_risk_cache["data"] is None:
+            _geo_risk_cache["data"] = []
         _geo_risk_cache["ts"] = time.time()
     logger.info(f"Geopolitical risks detected: {len(results)}/{len(_GEO_RISKS)}")
     return results
@@ -2228,7 +2194,7 @@ def _scan_one_strike(target, headers, cutoff):
     for kw in target["kw"]:
         try:
             url = f"https://news.google.com/rss/search?q={quote(kw)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
-            r = req_lib.get(url, timeout=6, headers=headers)
+            r = req_lib.get(url, timeout=15, headers=headers)
             root = ET.fromstring(r.content)
             items = root.findall(".//item")[:5]
             logger.info(f"[STRIKE] {target['company']} + '{kw}': {len(items)} items (status {r.status_code})")
@@ -2294,7 +2260,11 @@ def _do_strike_scan():
     finally:
         executor.shutdown(wait=False)
     with _strike_lock:
-        _strike_cache["data"] = results
+        # Fallback: if scan returns no results, keep last cached data
+        if results:
+            _strike_cache["data"] = results
+        elif _strike_cache["data"] is None:
+            _strike_cache["data"] = []
         _strike_cache["ts"] = time.time()
     logger.info(f"Strike events: {len(results)}/{len(_STRIKE_TARGETS)}")
     return results
