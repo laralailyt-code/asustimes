@@ -197,8 +197,8 @@ def parse_rss(url: str, source_name: str, hint: str = "") -> list[dict]:
     max_retries = 2
     for attempt in range(max_retries):
         try:
-            # Increased timeout for Google News which can be slow
-            timeout = 20 if "news.google.com" in url else TIMEOUT
+            # Increased timeout for Google/Bing News which can be slow
+            timeout = 20 if ("news.google.com" in url or "bing.com" in url) else TIMEOUT
             resp = requests.get(url, headers=HEADERS, timeout=timeout)
             resp.encoding = "utf-8"
             soup = BeautifulSoup(resp.content, "xml")
@@ -215,6 +215,17 @@ def parse_rss(url: str, source_name: str, hint: str = "") -> list[dict]:
 
                 title    = clean(title_el.get_text() if title_el else "")
                 raw_url  = link_el.get_text(strip=True) if link_el else ""
+
+                # Bing News wraps URLs in apiclick redirects, extract actual URL
+                if "bing.com/news/apiclick.aspx" in raw_url:
+                    from urllib.parse import urlparse, parse_qs, unquote
+                    try:
+                        qs = parse_qs(urlparse(raw_url).query)
+                        if "url" in qs:
+                            raw_url = unquote(qs["url"][0])
+                    except Exception:
+                        pass  # If parsing fails, use original raw_url
+
                 summary  = clean(desc_el.get_text() if desc_el else "")[:220]
                 pub_date = parse_date(date_el.get_text() if date_el else "")
 
@@ -256,8 +267,8 @@ def parse_rss(url: str, source_name: str, hint: str = "") -> list[dict]:
 
 
 # ── Feed definitions ──────────────────────────────────────────────────────────
-GN = "https://news.google.com/rss/search?hl=zh-TW&gl=TW&ceid=TW:zh-Hant&q="
-GN_EN = "https://news.google.com/rss/search?hl=en-US&gl=US&ceid=US:en&q="
+GN = "https://www.bing.com/news/search?format=rss&q="
+GN_EN = "https://www.bing.com/news/search?format=rss&q="
 
 FEEDS = [
     # ── 直接 RSS（有真實文章 URL，可抓摘要）──────────────────────────────
@@ -268,17 +279,17 @@ FEEDS = [
     {"url": "https://www.ctee.com.tw/rss.xml",                "source": "工商時報",    "hint": ""},
 
     # ── Google News 主題精選（仍保留作為補充來源）───────────────────────
-    {"url": GN + "site:digitimes.com.tw",                    "source": "Digitimes",   "hint": "AI 產業"},
-    {"url": GN + "site:digitimes.com.tw+AI+人工智慧",         "source": "Digitimes",   "hint": "AI 產業"},
-    {"url": GN + "site:digitimes.com.tw+半導體+晶片",         "source": "Digitimes",   "hint": "半導體"},
-    {"url": GN + "site:digitimes.com.tw+台積電+TSMC",         "source": "Digitimes",   "hint": "半導體"},
-    {"url": GN + "site:digitimes.com.tw+筆電+PC",             "source": "Digitimes",   "hint": "PC / NB"},
-    {"url": GN + "site:digitimes.com.tw+伺服器+資料中心",     "source": "Digitimes",   "hint": "伺服器/雲端"},
-    {"url": GN + "site:digitimes.com.tw+記憶體+DRAM+HBM",    "source": "Digitimes",   "hint": "記憶體/儲存"},
-    {"url": GN + "site:digitimes.com.tw+面板+OLED+LCD",      "source": "Digitimes",   "hint": "面板/顯示"},
-    {"url": GN + "site:digitimes.com.tw+供應鏈+關稅",         "source": "Digitimes",   "hint": "供應鏈/關稅"},
-    {"url": GN + "site:digitimes.com.tw+財報+營收+法說",      "source": "Digitimes",   "hint": "財報/法說"},
-    {"url": GN + "site:digitimes.com.tw+CCL+PCB+玻纖布+銅箔","source": "Digitimes",   "hint": "供應鏈/關稅"},
+    {"url": GN + "site:digitimes.com",                    "source": "Digitimes",   "hint": "AI 產業"},
+    {"url": GN + "site:digitimes.com+AI+人工智慧",         "source": "Digitimes",   "hint": "AI 產業"},
+    {"url": GN + "site:digitimes.com+半導體+晶片",         "source": "Digitimes",   "hint": "半導體"},
+    {"url": GN + "site:digitimes.com+台積電+TSMC",         "source": "Digitimes",   "hint": "半導體"},
+    {"url": GN + "site:digitimes.com+筆電+PC",             "source": "Digitimes",   "hint": "PC / NB"},
+    {"url": GN + "site:digitimes.com+伺服器+資料中心",     "source": "Digitimes",   "hint": "伺服器/雲端"},
+    {"url": GN + "site:digitimes.com+記憶體+DRAM+HBM",    "source": "Digitimes",   "hint": "記憶體/儲存"},
+    {"url": GN + "site:digitimes.com+面板+OLED+LCD",      "source": "Digitimes",   "hint": "面板/顯示"},
+    {"url": GN + "site:digitimes.com+供應鏈+關稅",         "source": "Digitimes",   "hint": "供應鏈/關稅"},
+    {"url": GN + "site:digitimes.com+財報+營收+法說",      "source": "Digitimes",   "hint": "財報/法說"},
+    {"url": GN + "site:digitimes.com+CCL+PCB+玻纖布+銅箔","source": "Digitimes",   "hint": "供應鏈/關稅"},
     {"url": GN_EN + "site:digitimes.com",                    "source": "Digitimes",   "hint": "AI 產業"},
     {"url": GN + "site:technews.tw",                         "source": "科技新報",    "hint": "AI 產業"},
     {"url": GN + "site:ctee.com.tw+科技",                    "source": "工商時報",    "hint": ""},
@@ -560,6 +571,7 @@ def fetch_all_news() -> list[dict]:
         if _summary_is_empty(a["title"], a.get("summary", ""))
         and a.get("source_url")
         and "news.google.com" not in a.get("source_url", "")
+        and "bing.com" not in a.get("source_url", "")
     ]
     if to_enrich:
         logger.info(f"Enriching summaries for {len(to_enrich)} articles…")

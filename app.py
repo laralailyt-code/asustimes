@@ -1917,7 +1917,7 @@ def api_commodity_news():
     q = request.args.get("q", "").strip()
     if not q:
         return jsonify({"articles": []})
-    url = f"https://news.google.com/rss/search?q={quote(q)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant&num=10"
+    url = f"https://www.bing.com/news/search?format=rss&q={quote(q)}"
     try:
         resp = req_lib.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
         root = ET.fromstring(resp.content)
@@ -2079,7 +2079,7 @@ def _scan_one_geo_risk(risk, headers, cutoff):
     for kw in risk["kw"]:
         for attempt in range(3):
             try:
-                url = f"https://news.google.com/rss/search?q={quote(kw)}&hl=en-US&gl=US&ceid=US:en"
+                url = f"https://www.bing.com/news/search?format=rss&q={quote(kw)}"
                 r = req_lib.get(url, timeout=15, headers=headers)
                 if r.status_code == 429:
                     logger.warning(f"[GEO] {risk['title']} rate-limited (429), retry {attempt+1}/3")
@@ -2212,7 +2212,7 @@ def _scan_one_strike(target, headers, cutoff):
     for kw in target["kw"]:
         for attempt in range(3):
             try:
-                url = f"https://news.google.com/rss/search?q={quote(kw)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+                url = f"https://www.bing.com/news/search?format=rss&q={quote(kw)}"
                 r = req_lib.get(url, timeout=15, headers=headers)
                 if r.status_code == 429:
                     logger.warning(f"[STRIKE] {target['company']} rate-limited (429), retry {attempt+1}/3")
