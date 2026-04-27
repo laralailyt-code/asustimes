@@ -32,12 +32,12 @@ def fetch_digitimes_news():
             "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
         }
 
-        # 登入
-        login_url = "https://www.digitimes.com.tw/user/login"
+        # 登入 (使用 Digitimes 正確的登入端點)
+        login_url = "https://www.digitimes.com.tw/tech/lgn/lgn.asp"
         login_data = {
-            "email": "lara1_lai@asus.com",
-            "password": "sourcer888",
-            "remember": "on"
+            "mail": "lara1_lai@asus.com",  # Digitimes 用 mail 而不是 email
+            "pwd": "sourcer888",           # Digitimes 用 pwd 而不是 password
+            "tourl": "/tech/default.asp"
         }
 
         r = session.post(login_url, data=login_data, headers=headers, timeout=15)
