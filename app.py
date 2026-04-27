@@ -1544,9 +1544,10 @@ def _refresh_live_prices():
         logger.info(f"Initialized copper with {len(prev)} points from yfinance (1-year history)")
 
     copper_price = _fetch_copper_price()
+    existing_dates = {d for d, _ in prev}
+
     if copper_price is not None:
         copper_val = round(copper_price, 2)
-        existing_dates = {d for d, _ in prev}
         if today not in existing_dates:
             prev.append((today, copper_val))
             logger.info(f"Added new LME price for {today}: {copper_val} USD/tonne")
@@ -1558,8 +1559,16 @@ def _refresh_live_prices():
                                 "url":   "https://www.lme.com"}
         logger.info(f"Copper: {len(prev)} historical points (latest: {copper_val} USD/tonne on {today})")
     else:
-        # If fetch fails, preserve data without appending stale prices
+        # API fetch failed: preserve existing data but ensure today is marked (with last known value or placeholder)
+        if today not in existing_dates and prev:
+            last_val = next((v for v in reversed([v for d, v in prev]) if v is not None), None)
+            if last_val:
+                prev.append((today, last_val))  # Keep last known value with today's date
+                logger.warning(f"Copper API failed, recorded today {today} with last price {last_val}")
         fresh[copper_name] = prev
+        sources[copper_name] = {"label": "LME (metals.live)",
+                                "url":   "https://www.lme.com"}
+        logger.warning(f"Copper: {len(prev)} points, latest from {prev[-1][0] if prev else 'N/A'}")
         sources[copper_name] = {"label": "LME (verified data only)",
                                 "url":   "https://www.lme.com"}
         logger.warning(f"Copper fetch failed, preserved verified data only ({len(prev)} points)")
@@ -1619,11 +1628,23 @@ def _refresh_live_prices():
                                 "url":   "https://www.lme.com"}
         logger.info(f"✓ Cobalt: {cobalt_val} USD/tonne on {today}")
     else:
-        # If fetch fails, return empty (no stale data)
-        fresh[cobalt_name] = []
-        sources[cobalt_name] = {"label": "LME (fetch failed)",
+        # If fetch fails, try to preserve last known price with today's date
+        with _live_cache_lock:
+            prev = list(_live_commodity_cache.get(cobalt_name, []))
+
+        if prev:
+            last_val = next((v for v in reversed([v for d, v in prev]) if v is not None), None)
+            if last_val:
+                fresh[cobalt_name] = [(today, last_val)]
+                logger.warning(f"Cobalt: LME API failed, using last price {last_val} for {today}")
+            else:
+                fresh[cobalt_name] = []
+                logger.warning(f"Cobalt: LME API failed and no valid historical data")
+        else:
+            fresh[cobalt_name] = []
+            logger.warning(f"Cobalt: LME API failed and no cached data for {today}")
+        sources[cobalt_name] = {"label": "LME (metals.live)",
                                 "url":   "https://www.lme.com"}
-        logger.warning(f"✗ Cobalt: LME API failed, no data for {today}")
 
     logger.info("[REFRESH] Starting Aluminum (LME source)...")
     aluminum_name = "鋁 (aluminum) US$/tonne"
@@ -1637,9 +1658,10 @@ def _refresh_live_prices():
         logger.info(f"Initialized aluminum with {len(prev)} points from yfinance (1-year history)")
 
     aluminum_price = _fetch_aluminum_price()
+    existing_dates = {d for d, _ in prev}
+
     if aluminum_price is not None:
         aluminum_val = round(aluminum_price, 2)
-        existing_dates = {d for d, _ in prev}
         if today not in existing_dates:
             prev.append((today, aluminum_val))
             logger.info(f"Added new LME price for {today}: {aluminum_val} USD/tonne")
@@ -1651,11 +1673,16 @@ def _refresh_live_prices():
                                   "url":   "https://www.lme.com"}
         logger.info(f"Aluminum: {len(prev)} historical points (latest: {aluminum_val} USD/tonne on {today})")
     else:
-        # If fetch fails, preserve data without appending stale prices
+        # API failed: ensure today's date is marked with last known value
+        if today not in existing_dates and prev:
+            last_val = next((v for v in reversed([v for d, v in prev]) if v is not None), None)
+            if last_val:
+                prev.append((today, last_val))
+                logger.warning(f"Aluminum API failed, recorded today {today} with last price {last_val}")
         fresh[aluminum_name] = prev
-        sources[aluminum_name] = {"label": "LME (verified data only)",
+        sources[aluminum_name] = {"label": "LME (metals.live)",
                                   "url":   "https://www.lme.com"}
-        logger.warning(f"Aluminum fetch failed, preserved verified data only ({len(prev)} points)")
+        logger.warning(f"Aluminum: {len(prev)} points, latest from {prev[-1][0] if prev else 'N/A'}")
 
     logger.info("[REFRESH] Starting Tungsten Powder (SMM 国产钨粉 only)...")
     tungsten_name = "鎢"

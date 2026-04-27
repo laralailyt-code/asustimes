@@ -147,36 +147,38 @@ def is_chinese_text(text: str) -> bool:
 
 def translate_to_chinese(title: str, summary: str = "") -> tuple[str, str]:
     """Translate English title to Traditional Chinese.
-    Priority: Claude API → Google Translate → Keep English
+    Priority: google-translate-py → google-trans-new → Keep English
     Returns: (translated_title, translated_summary)
     """
     # Skip if already has significant Chinese
     if is_chinese_text(title) and is_chinese_text(summary):
         return title, summary
 
-    # Method 1: google-trans-new (most reliable)
-    try:
-        from google_trans_new import google_translator
-        translator = google_translator()
-        translated_title = translator.translate(title, lang_src='en', lang_tgt='zh-TW')
-        logger.debug(f"[google-trans-new] Translated: {title[:30]}... → {translated_title[:30]}...")
-        return translated_title, summary
-    except Exception as e:
-        logger.debug(f"google-trans-new failed: {type(e).__name__}, trying alternative...")
-
-    # Method 2: google-translate-py (backup)
+    # Method 1: google-translate-py (faster)
     try:
         from google_translate_py import Translator
         translator = Translator()
         result = translator.translate(title, 'en', 'zh-TW')
         translated_title = result['text']
-        logger.debug(f"[google-translate-py] Translated: {title[:30]}... → {translated_title[:30]}...")
-        return translated_title, summary
+        if translated_title and translated_title != title:
+            logger.debug(f"[google-translate-py] OK: {title[:30]}... → {translated_title[:30]}...")
+            return translated_title, summary
     except Exception as e:
-        logger.debug(f"google-translate-py failed: {type(e).__name__}")
+        logger.debug(f"google-translate-py error: {type(e).__name__}")
+
+    # Method 2: google-trans-new (fallback)
+    try:
+        from google_trans_new import google_translator
+        translator = google_translator()
+        translated_title = translator.translate(title, lang_src='en', lang_tgt='zh-TW')
+        if translated_title and translated_title != title:
+            logger.debug(f"[google-trans-new] OK: {title[:30]}... → {translated_title[:30]}...")
+            return translated_title, summary
+    except Exception as e:
+        logger.debug(f"google-trans-new error: {type(e).__name__}")
 
     # Fallback: Keep English
-    logger.debug(f"Translation unavailable, keeping English: {title[:50]}...")
+    logger.debug(f"Translation failed, keep English: {title[:40]}...")
     return title, summary
 
 
