@@ -1074,6 +1074,8 @@ _TUNGSTEN_HISTORY = {
     "2026-04-24": 2160.0,
 }
 
+# TODO: 從 SMM 自動爬取 4/25, 4/26, 4/27 的鎢粉價格（需要 Playwright）
+
 # Cobalt historical data from CSV (2026-03-03 onwards)
 # Format: "YYYY-MM-DD": price (USD/tonne)
 _COBALT_HISTORY = {
