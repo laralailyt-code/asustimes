@@ -246,7 +246,12 @@ def parse_date(raw: str) -> str:
 
 # ── Digitimes Web Scraper (using login) ──────────────────────────────────────
 def scrape_digitimes_with_login() -> list[dict]:
-    """Scrape Digitimes using credentials to access all articles."""
+    """Scrape Digitimes using credentials to access all articles.
+    Enterprise account: 2-hour update frequency with anti-detection measures."""
+    import time
+    import random
+    from urllib.parse import quote
+
     articles = []
 
     dt_email = os.environ.get("DIGITIMES_EMAIL", "")
@@ -268,39 +273,69 @@ def scrape_digitimes_with_login() -> list[dict]:
         "財報 營收 法說",
     ]
 
+    # Rotate User-Agents to avoid detection
+    user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+    ]
+
     try:
         import requests
         session = requests.Session()
-        session.headers.update(HEADERS)
 
-        # Try to login to Digitimes
-        # Note: Actual login flow may vary - this is a template
+        # Set realistic browser headers
+        realistic_headers = {
+            "User-Agent": random.choice(user_agents),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Accept-Encoding": "gzip, deflate, br",
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Cache-Control": "max-age=0",
+        }
+        session.headers.update(realistic_headers)
+
+        # Try to login to Digitimes (enterprise account)
         login_url = "https://www.digitimes.com.tw/user/login"
         login_data = {
             "email": dt_email,
             "password": dt_password,
+            "remember": "on",
         }
 
-        logger.info(f"[Digitimes] Attempting login with {dt_email}...")
+        logger.info(f"[Digitimes] Enterprise account: attempting login with {dt_email}...")
         try:
-            r = session.post(login_url, data=login_data, timeout=15)
-            if r.status_code == 200:
-                logger.info(f"[Digitimes] Login successful")
+            # Add random delay to simulate human behavior
+            time.sleep(random.uniform(0.5, 1.5))
+            r = session.post(login_url, data=login_data, timeout=15, allow_redirects=True)
+            if r.status_code == 200 or "logout" in r.text.lower():
+                logger.info(f"[Digitimes] Login successful ✓")
             else:
                 logger.warning(f"[Digitimes] Login returned {r.status_code}, continuing anyway")
         except Exception as e:
-            logger.warning(f"[Digitimes] Login failed: {e}, trying search anyway")
+            logger.warning(f"[Digitimes] Login failed: {type(e).__name__}: {e}, trying search anyway")
 
         # Search with keywords
         base_search_url = "https://www.digitimes.com.tw/tech/searchdomain/srchlst_main.asp"
 
-        for keyword in keywords:
+        for i, keyword in enumerate(keywords):
             try:
-                # Try different parameter formats
-                params = {"q": keyword}
-                search_url = f"{base_search_url}?q={requests.utils.quote(keyword)}"
+                # Random delay between searches (simulate human reading time)
+                if i > 0:
+                    delay = random.uniform(1.5, 3.0)
+                    logger.debug(f"[Digitimes] Waiting {delay:.1f}s before next search...")
+                    time.sleep(delay)
 
-                logger.info(f"[Digitimes] Searching: {keyword}")
+                search_url = f"{base_search_url}?q={quote(keyword)}"
+
+                logger.info(f"[Digitimes] Searching ({i+1}/{len(keywords)}): '{keyword}'")
                 resp = session.get(search_url, timeout=15)
                 resp.encoding = "utf-8"
 

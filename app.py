@@ -122,6 +122,43 @@ def _risk_cache_preload_loop():
         time.sleep(3 * 3600)  # 每 3 小時更新一次
 
 
+def _digitimes_refresh_loop():
+    """Refresh Digitimes articles every 2 hours (enterprise account anti-detection)."""
+    from scraper import scrape_digitimes_with_login
+
+    logger.info("[Digitimes] Background refresh loop starting (2-hour interval)...")
+    first_run = True
+
+    while True:
+        try:
+            if not first_run:
+                logger.debug("[Digitimes] Waiting 2 hours before next scrape...")
+                time.sleep(2 * 3600)  # 2 hours
+
+            logger.info("[Digitimes] Starting 2-hour refresh...")
+            dt_articles = scrape_digitimes_with_login()
+
+            if dt_articles:
+                # Merge with existing cache
+                with _cache_lock:
+                    current = list(_cache["articles"])
+                    # Remove old Digitimes articles (older than 24 hours)
+                    cutoff = (datetime.now(TW_TZ) - timedelta(hours=24)).strftime("%Y-%m-%d")
+                    current = [a for a in current if a.get("source") != "Digitimes" or a.get("published", "") >= cutoff]
+                    # Add new Digitimes articles
+                    current.extend(dt_articles)
+                    # Re-sort by date
+                    current.sort(key=lambda a: a.get("published", "") or a.get("fetched_at", ""), reverse=True)
+                    _cache["articles"] = current
+                    _cache["last_updated"] = datetime.now(TW_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+                logger.info(f"[Digitimes] Merged {len(dt_articles)} articles into cache")
+        except Exception as e:
+            logger.error(f"[Digitimes] Refresh loop error: {e}")
+
+        first_run = False
+
+
 def daily_digest_loop():
     """Send digest email every day at DIGEST_HOUR (UTC)."""
     sent_date = None
@@ -179,7 +216,9 @@ def _ensure_bg_running():
                 tl.start()
                 tr = threading.Thread(target=_risk_cache_preload_loop, daemon=True)
                 tr.start()
-                logger.info("Background threads started in worker")
+                tdt = threading.Thread(target=_digitimes_refresh_loop, daemon=True)
+                tdt.start()
+                logger.info("Background threads started in worker (including Digitimes 2-hour refresh)")
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
@@ -3098,7 +3137,8 @@ def ensure_background_threads():
     threading.Thread(target=background_refresh_loop, daemon=True).start()
     threading.Thread(target=_live_price_loop, daemon=True).start()
     threading.Thread(target=_risk_cache_preload_loop, daemon=True).start()
-    logger.info("Background threads started")
+    threading.Thread(target=_digitimes_refresh_loop, daemon=True).start()
+    logger.info("Background threads started (including Digitimes 2-hour refresh)")
 
 if __name__ == "__main__":
     logger.info("Fetching initial live prices...")
