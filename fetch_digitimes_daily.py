@@ -47,7 +47,20 @@ def fetch_digitimes_news():
 
         print(f"✅ 登入成功 (HTTP {r.status_code})\n")
 
-        print("[2/4] 抓取关键字搜索结果...")
+        print("[2/4] 抓取关键字搜索结果（限制 50 篇最新新闻）...")
+
+        # 读取历史档案，避免重复
+        archive_urls = set()
+        try:
+            import json as _json
+            if Path("news_archive.json").exists():
+                with open("news_archive.json", "r", encoding="utf-8") as f:
+                    archived = _json.load(f)
+                    if isinstance(archived, list):
+                        archive_urls = {a.get("source_url", "") for a in archived if a.get("source_url")}
+                print(f"  已有 {len(archive_urls)} 篇文章在历史档案中\n")
+        except Exception as e:
+            print(f"  ⚠️ 读取历史档案失败: {e}\n")
 
         keywords = [
             "AI", "ChatGPT", "NVIDIA", "半導體", "台積電",
@@ -56,8 +69,13 @@ def fetch_digitimes_news():
         ]
 
         all_articles = {}
+        max_articles = 50
 
         for keyword in keywords:
+            if len(all_articles) >= max_articles:
+                print(f"  已达到 {max_articles} 篇限制，停止抓取")
+                break
+
             search_url = f"https://www.digitimes.com.tw/tech/searchdomain/srchlst_main.asp?q={quote(keyword)}"
 
             try:
@@ -68,6 +86,9 @@ def fetch_digitimes_news():
                 links = soup.find_all("a", href=True)
 
                 for link in links:
+                    if len(all_articles) >= max_articles:
+                        break
+
                     href = link.get("href", "")
                     text = link.get_text(strip=True)
 
@@ -76,7 +97,8 @@ def fetch_digitimes_news():
                         if not href.startswith("http"):
                             href = f"https://www.digitimes.com.tw{href}"
 
-                        if href not in all_articles and "digitimes" in href.lower():
+                        # 避免重复：新文章且不在历史档案中
+                        if href not in all_articles and "digitimes" in href.lower() and href not in archive_urls:
                             all_articles[href] = text
 
                 found_count = len(all_articles)
@@ -87,7 +109,7 @@ def fetch_digitimes_news():
                 print(f"  {keyword:12} → 错误: {e}")
                 continue
 
-        print(f"\n✅ 总共抓到 {len(all_articles)} 篇新闻\n")
+        print(f"\n✅ 抓到 {len(all_articles)} 篇新闻（最多 {max_articles} 篇）\n")
 
         if not all_articles:
             print("⚠️ 没有抓到文章")
@@ -124,6 +146,7 @@ def fetch_digitimes_news():
 
         print("[4/4] 保存到本地...")
 
+        # 1. 保存当天最新新闻到 digitimes_daily.json（用于网站首页显示）
         output = {
             "timestamp": datetime.now(TW_TZ).isoformat(),
             "date": datetime.now(TW_TZ).strftime("%Y-%m-%d"),
@@ -135,19 +158,45 @@ def fetch_digitimes_news():
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(output, f, ensure_ascii=False, indent=2)
 
-        print(f"✅ 保存到 {output_file}\n")
+        print(f"✅ 保存当天新闻到 {output_file}\n")
+
+        # 2. 追加新文章到历史档案 (news_archive.json)
+        try:
+            archive_file = Path("news_archive.json")
+            archived = []
+            if archive_file.exists():
+                with open(archive_file, "r", encoding="utf-8") as f:
+                    archived = json.load(f)
+                    if not isinstance(archived, list):
+                        archived = []
+
+            # 添加新文章（避免重复）
+            archived_urls = {a.get("source_url", "") for a in archived}
+            new_count = 0
+            for article in articles:
+                if article.get("url") not in archived_urls:
+                    archived.append(article)
+                    new_count += 1
+
+            # 保存档案
+            with open(archive_file, "w", encoding="utf-8") as f:
+                json.dump(archived, f, ensure_ascii=False, indent=2)
+
+            print(f"✅ 追加 {new_count} 篇新文章到历史档案（共 {len(archived)} 篇）\n")
+        except Exception as e:
+            print(f"⚠️ 保存历史档案失败: {e}\n")
 
         # 统计
         chinese_count = sum(1 for a in articles if any('一' <= c <= '鿿' for c in a['title']))
 
         print("=" * 70)
-        print("📊 统计结果")
+        print("📊 统计结果（当天最新新闻）")
         print("=" * 70)
-        print(f"总篇数:   {len(articles)}")
-        print(f"中文:     {chinese_count} 篇 ({chinese_count*100//len(articles) if articles else 0}%)")
-        print(f"英文:     {len(articles)-chinese_count} 篇\n")
+        print(f"当天篇数:   {len(articles)}")
+        print(f"中文:      {chinese_count} 篇 ({chinese_count*100//len(articles) if articles else 0}%)")
+        print(f"英文:      {len(articles)-chinese_count} 篇\n")
 
-        print("前 10 篇:")
+        print("当天最新 10 篇:")
         for i, article in enumerate(articles[:10], 1):
             has_zh = any('一' <= c <= '鿿' for c in article['title'])
             lang = "🇹🇼" if has_zh else "🇬🇧"
@@ -155,7 +204,9 @@ def fetch_digitimes_news():
             print(f"{i:2}. {lang} {title}")
 
         print("\n" + "=" * 70)
-        print("✅ 完成！文件已保存，可以提交到 GitHub")
+        print("✅ 完成！")
+        print("  • digitimes_daily.json - 当天最新 (网站首页显示)")
+        print("  • news_archive.json    - 全部历史 (保留所有文章)")
         print("=" * 70)
 
         return True
