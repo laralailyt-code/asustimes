@@ -140,6 +140,18 @@ _SUPPLY_CHAIN_RISK_KEYWORDS = {
 }
 
 
+def is_chinese_article(title: str, summary: str = "") -> bool:
+    """Check if article is primarily in Chinese (Traditional or Simplified).
+    Returns True if article contains Chinese characters.
+    """
+    text = f"{title} {summary}"
+    # Chinese character ranges: CJK Unified Ideographs
+    chinese_char_count = sum(1 for char in text if '一' <= char <= '鿿')
+    total_chars = len(text)
+    # Consider Chinese if >20% of chars are Chinese
+    return chinese_char_count > max(5, total_chars * 0.2)
+
+
 def classify_category(title: str, summary: str = "", hint: str = "") -> str | None:
     """Return matched category, or None if no tech keyword matches at all.
     Supply chain risks (strike, typhoon, earthquake, flood) are NEVER dropped.
@@ -240,6 +252,10 @@ def parse_rss(url: str, source_name: str, hint: str = "") -> list[dict]:
 
                 if len(title) < 8:
                     continue
+
+                # Filter for Chinese articles only (exclude English)
+                if not is_chinese_article(title, summary):
+                    continue  # not Chinese, skip
 
                 category = classify_category(title, summary, hint)
                 if category is None:
