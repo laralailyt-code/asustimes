@@ -289,11 +289,28 @@ def scrape_digitimes_with_login() -> list[dict]:
         today = datetime.now(TW_TZ).date()
         base_url = "https://www.digitimes.com.tw/tech/searchdomain/srchlst_main.asp"
 
-        logger.info(f"[Digitimes] Using Playwright for 1-year historical search...")
+        logger.info(f"[Digitimes] ✓ Playwright import successful")
+        logger.info(f"[Digitimes] Starting Playwright browser launch for 1-year historical search...")
 
+        pw_start_time = time.time()
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+            logger.debug(f"[Digitimes] sync_playwright context initialized")
+
+            try:
+                logger.info(f"[Digitimes] Launching chromium browser (headless=True)...")
+                browser = p.chromium.launch(headless=True)
+                logger.info(f"[Digitimes] ✓ Chromium browser launched successfully")
+            except Exception as be:
+                logger.error(f"[Digitimes] ✗ BROWSER LAUNCH FAILED: {type(be).__name__}: {be}")
+                raise
+
+            try:
+                page = browser.new_page()
+                logger.debug(f"[Digitimes] ✓ New page created")
+            except Exception as pe:
+                logger.error(f"[Digitimes] ✗ PAGE CREATION FAILED: {type(pe).__name__}: {pe}")
+                browser.close()
+                raise
 
             # Set realistic headers
             page.set_extra_http_headers({
@@ -303,27 +320,43 @@ def scrape_digitimes_with_login() -> list[dict]:
                 ])
             })
 
+            pw_articles = 0
             # Search each month for past year
             for month_offset in range(12):
                 date_from = today - timedelta(days=30 * (month_offset + 1))
                 date_to = today - timedelta(days=30 * month_offset)
 
-                for keyword in keywords[:8]:  # Limit to avoid too many requests
+                for kw_idx, keyword in enumerate(keywords[:8]):  # Limit to avoid too many requests
                     try:
                         # Build URL with search parameters
                         search_url = f"{base_url}?q={quote(keyword)}"
-                        logger.info(f"[Digitimes] Searching '{keyword}' ({date_from} to {date_to})...")
+                        logger.debug(f"[Digitimes] Search {month_offset*8 + kw_idx + 1}/96: '{keyword}' ({date_from} to {date_to})...")
 
-                        page.goto(search_url, timeout=15000, wait_until="domcontentloaded")
-                        page.wait_for_load_state("networkidle", timeout=10000)
+                        try:
+                            page.goto(search_url, timeout=15000, wait_until="domcontentloaded")
+                            logger.debug(f"[Digitimes] ✓ Page loaded: {search_url}")
+                        except Exception as nav_err:
+                            logger.warning(f"[Digitimes] ✗ Navigation failed for '{keyword}': {type(nav_err).__name__}: {nav_err}")
+                            continue
+
+                        try:
+                            page.wait_for_load_state("networkidle", timeout=10000)
+                            logger.debug(f"[Digitimes] ✓ Network idle reached for '{keyword}'")
+                        except Exception as wait_err:
+                            logger.debug(f"[Digitimes] Network wait timeout for '{keyword}' (continuing): {wait_err}")
 
                         # Wait for results to load
                         time.sleep(random.uniform(1, 2))
 
                         # Extract article links
-                        article_links = page.query_selector_all('a[href*="/tech/"]')
+                        try:
+                            article_links = page.query_selector_all('a[href*="/tech/"]')
+                            logger.debug(f"[Digitimes] Found {len(article_links)} candidate links for '{keyword}'")
+                        except Exception as sel_err:
+                            logger.warning(f"[Digitimes] ✗ Selector query failed for '{keyword}': {type(sel_err).__name__}: {sel_err}")
+                            continue
 
-                        for link in article_links:
+                        for link_idx, link in enumerate(article_links):
                             try:
                                 href = link.get_attribute("href")
                                 title = link.text_content().strip()
@@ -333,7 +366,11 @@ def scrape_digitimes_with_login() -> list[dict]:
                                     seen_urls.add(href)
 
                                     # Translate title
-                                    translated_title, _ = translate_to_chinese(title, "")
+                                    try:
+                                        translated_title, _ = translate_to_chinese(title, "")
+                                    except Exception as trans_err:
+                                        logger.debug(f"[Digitimes] Translation failed: {trans_err}, using original")
+                                        translated_title = title
 
                                     article = {
                                         "source": "Digitimes",
@@ -367,44 +404,58 @@ def scrape_digitimes_with_login() -> list[dict]:
                                         article["category"] = "供應鏈/關稅"
 
                                     articles.append(article)
-                            except Exception as e:
-                                logger.debug(f"[Digitimes] Article parse error: {e}")
+                                    pw_articles += 1
+                            except Exception as art_err:
+                                logger.debug(f"[Digitimes] Article parse error: {type(art_err).__name__}: {art_err}")
                                 continue
 
-                        logger.info(f"[Digitimes] Found {len(articles)} articles so far")
+                        logger.debug(f"[Digitimes] Total collected so far: {pw_articles}")
                         time.sleep(random.uniform(0.5, 1.5))  # Rate limiting
 
-                    except Exception as e:
-                        logger.debug(f"[Digitimes] Search error for '{keyword}': {e}")
+                    except Exception as kw_err:
+                        logger.debug(f"[Digitimes] Keyword '{keyword}' iteration error: {type(kw_err).__name__}: {kw_err}")
                         continue
 
-            browser.close()
+            try:
+                browser.close()
+                logger.debug(f"[Digitimes] Browser closed successfully")
+            except Exception as close_err:
+                logger.debug(f"[Digitimes] Browser close warning: {close_err}")
 
-        logger.info(f"[Digitimes] Playwright complete: {len(articles)} total articles (1-year history)")
+        pw_elapsed = time.time() - pw_start_time
+        logger.info(f"[Digitimes] ✓ Playwright completed in {pw_elapsed:.1f}s: {pw_articles} articles collected (1-year history)")
         if articles:
             return articles
 
-    except ImportError:
-        logger.warning("[Digitimes] Playwright not installed, falling back to requests")
+    except ImportError as ie:
+        logger.warning(f"[Digitimes] ✗ Playwright NOT installed: {ie}")
+        logger.warning(f"[Digitimes] To install: pip install playwright")
+        logger.warning(f"[Digitimes] Falling back to requests-based search...")
     except Exception as e:
-        logger.warning(f"[Digitimes] Playwright error: {e}, falling back to requests")
+        logger.error(f"[Digitimes] ✗ PLAYWRIGHT FAILED ({type(e).__name__}): {e}")
+        logger.warning(f"[Digitimes] Falling back to requests-based search...")
 
     # Fallback: simple requests-based search (latest only)
+    logger.info("[Digitimes] ✓ Using requests fallback for latest articles only (no history)...")
+    req_start_time = time.time()
     try:
         import requests
         session = requests.Session()
         base_url = "https://www.digitimes.com.tw/tech/searchdomain/srchlst_main.asp"
 
-        logger.info("[Digitimes] Fallback: using requests for latest articles only...")
-
-        for keyword in keywords[:5]:
+        fallback_articles = 0
+        for i, keyword in enumerate(keywords[:5]):
             search_url = f"{base_url}?q={quote(keyword)}"
             try:
+                logger.debug(f"[Digitimes] Fallback search {i+1}/5: '{keyword}'")
                 r = requests.get(search_url, timeout=15)
                 if r.status_code != 200:
+                    logger.warning(f"[Digitimes] ✗ HTTP {r.status_code} for '{keyword}'")
                     continue
 
+                logger.debug(f"[Digitimes] ✓ Got HTTP 200 for '{keyword}'")
                 soup = BeautifulSoup(r.content, "html.parser")
+                found_count = 0
                 for link in soup.find_all("a", href=True):
                     href = link.get("href", "")
                     title = link.get_text(strip=True)
@@ -413,7 +464,11 @@ def scrape_digitimes_with_login() -> list[dict]:
                         full_url = href if href.startswith("http") else f"https://www.digitimes.com.tw{href}"
                         seen_urls.add(href)
 
-                        translated_title, _ = translate_to_chinese(title, "")
+                        try:
+                            translated_title, _ = translate_to_chinese(title, "")
+                        except Exception as trans_err:
+                            logger.debug(f"[Digitimes] Translation failed: {trans_err}, using original")
+                            translated_title = title
 
                         article = {
                             "source": "Digitimes",
@@ -432,14 +487,19 @@ def scrape_digitimes_with_login() -> list[dict]:
                             article["category"] = "半導體"
 
                         articles.append(article)
+                        fallback_articles += 1
+                        found_count += 1
+
+                logger.debug(f"[Digitimes] Found {found_count} articles for '{keyword}'")
             except Exception as e:
-                logger.debug(f"[Digitimes] Requests fallback error: {e}")
+                logger.warning(f"[Digitimes] ✗ Error for '{keyword}': {type(e).__name__}: {e}")
                 continue
 
-        logger.info(f"[Digitimes] Requests fallback: {len(articles)} articles")
+        req_elapsed = time.time() - req_start_time
+        logger.info(f"[Digitimes] ✓ Fallback completed in {req_elapsed:.1f}s: {fallback_articles} articles (today only)")
 
     except Exception as e:
-        logger.warning(f"[Digitimes] All methods failed: {e}")
+        logger.error(f"[Digitimes] ✗ FALLBACK SCRAPER FAILED: {type(e).__name__}: {e}")
 
     # Rotate User-Agents to avoid detection
     user_agents = [
@@ -479,42 +539,57 @@ def scrape_digitimes_with_login() -> list[dict]:
         }
 
         logger.info(f"[Digitimes] Enterprise account: attempting login with {dt_email}...")
+        login_success = False
         try:
             # Add random delay to simulate human behavior
             time.sleep(random.uniform(0.5, 1.5))
             r = session.post(login_url, data=login_data, timeout=15, allow_redirects=True)
             if r.status_code == 200 or "logout" in r.text.lower():
-                logger.info(f"[Digitimes] Login successful ✓")
+                logger.info(f"[Digitimes] ✓ Login successful (HTTP {r.status_code})")
+                login_success = True
             else:
-                logger.warning(f"[Digitimes] Login returned {r.status_code}, continuing anyway")
+                logger.warning(f"[Digitimes] ⚠ Login returned HTTP {r.status_code}, continuing anyway")
         except Exception as e:
-            logger.warning(f"[Digitimes] Login failed: {type(e).__name__}: {e}, trying search anyway")
+            logger.warning(f"[Digitimes] ⚠ Login failed: {type(e).__name__}: {e}, trying search anyway")
+
+        logger.debug(f"[Digitimes] Proceeding with search (login_success={login_success})")
 
         # Search with keywords
         base_search_url = "https://www.digitimes.com.tw/tech/searchdomain/srchlst_main.asp"
+        ent_start_time = time.time()
+        ent_articles = 0
 
         for i, keyword in enumerate(keywords):
             try:
                 # Random delay between searches (simulate human reading time)
                 if i > 0:
                     delay = random.uniform(1.5, 3.0)
-                    logger.debug(f"[Digitimes] Waiting {delay:.1f}s before next search...")
                     time.sleep(delay)
 
                 search_url = f"{base_search_url}?q={quote(keyword)}"
 
-                logger.info(f"[Digitimes] Searching ({i+1}/{len(keywords)}): '{keyword}'")
-                resp = session.get(search_url, timeout=15)
-                resp.encoding = "utf-8"
-
-                if resp.status_code != 200:
-                    logger.warning(f"[Digitimes] Search returned {resp.status_code} for '{keyword}'")
+                logger.debug(f"[Digitimes] Enterprise search {i+1}/{len(keywords)}: '{keyword}'")
+                try:
+                    resp = session.get(search_url, timeout=15)
+                    resp.encoding = "utf-8"
+                except Exception as get_err:
+                    logger.warning(f"[Digitimes] ✗ HTTP GET failed for '{keyword}': {type(get_err).__name__}: {get_err}")
                     continue
 
-                soup = BeautifulSoup(resp.content, "html.parser")
+                if resp.status_code != 200:
+                    logger.warning(f"[Digitimes] ✗ HTTP {resp.status_code} for '{keyword}'")
+                    continue
+
+                logger.debug(f"[Digitimes] ✓ Got HTTP 200 for '{keyword}'")
+
+                try:
+                    soup = BeautifulSoup(resp.content, "html.parser")
+                except Exception as parse_err:
+                    logger.warning(f"[Digitimes] ✗ HTML parse failed for '{keyword}': {parse_err}")
+                    continue
 
                 # Parse search results - look for article links
-                # Common patterns for Digitimes
+                found_count = 0
                 for link in soup.find_all("a", href=True):
                     href = link.get("href", "")
                     title = link.get_text(strip=True)
@@ -524,7 +599,11 @@ def scrape_digitimes_with_login() -> list[dict]:
                         full_url = href if href.startswith("http") else f"https://www.digitimes.com.tw{href}"
 
                         # Translate title to Chinese
-                        translated_title, _ = translate_to_chinese(title, "")
+                        try:
+                            translated_title, _ = translate_to_chinese(title, "")
+                        except Exception as trans_err:
+                            logger.debug(f"[Digitimes] Translation failed: {trans_err}, using original")
+                            translated_title = title
 
                         article = {
                             "source": "Digitimes",
@@ -560,18 +639,21 @@ def scrape_digitimes_with_login() -> list[dict]:
                             article["category"] = "供應鏈/關稅"
 
                         articles.append(article)
+                        ent_articles += 1
+                        found_count += 1
 
-                logger.info(f"[Digitimes] Found {len(articles)} articles so far")
+                logger.debug(f"[Digitimes] Found {found_count} articles for '{keyword}', total: {ent_articles}")
 
             except Exception as e:
-                logger.warning(f"[Digitimes] Search error for '{keyword}': {e}")
+                logger.warning(f"[Digitimes] ✗ Error processing '{keyword}': {type(e).__name__}: {e}")
                 continue
 
-        logger.info(f"[Digitimes] Scraped {len(articles)} total articles")
+        ent_elapsed = time.time() - ent_start_time
+        logger.info(f"[Digitimes] ✓ Enterprise scraper completed in {ent_elapsed:.1f}s: {ent_articles} articles")
         return articles
 
     except Exception as e:
-        logger.error(f"[Digitimes] Scraper error: {e}")
+        logger.error(f"[Digitimes] ✗ ENTERPRISE SCRAPER FAILED: {type(e).__name__}: {e}")
         return articles
 
 
