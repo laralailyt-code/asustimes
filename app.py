@@ -1066,6 +1066,8 @@ _TUNGSTEN_HISTORY = {
 
 # Cobalt historical data from CSV (2026-03-03 onwards)
 # Format: "YYYY-MM-DD": price (USD/tonne)
+# Cobalt historical data from LME Trading Summary (USD/tonne)
+# Data from 2026-03-03 onwards. After 2026-04-10, prices auto-updated from API
 _COBALT_HISTORY = {
     "2026-03-03": 55345.0,
     "2026-03-06": 55355.0,
@@ -1077,6 +1079,7 @@ _COBALT_HISTORY = {
     "2026-03-31": 55375.0,
     "2026-04-07": 55375.0,
     "2026-04-10": 55360.0,
+    # From 2026-04-11 onwards, auto-updated by _refresh_live_prices()
 }
 
 # Yellow Phosphorus historical data from CSV (2026-02-03 onwards)
