@@ -273,10 +273,10 @@ GN_EN = "https://www.bing.com/news/search?format=rss&q="
 FEEDS = [
     # ── 直接 RSS（有真實文章 URL，可抓摘要）──────────────────────────────
     {"url": "https://technews.tw/feed/",                      "source": "科技新報",    "hint": "AI 產業"},
-    {"url": "https://www.ithome.com.tw/rss",                  "source": "iThome",      "hint": ""},
+    {"url": "https://www.ithome.com.tw/rss",                  "source": "iThome",      "hint": "半導體"},
     {"url": "https://feeds.feedburner.com/cool3c-all",        "source": "電腦王",      "hint": "電競/ROG"},
     {"url": "https://tw.news.yahoo.com/rss/finance",          "source": "Yahoo財經",   "hint": "財報/法說"},
-    {"url": "https://www.ctee.com.tw/rss.xml",                "source": "工商時報",    "hint": ""},
+    {"url": "https://www.ctee.com.tw/rss.xml",                "source": "工商時報",    "hint": "供應鏈/關稅"},
 
     # ── Google News 主題精選（仍保留作為補充來源）───────────────────────
     {"url": GN + "site:digitimes.com",                    "source": "Digitimes",   "hint": "AI 產業"},

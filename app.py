@@ -1453,10 +1453,9 @@ def _refresh_live_prices():
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(copper_name, []))
 
-    # Initialize from historical CSV if cache is empty
+    # Start fresh from LME API only (don't use CSV history which may be corrupted)
     if not prev:
-        prev = [(date, price) for date, price in sorted(_COPPER_HISTORY.items())]
-        logger.info(f"Initialized copper from CSV history: {len(prev)} points")
+        logger.info(f"Initializing copper with LME API only (empty history)")
 
     copper_price = _fetch_copper_price()
     if copper_price is not None:
@@ -1489,10 +1488,9 @@ def _refresh_live_prices():
         with _live_cache_lock:
             prev = list(_live_commodity_cache.get(csv_name, []))
 
-        # Initialize from historical CSV if cache is empty
+        # Start fresh from LME API only (don't use CSV history which may be corrupted)
         if not prev:
-            prev = [(date, price) for date, price in sorted(history_dict.items())]
-            logger.info(f"Initialized {display_name} from CSV history: {len(prev)} points")
+            logger.info(f"Initializing {display_name} with LME API only (empty history)")
 
         price = _fetch_lme_metal_price(display_name, api_slug)
         if price is not None:
@@ -1523,15 +1521,14 @@ def _refresh_live_prices():
                                 "url":   "https://www.lme.com"}
             logger.warning(f"{csv_name} fetch failed, preserved data ({len(prev)} points)")
 
-    logger.info("[REFRESH] Starting Cobalt (LME from CSV history)...")
+    logger.info("[REFRESH] Starting Cobalt (LME source)...")
     cobalt_name = "鈷 (cobalt) US$/tonne"
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(cobalt_name, []))
 
-    # Initialize from historical CSV if cache is empty
+    # Start fresh from LME API only (don't use CSV history which may be corrupted)
     if not prev:
-        prev = [(date, price) for date, price in sorted(_COBALT_HISTORY.items())]
-        logger.info(f"Initialized cobalt from CSV history: {len(prev)} points")
+        logger.info(f"Initializing cobalt with LME API only (empty history)")
 
     cobalt_price = _fetch_cobalt_price()
     if cobalt_price is not None:
@@ -1560,10 +1557,9 @@ def _refresh_live_prices():
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(aluminum_name, []))
 
-    # Initialize from historical CSV if cache is empty
+    # Start fresh from LME API only (don't use CSV history which may be corrupted)
     if not prev:
-        prev = [(date, price) for date, price in sorted(_ALUMINUM_HISTORY.items())]
-        logger.info(f"Initialized aluminum from CSV history: {len(prev)} points")
+        logger.info(f"Initializing aluminum with LME API only (empty history)")
 
     aluminum_price = _fetch_aluminum_price()
     if aluminum_price is not None:
