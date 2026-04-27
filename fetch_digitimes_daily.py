@@ -76,28 +76,47 @@ def fetch_digitimes_news():
                 print(f"  已达到 {max_articles} 篇限制，停止抓取")
                 break
 
-            search_url = f"https://www.digitimes.com.tw/tech/searchdomain/srchlst_main.asp?q={quote(keyword)}"
-
             try:
-                r = session.get(search_url, headers=headers, timeout=15)
-                soup = BeautifulSoup(r.content, "html.parser")
+                # 使用 Digitimes 的 AJAX API 获取搜索结果（JSON 格式）
+                # srchlst_main3.asp 返回 JSON 而非 HTML
+                ajax_url = f"https://www.digitimes.com.tw/tech/searchdomain/srchlst_main3.asp"
+                params = {
+                    "q": keyword,
+                    "pageindex": 0,
+                    "pagesize": 50
+                }
 
-                # 查找所有文章链接
-                links = soup.find_all("a", href=True)
+                r = session.get(ajax_url, params=params, headers=headers, timeout=15)
 
-                for link in links:
+                # 尝试解析 JSON 响应
+                try:
+                    data = r.json()
+                    items = data.get("items", []) if isinstance(data, dict) else []
+                except:
+                    # 如果不是 JSON，回退到 HTML 解析
+                    soup = BeautifulSoup(r.content, "html.parser")
+                    items = []
+                    for link in soup.find_all("a", href=True):
+                        href = link.get("href", "")
+                        text = link.get_text(strip=True)
+                        if ("/tech/" in href or "/news/" in href) and len(text) > 8:
+                            items.append({"href": href, "title": text})
+
+                # 处理搜索结果
+                for item in items:
                     if len(all_articles) >= max_articles:
                         break
 
-                    href = link.get("href", "")
-                    text = link.get_text(strip=True)
+                    if isinstance(item, dict):
+                        href = item.get("href") or item.get("url") or ""
+                        text = item.get("title") or item.get("name") or ""
+                    else:
+                        continue
 
-                    # 过滤有效的文章链接
-                    if ("/tech/" in href or "/news/" in href) and len(text) > 8:
+                    if len(text) > 8 and ("/tech/" in href or "/news/" in href or "digitimes" in href.lower()):
                         if not href.startswith("http"):
                             href = f"https://www.digitimes.com.tw{href}"
 
-                        # 避免重复：新文章且不在历史档案中
                         if href not in all_articles and "digitimes" in href.lower() and href not in archive_urls:
                             all_articles[href] = text
 
@@ -107,6 +126,9 @@ def fetch_digitimes_news():
 
             except Exception as e:
                 print(f"  {keyword:12} → 错误: {e}")
+                import traceback
+                logger = type('Logger', (), {'debug': print})()
+                traceback.print_exc()
                 continue
 
         print(f"\n✅ 抓到 {len(all_articles)} 篇新闻（最多 {max_articles} 篇）\n")
