@@ -448,68 +448,97 @@ def scrape_digitimes_with_login() -> list[dict]:
         logger.error(f"[Digitimes] ✗ PLAYWRIGHT FAILED ({type(e).__name__}): {e}")
         logger.warning(f"[Digitimes] Falling back to requests-based search...")
 
-    # Fallback: simple requests-based search (latest only)
-    logger.info("[Digitimes] ✓ Using requests fallback for latest articles only (no history)...")
+    # Fallback: expanded requests-based search (multiple pages)
+    logger.info("[Digitimes] ✓ Using requests fallback for latest articles (expanded keywords + multi-page)...")
     req_start_time = time.time()
     try:
         import requests
         session = requests.Session()
         base_url = "https://www.digitimes.com.tw/tech/searchdomain/srchlst_main.asp"
 
+        # Expanded keyword list (20 keywords instead of 5)
+        expanded_keywords = [
+            "AI", "ChatGPT", "半導體", "台積電", "Samsung",
+            "Intel", "筆電", "GPU", "伺服器", "記憶體",
+            "面板", "iPhone", "財報", "供應鏈", "NVIDIA",
+            "HBM", "EUV", "晶片", "高通", "AMD"
+        ]
+
         fallback_articles = 0
-        for i, keyword in enumerate(keywords[:5]):
-            search_url = f"{base_url}?q={quote(keyword)}"
-            try:
-                logger.debug(f"[Digitimes] Fallback search {i+1}/5: '{keyword}'")
-                r = requests.get(search_url, timeout=15)
-                if r.status_code != 200:
-                    logger.warning(f"[Digitimes] ✗ HTTP {r.status_code} for '{keyword}'")
+        for kw_idx, keyword in enumerate(expanded_keywords):
+            # Search each keyword with pagination (first 2 pages)
+            for page in range(1, 3):
+                try:
+                    # Digitimes pagination: ?q=keyword&p=page
+                    search_url = f"{base_url}?q={quote(keyword)}&p={page}"
+                    logger.debug(f"[Digitimes] Fallback {kw_idx+1}/{len(expanded_keywords)}, page {page}: '{keyword}'")
+
+                    r = requests.get(search_url, timeout=15)
+                    if r.status_code != 200:
+                        logger.debug(f"[Digitimes] HTTP {r.status_code} for '{keyword}' page {page}")
+                        continue
+
+                    soup = BeautifulSoup(r.content, "html.parser")
+                    found_count = 0
+                    for link in soup.find_all("a", href=True):
+                        href = link.get("href", "")
+                        title = link.get_text(strip=True)
+
+                        if "/tech/" in href and len(title) > 10 and href not in seen_urls:
+                            full_url = href if href.startswith("http") else f"https://www.digitimes.com.tw{href}"
+                            seen_urls.add(href)
+
+                            try:
+                                translated_title, _ = translate_to_chinese(title, "")
+                            except Exception as trans_err:
+                                logger.debug(f"[Digitimes] Translation: {trans_err}, keep English")
+                                translated_title = title
+
+                            article = {
+                                "source": "Digitimes",
+                                "source_url": full_url,
+                                "title": translated_title,
+                                "summary": "",
+                                "category": "其他",
+                                "published": datetime.now(TW_TZ).strftime("%Y-%m-%d"),
+                                "fetched_at": datetime.now(TW_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+                                "provider": "Digitimes",
+                            }
+
+                            # Auto-classify by keyword
+                            if any(kw in keyword for kw in ["AI", "ChatGPT", "NVIDIA"]):
+                                article["category"] = "AI產業"
+                            elif any(kw in keyword for kw in ["半導體", "台積電", "Samsung", "Intel", "晶片", "EUV"]):
+                                article["category"] = "半導體"
+                            elif "筆電" in keyword or "PC" in keyword:
+                                article["category"] = "PC / NB"
+                            elif any(kw in keyword for kw in ["GPU", "記憶體", "HBM"]):
+                                article["category"] = "記憶體/儲存"
+                            elif "伺服器" in keyword:
+                                article["category"] = "伺服器/雲端"
+                            elif "面板" in keyword:
+                                article["category"] = "面板/顯示"
+                            elif any(kw in keyword for kw in ["財報", "iPhone"]):
+                                article["category"] = "財報/法說"
+                            elif "供應鏈" in keyword:
+                                article["category"] = "供應鏈/關稅"
+
+                            articles.append(article)
+                            fallback_articles += 1
+                            found_count += 1
+
+                    if found_count > 0:
+                        logger.debug(f"  Page {page}: found {found_count} new articles")
+
+                    # Random delay between pages
+                    time.sleep(random.uniform(0.5, 1.5))
+
+                except Exception as e:
+                    logger.debug(f"[Digitimes] Error for '{keyword}' page {page}: {type(e).__name__}")
                     continue
 
-                logger.debug(f"[Digitimes] ✓ Got HTTP 200 for '{keyword}'")
-                soup = BeautifulSoup(r.content, "html.parser")
-                found_count = 0
-                for link in soup.find_all("a", href=True):
-                    href = link.get("href", "")
-                    title = link.get_text(strip=True)
-
-                    if "/tech/" in href and len(title) > 10 and href not in seen_urls:
-                        full_url = href if href.startswith("http") else f"https://www.digitimes.com.tw{href}"
-                        seen_urls.add(href)
-
-                        try:
-                            translated_title, _ = translate_to_chinese(title, "")
-                        except Exception as trans_err:
-                            logger.debug(f"[Digitimes] Translation failed: {trans_err}, using original")
-                            translated_title = title
-
-                        article = {
-                            "source": "Digitimes",
-                            "source_url": full_url,
-                            "title": translated_title,
-                            "summary": "",
-                            "category": "其他",
-                            "published": datetime.now(TW_TZ).strftime("%Y-%m-%d"),
-                            "fetched_at": datetime.now(TW_TZ).strftime("%Y-%m-%d %H:%M:%S"),
-                            "provider": "Digitimes",
-                        }
-
-                        if "AI" in keyword:
-                            article["category"] = "AI產業"
-                        elif "半導體" in keyword:
-                            article["category"] = "半導體"
-
-                        articles.append(article)
-                        fallback_articles += 1
-                        found_count += 1
-
-                logger.debug(f"[Digitimes] Found {found_count} articles for '{keyword}'")
-            except Exception as e:
-                logger.warning(f"[Digitimes] ✗ Error for '{keyword}': {type(e).__name__}: {e}")
-                continue
-
         req_elapsed = time.time() - req_start_time
-        logger.info(f"[Digitimes] ✓ Fallback completed in {req_elapsed:.1f}s: {fallback_articles} articles (today only)")
+        logger.info(f"[Digitimes] ✓ Fallback completed in {req_elapsed:.1f}s: {fallback_articles} articles from {len(expanded_keywords)} keywords × 2 pages")
 
     except Exception as e:
         logger.error(f"[Digitimes] ✗ FALLBACK SCRAPER FAILED: {type(e).__name__}: {e}")
