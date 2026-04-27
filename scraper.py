@@ -147,7 +147,7 @@ def is_chinese_text(text: str) -> bool:
 
 def translate_to_chinese(title: str, summary: str = "") -> tuple[str, str]:
     """Translate English title to Traditional Chinese.
-    Priority: google-translate-py → google-trans-new → Keep English
+    Priority: google-translate-py → google-trans-new → Claude API → Keep English
     Returns: (translated_title, translated_summary)
     """
     # Skip if already has significant Chinese
@@ -163,7 +163,7 @@ def translate_to_chinese(title: str, summary: str = "") -> tuple[str, str]:
         if translated_title and translated_title != title and len(translated_title) > 2:
             return translated_title, summary
     except Exception as e:
-        logger.warning(f"[TRANS] google-translate-py failed ({type(e).__name__}): {str(e)[:50]}")
+        logger.debug(f"[TRANS] google-translate-py failed ({type(e).__name__})")
 
     # Method 2: google-trans-new (fallback)
     try:
@@ -173,10 +173,30 @@ def translate_to_chinese(title: str, summary: str = "") -> tuple[str, str]:
         if translated_title and translated_title != title and len(translated_title) > 2:
             return translated_title, summary
     except Exception as e:
-        logger.warning(f"[TRANS] google-trans-new failed ({type(e).__name__}): {str(e)[:50]}")
+        logger.debug(f"[TRANS] google-trans-new failed ({type(e).__name__})")
+
+    # Method 3: Claude API (if ANTHROPIC_API_KEY is set)
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if api_key and len(title) > 0:
+        try:
+            from anthropic import Anthropic
+            client = Anthropic(api_key=api_key)
+            resp = client.messages.create(
+                model="claude-3-5-haiku-20241022",
+                max_tokens=200,
+                messages=[{
+                    "role": "user",
+                    "content": f"Translate this English text to Traditional Chinese (繁體中文). Only respond with the translation, nothing else.\n\nEnglish: {title}"
+                }]
+            )
+            translated_title = resp.content[0].text.strip() if resp.content else title
+            if translated_title and translated_title != title and len(translated_title) > 2:
+                return translated_title, summary
+        except Exception as e:
+            logger.debug(f"[TRANS] Claude API failed ({type(e).__name__})")
 
     # Fallback: Keep English
-    logger.debug(f"[TRANS] All methods failed, keeping English: {title[:40]}...")
+    logger.debug(f"[TRANS] All translation methods exhausted, keeping English: {title[:40]}...")
     return title, summary
 
 
