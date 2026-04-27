@@ -2,8 +2,12 @@ name: Digitimes Daily News Scraper
 
 on:
   schedule:
-    # 每天台湾时间 8:00 运行 (UTC-8 = UTC 0:00)
+    # 台湾时间 8:00 AM (UTC 0:00)
     - cron: '0 0 * * *'
+    # 台湾时间 12:30 PM (UTC 4:30)
+    - cron: '30 4 * * *'
+    # 台湾时间 4:30 PM (UTC 8:30)
+    - cron: '30 8 * * *'
   workflow_dispatch:  # 允许手动触发
 
 jobs:
