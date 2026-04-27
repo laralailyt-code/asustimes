@@ -867,90 +867,56 @@ def _fetch_cobalt_price() -> float | None:
 
 
 def _fetch_aluminum_price() -> float | None:
-    """Fetch aluminum price from yfinance ALI=F (most reliable on Render).
-    Primary: yfinance ALI=F (CME futures in ¢/lb, convert to USD/tonne)
-    Fallback: metals.live API → Trading Economics
+    """Fetch aluminum price from LME (metals.live primary, with retries).
+    Only use reliable sources with proper unit handling.
     """
-    # Primary: yfinance (more reliable on Render than external APIs)
-    try:
-        if _YF_AVAILABLE:
-            hist = yf.Ticker("ALI=F").history(period="1d", interval="1d", auto_adjust=True)
-            if not hist.empty and "Close" in hist.columns:
-                price_cents_per_lb = float(hist["Close"].iloc[-1])
-                # Convert: ¢/lb → USD/tonne (multiply by 100 for $ to ¢, then by 2204.62 for lb to tonne)
-                price_usd_per_tonne = (price_cents_per_lb / 100) * 2204.62
-                if price_usd_per_tonne > 1000:  # Sanity check: aluminum should be 2000-5000 USD/tonne
-                    logger.info(f"Aluminum from yfinance ALI=F: ${price_usd_per_tonne:.2f}/tonne")
-                    return price_usd_per_tonne
-    except Exception as e:
-        logger.debug(f"yfinance aluminum fetch failed: {e}")
+    # Try metals.live multiple times with user-agent
+    for attempt in range(2):
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36"
+            }
+            r = req_lib.get("https://api.metals.live/v1/spot/aluminum", headers=headers, timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, dict) and "price" in data:
+                    price = float(data["price"])
+                    if 1500 < price < 5000:  # Sanity check: aluminum should be in this range USD/tonne
+                        logger.info(f"Aluminum from metals.live (LME): ${price:.2f}/tonne")
+                        return price
+        except Exception as e:
+            logger.debug(f"metals.live aluminum attempt {attempt+1} failed: {e}")
+            if attempt == 0:
+                time.sleep(2)
 
-    # Fallback 1: metals.live
-    try:
-        r = req_lib.get("https://api.metals.live/v1/spot/aluminum", timeout=10)
-        if r.status_code == 200:
-            data = r.json()
-            if isinstance(data, dict) and "price" in data:
-                price = float(data["price"])
-                if price > 0:
-                    logger.info(f"Aluminum from metals.live (fallback): ${price}")
-                    return price
-    except Exception as e:
-        logger.debug(f"metals.live aluminum fetch failed: {e}")
-
-    # Fallback 2: Trading Economics
-    try:
-        price = _fetch_te_price("aluminum")
-        if price and price > 0:
-            logger.info(f"Aluminum from Trading Economics (fallback): ${price}")
-            return price
-    except Exception as e:
-        logger.debug(f"Trading Economics aluminum fallback: {e}")
-
+    logger.warning("Aluminum fetch failed from all sources")
     return None
 
 
 def _fetch_copper_price() -> float | None:
-    """Fetch copper price from yfinance HG=F (most reliable on Render).
-    Primary: yfinance HG=F (CME futures in ¢/lb, convert to USD/tonne)
-    Fallback: metals.live API → Trading Economics
+    """Fetch copper price from LME (metals.live primary, with retries).
+    Only use reliable sources with proper unit handling.
     """
-    # Primary: yfinance (more reliable on Render than external APIs)
-    try:
-        if _YF_AVAILABLE:
-            hist = yf.Ticker("HG=F").history(period="1d", interval="1d", auto_adjust=True)
-            if not hist.empty and "Close" in hist.columns:
-                price_cents_per_lb = float(hist["Close"].iloc[-1])
-                # Convert: ¢/lb → USD/tonne (multiply by 100 for $ to ¢, then by 2204.62 for lb to tonne)
-                price_usd_per_tonne = (price_cents_per_lb / 100) * 2204.62
-                if price_usd_per_tonne > 1000:  # Sanity check: copper should be 5000-15000 USD/tonne
-                    logger.info(f"Copper from yfinance HG=F: ${price_usd_per_tonne:.2f}/tonne")
-                    return price_usd_per_tonne
-    except Exception as e:
-        logger.debug(f"yfinance copper fetch failed: {e}")
+    # Try metals.live multiple times with user-agent
+    for attempt in range(2):
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36"
+            }
+            r = req_lib.get("https://api.metals.live/v1/spot/copper", headers=headers, timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, dict) and "price" in data:
+                    price = float(data["price"])
+                    if 5000 < price < 20000:  # Sanity check: copper should be in this range USD/tonne
+                        logger.info(f"Copper from metals.live (LME): ${price:.2f}/tonne")
+                        return price
+        except Exception as e:
+            logger.debug(f"metals.live copper attempt {attempt+1} failed: {e}")
+            if attempt == 0:
+                time.sleep(2)
 
-    # Fallback 1: metals.live
-    try:
-        r = req_lib.get("https://api.metals.live/v1/spot/copper", timeout=10)
-        if r.status_code == 200:
-            data = r.json()
-            if isinstance(data, dict) and "price" in data:
-                price = float(data["price"])
-                if price > 0:
-                    logger.info(f"Copper from metals.live (fallback): ${price}")
-                    return price
-    except Exception as e:
-        logger.debug(f"metals.live copper fetch failed: {e}")
-
-    # Fallback 2: Trading Economics
-    try:
-        te_price = _fetch_te_price("copper")
-        if te_price and te_price > 0:
-            logger.info(f"Copper from Trading Economics (fallback): ${te_price}")
-            return te_price
-    except Exception as e:
-        logger.debug(f"Trading Economics copper fallback failed: {e}")
-
+    logger.warning("Copper fetch failed from all sources")
     return None
 
 
