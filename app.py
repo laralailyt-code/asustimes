@@ -33,6 +33,9 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder='templates', static_url_path='')
 
+# ── Timezone ───────────────────────────────────────────────────────────────────
+TW_TZ = timezone(timedelta(hours=8))
+
 # ── Environment detection ──────────────────────────────────────────────────────
 # On Render: RENDER=true, On Localhost: RENDER is not set
 _IS_RENDER_PRODUCTION = os.environ.get("RENDER") == "true"
@@ -58,7 +61,7 @@ def refresh_news():
         articles = fetch_all_news()
         with _cache_lock:
             _cache["articles"] = articles
-            _cache["last_updated"] = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
+            _cache["last_updated"] = datetime.now(TW_TZ).strftime("%Y-%m-%d %H:%M:%S")
             _cache["loading"] = False
         logger.info(f"Cache refreshed: {len(articles)} articles")
     except Exception as e:
@@ -193,7 +196,7 @@ def api_news():
 
     # Date filter
     if date_filter:
-        today = date_cls.today()
+        today = datetime.now(TW_TZ).date()
         if date_filter == "today":
             cutoff = today.strftime("%Y-%m-%d")
             articles = [a for a in articles
@@ -350,7 +353,7 @@ def api_digest():
     if not category or category == "全部":
         return jsonify({"error": "select a category"}), 400
 
-    today = date_cls.today().isoformat()
+    today = datetime.now(TW_TZ).date().isoformat()
 
     with _digest_lock:
         cached = _digest_cache.get(category)
@@ -367,7 +370,7 @@ def api_digest():
         and (a.get("published") or a.get("fetched_at", ""))[:10] == today
     ]
     if len(cat_articles) < 3:
-        cutoff = (date_cls.today() - timedelta(days=2)).isoformat()
+        cutoff = (datetime.now(TW_TZ).date() - timedelta(days=2)).isoformat()
         cat_articles = [
             a for a in all_articles
             if a.get("category") == category
@@ -505,7 +508,7 @@ def api_stats():
         articles = [a for a in articles if a.get("source") == source]
 
     if date_filter:
-        today = date_cls.today()
+        today = datetime.now(TW_TZ).date()
         if date_filter == "today":
             cutoff = today.strftime("%Y-%m-%d")
             articles = [a for a in articles if (a.get("published") or a.get("fetched_at", ""))[:10] == cutoff]
@@ -560,7 +563,7 @@ def _build_digest_html(articles: list[dict], last_updated: str | None) -> str:
             f'<ul style="margin:0;padding-left:18px;color:#334155">{links}</ul>'
         )
 
-    updated_str = last_updated or datetime.now().strftime("%Y-%m-%d %H:%M")
+    updated_str = last_updated or datetime.now(TW_TZ).strftime("%Y-%m-%d %H:%M")
     return f"""
     <html><body style="font-family:sans-serif;max-width:640px;margin:0 auto;padding:24px;color:#0f172a">
     <h1 style="font-size:22px;border-bottom:2px solid #1464f6;padding-bottom:10px">
@@ -599,7 +602,7 @@ def api_send_digest():
             json={
                 "from": "ASUSTIMES <onboarding@resend.dev>",
                 "to": [recipient],
-                "subject": f"ASUSTIMES 科技摘要 {datetime.now().strftime('%Y-%m-%d')}",
+                "subject": f"ASUSTIMES 科技摘要 {datetime.now(TW_TZ).strftime('%Y-%m-%d')}",
                 "html": html_body,
             },
             timeout=15,
@@ -1725,7 +1728,7 @@ def _parse_commodity_csv() -> dict:
         header = rows[0]
         raw_dates = header[1:]
 
-        today = datetime.now()
+        today = datetime.now(TW_TZ)
         dates = []
         prev_month = None
         year = today.year

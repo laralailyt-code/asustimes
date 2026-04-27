@@ -235,7 +235,7 @@ def parse_rss(url: str, source_name: str, hint: str = "") -> list[dict]:
                 "summary":    summary,
                 "category":   category,
                 "published":  pub_date,
-                "fetched_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "fetched_at": datetime.now(TW_TZ).strftime("%Y-%m-%d %H:%M:%S"),
                 "provider":   clean(src_el.get_text() if src_el else source_name),
             })
 
