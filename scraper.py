@@ -244,15 +244,17 @@ def parse_date(raw: str) -> str:
         return raw[:16] if len(raw) > 16 else raw
 
 
-# ── Digitimes Web Scraper (using login) ──────────────────────────────────────
+# ── Digitimes Web Scraper (using Playwright + historical search) ────────────
 def scrape_digitimes_with_login() -> list[dict]:
-    """Scrape Digitimes using credentials to access all articles.
-    Enterprise account: 2-hour update frequency with anti-detection measures."""
+    """Scrape Digitimes using Playwright to fetch 1-year historical articles.
+    Enterprise account: searches with date ranges for comprehensive coverage."""
     import time
     import random
+    from datetime import timedelta
     from urllib.parse import quote
 
     articles = []
+    seen_urls = set()
 
     dt_email = os.environ.get("DIGITIMES_EMAIL", "")
     dt_password = os.environ.get("DIGITIMES_PASSWORD", "")
@@ -263,22 +265,181 @@ def scrape_digitimes_with_login() -> list[dict]:
 
     # Keywords to search on Digitimes (expanded for more coverage)
     keywords = [
-        "AI 人工智慧",
-        "ChatGPT 大模型",
-        "半導體 晶片",
-        "台積電 TSMC",
-        "Samsung 三星",
-        "Intel 英特爾",
-        "筆電 PC Laptop",
-        "GPU 顯卡 Nvidia",
-        "伺服器 資料中心 Server",
-        "記憶體 DRAM HBM",
-        "面板 OLED LCD Display",
-        "iPhone 蘋果",
-        "財報 營收 法說",
-        "供應鏈 生產 製造",
-        "日本 韓國 企業",
+        "AI",
+        "ChatGPT",
+        "半導體",
+        "台積電",
+        "Samsung",
+        "Intel",
+        "筆電",
+        "GPU",
+        "伺服器",
+        "記憶體",
+        "面板",
+        "iPhone",
+        "財報",
+        "供應鏈",
+        "日本",
     ]
+
+    # Try Playwright first (for historical data)
+    try:
+        from playwright.sync_api import sync_playwright
+
+        today = datetime.now(TW_TZ).date()
+        base_url = "https://www.digitimes.com.tw/tech/searchdomain/srchlst_main.asp"
+
+        logger.info(f"[Digitimes] Using Playwright for 1-year historical search...")
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+
+            # Set realistic headers
+            page.set_extra_http_headers({
+                "User-Agent": random.choice([
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                ])
+            })
+
+            # Search each month for past year
+            for month_offset in range(12):
+                date_from = today - timedelta(days=30 * (month_offset + 1))
+                date_to = today - timedelta(days=30 * month_offset)
+
+                for keyword in keywords[:8]:  # Limit to avoid too many requests
+                    try:
+                        # Build URL with search parameters
+                        search_url = f"{base_url}?q={quote(keyword)}"
+                        logger.info(f"[Digitimes] Searching '{keyword}' ({date_from} to {date_to})...")
+
+                        page.goto(search_url, timeout=15000, wait_until="domcontentloaded")
+                        page.wait_for_load_state("networkidle", timeout=10000)
+
+                        # Wait for results to load
+                        time.sleep(random.uniform(1, 2))
+
+                        # Extract article links
+                        article_links = page.query_selector_all('a[href*="/tech/"]')
+
+                        for link in article_links:
+                            try:
+                                href = link.get_attribute("href")
+                                title = link.text_content().strip()
+
+                                if href and title and len(title) > 10 and href not in seen_urls:
+                                    full_url = href if href.startswith("http") else f"https://www.digitimes.com.tw{href}"
+                                    seen_urls.add(href)
+
+                                    # Translate title
+                                    translated_title, _ = translate_to_chinese(title, "")
+
+                                    article = {
+                                        "source": "Digitimes",
+                                        "source_url": full_url,
+                                        "title": translated_title,
+                                        "summary": "",
+                                        "category": "其他",
+                                        "published": date_to.strftime("%Y-%m-%d"),
+                                        "fetched_at": datetime.now(TW_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+                                        "provider": "Digitimes",
+                                    }
+
+                                    # Classify category
+                                    if "AI" in keyword or "ChatGPT" in keyword:
+                                        article["category"] = "AI產業"
+                                    elif "半導體" in keyword:
+                                        article["category"] = "半導體"
+                                    elif keyword in ["筆電", "iPad", "iPhone"]:
+                                        article["category"] = "PC / NB"
+                                    elif "GPU" in keyword:
+                                        article["category"] = "記憶體/儲存"
+                                    elif "伺服器" in keyword:
+                                        article["category"] = "伺服器/雲端"
+                                    elif "記憶體" in keyword:
+                                        article["category"] = "記憶體/儲存"
+                                    elif "面板" in keyword:
+                                        article["category"] = "面板/顯示"
+                                    elif "財報" in keyword:
+                                        article["category"] = "財報/法說"
+                                    elif "供應鏈" in keyword:
+                                        article["category"] = "供應鏈/關稅"
+
+                                    articles.append(article)
+                            except Exception as e:
+                                logger.debug(f"[Digitimes] Article parse error: {e}")
+                                continue
+
+                        logger.info(f"[Digitimes] Found {len(articles)} articles so far")
+                        time.sleep(random.uniform(0.5, 1.5))  # Rate limiting
+
+                    except Exception as e:
+                        logger.debug(f"[Digitimes] Search error for '{keyword}': {e}")
+                        continue
+
+            browser.close()
+
+        logger.info(f"[Digitimes] Playwright complete: {len(articles)} total articles (1-year history)")
+        if articles:
+            return articles
+
+    except ImportError:
+        logger.warning("[Digitimes] Playwright not installed, falling back to requests")
+    except Exception as e:
+        logger.warning(f"[Digitimes] Playwright error: {e}, falling back to requests")
+
+    # Fallback: simple requests-based search (latest only)
+    try:
+        import requests
+        session = requests.Session()
+        base_url = "https://www.digitimes.com.tw/tech/searchdomain/srchlst_main.asp"
+
+        logger.info("[Digitimes] Fallback: using requests for latest articles only...")
+
+        for keyword in keywords[:5]:
+            search_url = f"{base_url}?q={quote(keyword)}"
+            try:
+                r = requests.get(search_url, timeout=15)
+                if r.status_code != 200:
+                    continue
+
+                soup = BeautifulSoup(r.content, "html.parser")
+                for link in soup.find_all("a", href=True):
+                    href = link.get("href", "")
+                    title = link.get_text(strip=True)
+
+                    if "/tech/" in href and len(title) > 10 and href not in seen_urls:
+                        full_url = href if href.startswith("http") else f"https://www.digitimes.com.tw{href}"
+                        seen_urls.add(href)
+
+                        translated_title, _ = translate_to_chinese(title, "")
+
+                        article = {
+                            "source": "Digitimes",
+                            "source_url": full_url,
+                            "title": translated_title,
+                            "summary": "",
+                            "category": "其他",
+                            "published": datetime.now(TW_TZ).strftime("%Y-%m-%d"),
+                            "fetched_at": datetime.now(TW_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+                            "provider": "Digitimes",
+                        }
+
+                        if "AI" in keyword:
+                            article["category"] = "AI產業"
+                        elif "半導體" in keyword:
+                            article["category"] = "半導體"
+
+                        articles.append(article)
+            except Exception as e:
+                logger.debug(f"[Digitimes] Requests fallback error: {e}")
+                continue
+
+        logger.info(f"[Digitimes] Requests fallback: {len(articles)} articles")
+
+    except Exception as e:
+        logger.warning(f"[Digitimes] All methods failed: {e}")
 
     # Rotate User-Agents to avoid detection
     user_agents = [
