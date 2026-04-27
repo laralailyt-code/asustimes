@@ -154,57 +154,29 @@ def translate_to_chinese(title: str, summary: str = "") -> tuple[str, str]:
     if is_chinese_text(title) and is_chinese_text(summary):
         return title, summary
 
-    # Method 1: Try Claude API (if ANTHROPIC_API_KEY is set)
-    try:
-        import anthropic
-        import os
-        if os.environ.get("ANTHROPIC_API_KEY"):
-            prompt = f"""Translate to Traditional Chinese (繁體中文). Format:
-TITLE: [title in Chinese]
-SUMMARY: [summary in Chinese]
-
-Title: {title}
-Summary: {summary}"""
-            client = anthropic.Anthropic()
-            message = client.messages.create(
-                model="claude-3-5-haiku-20241022",
-                max_tokens=300,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            response = message.content[0].text
-            lines = response.strip().split('\n')
-            translated_title = title
-            for line in lines:
-                if line.startswith("TITLE:"):
-                    translated_title = line.replace("TITLE:", "").strip()
-                    logger.debug(f"[Claude] Translated: {title[:30]}... → {translated_title[:30]}...")
-                    return translated_title, summary
-    except Exception as e:
-        logger.debug(f"Claude translation unavailable: {type(e).__name__}")
-
-    # Method 2: Try Google Translate (free, no API key)
+    # Method 1: google-trans-new (most reliable)
     try:
         from google_trans_new import google_translator
         translator = google_translator()
         translated_title = translator.translate(title, lang_src='en', lang_tgt='zh-TW')
-        logger.debug(f"[Google] Translated: {title[:30]}... → {translated_title[:30]}...")
+        logger.debug(f"[google-trans-new] Translated: {title[:30]}... → {translated_title[:30]}...")
         return translated_title, summary
     except Exception as e:
-        logger.debug(f"Google Translate unavailable: {type(e).__name__}")
+        logger.debug(f"google-trans-new failed: {type(e).__name__}, trying alternative...")
 
-    # Method 3: Try alternative google_translate_py
+    # Method 2: google-translate-py (backup)
     try:
         from google_translate_py import Translator
         translator = Translator()
         result = translator.translate(title, 'en', 'zh-TW')
         translated_title = result['text']
-        logger.debug(f"[GoogleTranslate] Translated: {title[:30]}... → {translated_title[:30]}...")
+        logger.debug(f"[google-translate-py] Translated: {title[:30]}... → {translated_title[:30]}...")
         return translated_title, summary
     except Exception as e:
-        logger.debug(f"GoogleTranslate unavailable: {type(e).__name__}")
+        logger.debug(f"google-translate-py failed: {type(e).__name__}")
 
-    # Fallback: Keep English but warn
-    logger.warning(f"⚠️ All translation methods failed, keeping English: {title[:50]}...")
+    # Fallback: Keep English
+    logger.debug(f"Translation unavailable, keeping English: {title[:50]}...")
     return title, summary
 
 
