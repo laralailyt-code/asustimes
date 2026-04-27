@@ -1490,10 +1490,8 @@ def _refresh_live_prices():
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(yp_name, []))
 
-    # Initialize from historical CSV if cache is empty
-    if not prev:
-        prev = [(date, price) for date, price in sorted(_YELLOW_PHOSPHORUS_HISTORY.items())]
-        logger.info(f"Initialized yellow phosphorus from CSV history: {len(prev)} points")
+    # DO NOT initialize from historical CSV — always fetch fresh from URL
+    # User requirement: Yellow Phosphorus price must come from URL only, no CSV history
 
     # Fetch from SCI99 (FIXED SOURCE - monitor-678-0.html)
     yp_price = None
@@ -1533,11 +1531,16 @@ def _refresh_live_prices():
                             "url":   "https://www.sci99.com/monitor-678-0.html"}
         logger.info(f"Yellow Phosphorus: {len(prev)} historical points (latest: {yp_val} CNY/tonne on {today})")
     else:
-        # Preserve verified data without appending stale prices
+        # If fetch fails, only keep data from today/yesterday; don't show stale data
+        yesterday = (datetime.now(TW_TZ) - timedelta(days=1)).strftime("%Y-%m-%d")
+        prev = [(d, p) for d, p in prev if d in (today, yesterday)]
         fresh[yp_name] = prev
-        sources[yp_name] = {"label": "SCI99 CSV 歷史（獲取失敗）",
+        sources[yp_name] = {"label": "SCI99（等待更新）",
                             "url":   "https://www.sci99.com/monitor-678-0.html"}
-        logger.warning(f"Yellow Phosphorus fetch failed, preserved verified data only ({len(prev)} points)")
+        if prev:
+            logger.warning(f"Yellow Phosphorus fetch failed, showing only today/yesterday: {len(prev)} points")
+        else:
+            logger.warning(f"Yellow Phosphorus fetch failed and no data from today/yesterday available")
 
     logger.info("[REFRESH] Starting Copper (LME source)...")
     copper_name = "銅 (copper) US$/tonne"
@@ -1740,32 +1743,30 @@ def _refresh_live_prices():
         else:
             logger.error("Tungsten Powder: No price available and no cache")
 
-    logger.info("[REFRESH] Starting Long Fiber Pulp (NOREXECO)...")
+    logger.info("[REFRESH] Starting Long Fiber Pulp (MoneyDJ only)...")
     pulp_name = "NOREXECO 長纖紙漿"
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(pulp_name, []))
 
-    # Initialize from historical data if cache is empty
-    if not prev:
-        prev = [(date, price) for date, price in sorted(_LONGFIBER_PULP_HISTORY.items())]
-        logger.info(f"Initialized Long Fiber Pulp from approximation: {len(prev)} points")
+    # Keep ONLY MoneyDJ verified data (no CSV history initialization)
+    # User requirement: Long Fiber Pulp must come from MoneyDJ only
 
-    # No live price fetcher for long fiber pulp (BCD API corrupted)
-    # Preserve verified data without appending stale prices to avoid data discontinuity
+    # Filter to only today/yesterday to ensure fresh data
+    yesterday = (datetime.now(TW_TZ) - timedelta(days=1)).strftime("%Y-%m-%d")
+    prev = [(d, p) for d, p in prev if d in (today, yesterday)]
+
     fresh[pulp_name] = prev
-    sources[pulp_name] = {"label": "MoneyDJ (verified data only)",
+    sources[pulp_name] = {"label": "MoneyDJ (長纖紙漿)",
                          "url": "https://concords.moneydj.com/z/ze/zeq/zeqa_D0190400.djhtm"}
-    logger.info(f"Long Fiber Pulp: {len(prev)} verified historical points (no live source)")
+    logger.info(f"Long Fiber Pulp: {len(prev)} verified points from MoneyDJ (today/yesterday only)")
 
     logger.info("[REFRESH] Starting PC (Polycarbonate from sci99.com)...")
     pc_name = "PC塑料 (SABIC) CNY$/tonne"
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(pc_name, []))
 
-    # Initialize from historical data if cache is empty
-    if not prev:
-        prev = [(date, price) for date, price in sorted(_PC_HISTORY.items())]
-        logger.info(f"Initialized PC from user history: {len(prev)} points")
+    # DO NOT initialize from historical CSV — always fetch fresh from URL
+    # User requirement: PC price must come from URL only, no CSV history
 
     pc_price = _fetch_pc_price_from_sci99()
     if pc_price is None:
@@ -1788,11 +1789,16 @@ def _refresh_live_prices():
                             "url":   "https://www.sci99.com/monitor-68-0.html"}
         logger.info(f"PC: {len(prev)} historical points (latest: {pc_val} CNY/tonne on {today})")
     else:
-        # If all sources fail, preserve verified data without appending stale prices
+        # If all sources fail, only keep data from today/yesterday; don't show stale data
+        yesterday = (datetime.now(TW_TZ) - timedelta(days=1)).strftime("%Y-%m-%d")
+        prev = [(d, p) for d, p in prev if d in (today, yesterday)]
         fresh[pc_name] = prev
-        sources[pc_name] = {"label": "sci99.com + buyplas (verified data only)",
+        sources[pc_name] = {"label": "sci99.com + buyplas (等待更新)",
                             "url":   "https://www.sci99.com/monitor-68-0.html"}
-        logger.warning(f"PC fetch failed (all sources), preserved verified data only ({len(prev)} points)")
+        if prev:
+            logger.warning(f"PC fetch failed, showing only today/yesterday: {len(prev)} points")
+        else:
+            logger.warning(f"PC fetch failed and no data from today/yesterday available")
 
     with _live_cache_lock:
         _live_commodity_cache.update(fresh)
