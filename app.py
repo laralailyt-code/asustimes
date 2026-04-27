@@ -1618,33 +1618,42 @@ def _refresh_live_prices():
 
     logger.info("[REFRESH] Starting Cobalt (LME only, no CSV)...")
     cobalt_name = "鈷 (cobalt) US$/tonne"
+    with _live_cache_lock:
+        prev = list(_live_commodity_cache.get(cobalt_name, []))
 
-    # Fetch fresh LME price (no CSV fallback)
+    # Initialize with 1-year yfinance history if cache is empty
+    if not prev:
+        # ZS=F is in ¢/lb, convert to USD/tonne: (¢/lb ÷ 100) × 2204.62
+        prev = _fetch_1year_lme_history("ZS=F", multiplier=2204.62 / 100)
+        logger.info(f"Initialized cobalt with {len(prev)} points from yfinance (1-year history)")
+
+    # Fetch fresh LME price
     cobalt_price = _fetch_cobalt_price()
+    existing_dates = {d for d, _ in prev}
+
     if cobalt_price is not None:
         cobalt_val = round(cobalt_price, 2)
-        fresh[cobalt_name] = [(today, cobalt_val)]  # Only today's price
+        if today not in existing_dates:
+            prev.append((today, cobalt_val))
+            logger.info(f"Added new LME price for {today}: {cobalt_val} USD/tonne")
+        else:
+            prev = [(d if d != today else today, cobalt_val if d == today else p) for d, p in prev]
+            logger.info(f"Updated LME price for {today}: {cobalt_val} USD/tonne")
+        fresh[cobalt_name] = prev
         sources[cobalt_name] = {"label": "LME (metals.live)",
                                 "url":   "https://www.lme.com"}
-        logger.info(f"✓ Cobalt: {cobalt_val} USD/tonne on {today}")
+        logger.info(f"Cobalt: {len(prev)} historical points (latest: {cobalt_val} USD/tonne on {today})")
     else:
-        # If fetch fails, try to preserve last known price with today's date
-        with _live_cache_lock:
-            prev = list(_live_commodity_cache.get(cobalt_name, []))
-
-        if prev:
+        # API failed: ensure today's date is marked with last known value
+        if today not in existing_dates and prev:
             last_val = next((v for v in reversed([v for d, v in prev]) if v is not None), None)
             if last_val:
-                fresh[cobalt_name] = [(today, last_val)]
-                logger.warning(f"Cobalt: LME API failed, using last price {last_val} for {today}")
-            else:
-                fresh[cobalt_name] = []
-                logger.warning(f"Cobalt: LME API failed and no valid historical data")
-        else:
-            fresh[cobalt_name] = []
-            logger.warning(f"Cobalt: LME API failed and no cached data for {today}")
+                prev.append((today, last_val))
+                logger.warning(f"Cobalt API failed, recorded today {today} with last price {last_val}")
+        fresh[cobalt_name] = prev
         sources[cobalt_name] = {"label": "LME (metals.live)",
                                 "url":   "https://www.lme.com"}
+        logger.warning(f"Cobalt: {len(prev)} points, latest from {prev[-1][0] if prev else 'N/A'}")
 
     logger.info("[REFRESH] Starting Aluminum (LME source)...")
     aluminum_name = "鋁 (aluminum) US$/tonne"
