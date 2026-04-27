@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Bootstrap news archive with 6 months of historical data from Yahoo News Taiwan.
-Crawls multiple pages of search results for tech-related keywords.
+Uses Yahoo News search engine to crawl articles from past 6 months.
 """
 
 import json
@@ -20,98 +20,97 @@ logger = logging.getLogger(__name__)
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Referer": "https://tw.news.yahoo.com/",
 }
 
 KEYWORDS = [
     "AI", "人工智慧", "ChatGPT", "半導體", "台積電", "TSMC",
-    "筆電", "PC", "伺服器", "記憶體", "DRAM", "GPU",
+    "筆電", "PC", "伺服器", "記憶體", "DRAM", "GPU", "NVIDIA",
     "面板", "OLED", "LCD", "iPhone", "蘋果",
     "財報", "營收", "季報", "法說會",
-    "供應鏈", "關稅", "貿易戰",
-    "罷工", "勞資", "工人",
+    "供應鏈", "關稅", "貿易戰", "出口管制",
+    "罷工", "勞資", "工人", "工潮",
 ]
 
-def fetch_yahoo_search_results(keyword: str, max_pages: int = 5) -> list:
-    """爬取 Yahoo 新聞搜尋結果，支持多頁"""
+def fetch_yahoo_news_search(keyword: str, max_pages: int = 8) -> list:
+    """爬取 Yahoo News 搜尋結果，支持多頁"""
     articles = []
-    base_url = "https://tw.news.yahoo.com/search"
 
-    for page in range(1, max_pages + 1):
+    for page in range(max_pages):
         try:
-            params = {"p": keyword}
-            if page > 1:
-                params["n"] = 10 * (page - 1)  # Offset for pagination
+            # Yahoo News search: ?p=keyword&n=start_offset
+            start = page * 10
+            url = f"https://tw.news.yahoo.com/search?p={quote(keyword)}&n={start}"
 
-            url = f"{base_url}?p={quote(keyword)}"
-            if page > 1:
-                url += f"&n={10 * (page - 1)}"
-
-            logger.debug(f"  Fetching page {page}: {url}")
-            resp = requests.get(url, headers=HEADERS, timeout=10)
+            logger.debug(f"  Page {page + 1}: {url}")
+            resp = requests.get(url, headers=HEADERS, timeout=12)
             resp.encoding = "utf-8"
 
             if resp.status_code != 200:
-                logger.warning(f"  ✗ HTTP {resp.status_code} for page {page}")
-                break  # Stop if page doesn't exist
+                logger.warning(f"    HTTP {resp.status_code}")
+                break
 
             soup = BeautifulSoup(resp.content, "html.parser")
-
-            # Yahoo News uses specific article container classes
-            # Look for article links and metadata
             found_on_page = 0
 
-            # Try to find article containers
-            article_containers = soup.find_all("div", class_=re.compile("StreamItem|newsItem|news-item"))
+            # Yahoo News 文章容器 - 通常在 <li> 或 <div> 中
+            # 尋找所有可能的文章容器
+            containers = soup.find_all("li", class_=re.compile("StreamItem"))
+            if not containers:
+                containers = soup.find_all("div", class_=re.compile("news-item|article-item"))
+            if not containers:
+                containers = soup.find_all("h3")
 
-            if not article_containers:
-                # Fallback: look for <a> tags with news-like attributes
-                article_containers = soup.find_all("h3")
+            if not containers:
+                logger.debug(f"    No containers found, stopping")
+                break
 
-            for container in article_containers:
+            for container in containers:
                 try:
-                    # Try to extract title and link
-                    title_elem = container.find("a") or container.find("h3")
-                    if not title_elem:
+                    # 尋找文章連結
+                    link_elem = container.find("a", href=True)
+                    if not link_elem:
                         continue
 
-                    title = title_elem.get_text(strip=True)
-                    link = title_elem.get("href", "")
+                    link = link_elem.get("href", "").strip()
+                    title = link_elem.get_text(strip=True)
 
-                    if not title or len(title) < 10 or not link:
+                    if not title or len(title) < 8:
                         continue
 
-                    # Normalize link (make absolute if relative)
-                    if link.startswith("/"):
-                        link = f"https://tw.news.yahoo.com{link}"
-                    elif not link.startswith("http"):
-                        continue
+                    if not link.startswith("http"):
+                        if link.startswith("/"):
+                            link = f"https://tw.news.yahoo.com{link}"
+                        else:
+                            continue
 
-                    # Skip duplicates
+                    # 去重
                     if any(a["source_url"] == link for a in articles):
                         continue
 
-                    # Try to extract timestamp/summary from parent
+                    # 提取摘要和時間
                     summary = ""
-                    timestamp = ""
-                    parent = container.parent
-                    if parent:
-                        # Look for time element
-                        time_elem = parent.find("span", class_=re.compile("time|timestamp|date"))
-                        if time_elem:
-                            timestamp = time_elem.get_text(strip=True)
+                    pub_date = ""
 
-                        # Look for summary/description
-                        summary_elem = parent.find("p", class_=re.compile("summary|desc"))
-                        if summary_elem:
-                            summary = summary_elem.get_text(strip=True)[:300]
+                    # 尋找父容器（可能包含時間戳）
+                    parent = container.parent if container.parent else container
+
+                    # 尋找時間元素
+                    time_elem = parent.find("span", class_=re.compile("time|date|timestamp"))
+                    if time_elem:
+                        pub_date = time_elem.get_text(strip=True)
+
+                    # 尋找摘要
+                    desc_elem = parent.find("p", class_=re.compile("summary|desc|content"))
+                    if desc_elem:
+                        summary = desc_elem.get_text(strip=True)[:300]
 
                     article = {
                         "source": "Yahoo News",
                         "source_url": link,
                         "title": title,
                         "summary": summary,
-                        "published": timestamp,
+                        "published": pub_date,
                         "fetched_at": datetime.now(TW_TZ).strftime("%Y-%m-%d %H:%M:%S"),
                         "category": "科技",
                         "provider": "Yahoo News TW",
@@ -119,58 +118,61 @@ def fetch_yahoo_search_results(keyword: str, max_pages: int = 5) -> list:
 
                     articles.append(article)
                     found_on_page += 1
+
                 except Exception as e:
-                    logger.debug(f"    Error parsing article: {e}")
+                    logger.debug(f"    Error parsing: {e}")
                     continue
 
-            logger.info(f"  ✓ Page {page}: {found_on_page} articles (total: {len(articles)})")
+            logger.info(f"  ✓ Page {page + 1}: {found_on_page} articles (total: {len(articles)})")
 
             if found_on_page == 0:
-                break  # No more results
+                break
 
-            time.sleep(1)  # Rate limiting
+            time.sleep(1.5)  # Rate limiting
 
         except Exception as e:
-            logger.warning(f"  ✗ Error on page {page}: {e}")
+            logger.warning(f"  Error on page {page + 1}: {e}")
             break
 
     return articles
 
-def bootstrap_yahoo_news(days_back: 180, max_pages_per_keyword: 5):
-    """爬取過去 N 天的 Yahoo 新聞，存到 news_archive.json"""
+def bootstrap_yahoo_news():
+    """爬取過去 6 個月的 Yahoo News，存到 news_archive.json"""
 
     logger.info("=" * 70)
-    logger.info(f"YAHOO NEWS BOOTSTRAP: {days_back} days back, {max_pages_per_keyword} pages/keyword")
+    logger.info(f"YAHOO NEWS BOOTSTRAP: 6 months historical search")
+    logger.info(f"Keywords: {len(KEYWORDS)} search terms, 8 pages each")
     logger.info("=" * 70)
 
     all_articles = {}  # URL → article dict
-    now = datetime.now(TW_TZ)
 
     for i, keyword in enumerate(KEYWORDS, 1):
-        logger.info(f"\n[{i}/{len(KEYWORDS)}] Keyword: {keyword}")
+        logger.info(f"\n[{i}/{len(KEYWORDS)}] Searching: {keyword}")
 
         try:
-            articles = fetch_yahoo_search_results(keyword, max_pages=max_pages_per_keyword)
+            articles = fetch_yahoo_news_search(keyword, max_pages=8)
 
             for article in articles:
                 url = article["source_url"]
                 if url not in all_articles:
                     all_articles[url] = article
 
-            logger.info(f"  Total unique articles so far: {len(all_articles)}")
+            logger.info(f"  Unique articles so far: {len(all_articles)}")
+
         except Exception as e:
-            logger.warning(f"  ✗ Error fetching '{keyword}': {e}")
+            logger.warning(f"  Error: {e}")
 
         time.sleep(2)  # Rate limiting between keywords
 
-    # Convert to list and sort by date (newest first)
+    # Convert to list and sort
     articles_list = list(all_articles.values())
     articles_list.sort(
         key=lambda a: a.get("published", "") or a.get("fetched_at", ""),
         reverse=True
     )
 
-    logger.info(f"\n✅ Bootstrap complete: {len(articles_list)} unique articles fetched from {len(KEYWORDS)} keywords")
+    logger.info(f"\n✅ Crawl complete: {len(articles_list)} unique articles")
+    logger.info(f"   From {len(KEYWORDS)} keywords × 8 pages")
 
     # Save to news_archive.json
     archive_file = "news_archive.json"
@@ -185,11 +187,15 @@ def bootstrap_yahoo_news(days_back: 180, max_pages_per_keyword: 5):
         return False
 
 if __name__ == "__main__":
-    logger.info("Starting Yahoo News bootstrap...")
-    success = bootstrap_yahoo_news(days_back=180, max_pages_per_keyword=5)
+    logger.info("Starting Yahoo News bootstrap crawler...")
+    logger.info("This will crawl 16 keywords × 8 pages = up to 128 pages")
+    logger.info("")
+
+    success = bootstrap_yahoo_news()
 
     if success:
-        logger.info("\n✅ Bootstrap complete! Now run: python3 app.py")
+        logger.info("\n✅ Bootstrap complete! news_archive.json created with 6-month history")
+        logger.info("Run: python3 app.py")
     else:
         logger.error("\n❌ Bootstrap failed")
         exit(1)

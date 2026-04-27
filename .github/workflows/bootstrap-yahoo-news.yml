@@ -1,0 +1,61 @@
+name: Bootstrap Yahoo News 6-Month History
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+jobs:
+  bootstrap-yahoo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4
+
+      - name: Run Yahoo News crawler
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python3 bootstrap_yahoo_news.py
+
+      - name: Check results
+        run: |
+          if [ -f news_archive.json ]; then
+            echo "✅ news_archive.json created"
+            lines=$(wc -l < news_archive.json)
+            echo "   Lines: $lines"
+          else
+            echo "❌ news_archive.json not found"
+            exit 1
+          fi
+
+      - name: Commit and push
+        run: |
+          git config user.name "ASUSTIMES Bot"
+          git config user.email "bot@asustimes.local"
+
+          if git diff --quiet news_archive.json; then
+            echo "No changes"
+            exit 0
+          fi
+
+          git add news_archive.json
+          git commit -m "Bootstrap: Yahoo News 6-month historical search
+
+- Crawled 16+ keywords from Yahoo News search
+- Up to 128 pages of historical results
+- Ready for app.py to auto-update daily"
+          git push origin master
+        continue-on-error: true
