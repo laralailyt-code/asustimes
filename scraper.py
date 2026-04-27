@@ -244,9 +244,10 @@ def scrape_digitimes_with_login() -> list[dict]:
     dt_email = os.environ.get("DIGITIMES_EMAIL", "")
     dt_password = os.environ.get("DIGITIMES_PASSWORD", "")
 
-    if not dt_email or not dt_password:
-        logger.warning("Digitimes credentials not set, skipping Digitimes scrape")
-        return articles
+    if dt_email and dt_password:
+        logger.info("[Digitimes] Enterprise credentials found, will try enterprise login")
+    else:
+        logger.info("[Digitimes] No credentials set, will use requests-based scraper (no login needed)")
 
     # Keywords to search on Digitimes (expanded for more coverage)
     keywords = [
