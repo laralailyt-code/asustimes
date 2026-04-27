@@ -1027,13 +1027,10 @@ def fetch_all_news() -> list[dict]:
         except FuturesTimeoutError:
             logger.warning(f"Fetch timeout — returning {len(results)} partial results")
 
-    # Add Digitimes articles (with login)
-    try:
-        dt_articles = scrape_digitimes_with_login()
-        logger.info(f"Digitimes: scraped {len(dt_articles)} articles")
-        results.extend(dt_articles)
-    except Exception as e:
-        logger.warning(f"Digitimes scrape failed: {e}")
+    # Digitimes articles are now sourced from Bing News RSS (site:digitimes.com searches in FEEDS list)
+    # Disabled the Playwright-based scraper since it cannot handle Digitimes' AJAX-loaded results
+    # and Bing News provides better coverage anyway
+    logger.info("Digitimes articles sourced from Bing News RSS feeds (site:digitimes.com searches)")
 
     # Deduplicate by normalised title prefix
     seen: set[str] = set()
