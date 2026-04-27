@@ -317,7 +317,7 @@ _digest_lock = threading.Lock()
 
 
 def _resolve_google_news_url(url: str) -> str:
-    """Decode Google News redirect URL (CBMi...) to get the actual article URL."""
+    """Decode Google News redirect URL (CBMi...) to get the actual article URL. Non-Google URLs pass through unchanged."""
     if "news.google.com" not in url:
         return url
     try:
@@ -337,7 +337,7 @@ def _resolve_google_news_url(url: str) -> str:
 
 
 def _fetch_article_snippet(url: str, max_chars: int = 150) -> str:
-    """Resolve Google News redirect, then extract a short text snippet."""
+    """Resolve Google/Bing News redirect, then extract a short text snippet."""
     if not url:
         return ""
     try:
@@ -2201,9 +2201,9 @@ def _save_articles_to_archive(new_articles: list[dict]):
 
 @app.route("/api/commodity-news")
 def api_commodity_news():
-    """Search Google News for commodity-related articles."""
+    """Search Bing News for commodity-related articles."""
     import xml.etree.ElementTree as ET
-    from urllib.parse import quote
+    from urllib.parse import quote, urlparse, parse_qs, unquote
     q = request.args.get("q", "").strip()
     if not q:
         return jsonify({"articles": []})
@@ -2216,8 +2216,18 @@ def api_commodity_news():
             title = item.findtext("title") or ""
             link  = item.findtext("link") or ""
             pub   = item.findtext("pubDate") or ""
+
+            # Decode Bing apiclick redirect URLs to get actual article URLs
+            if "bing.com/news/apiclick.aspx" in link:
+                try:
+                    qs = parse_qs(urlparse(link).query)
+                    if "url" in qs:
+                        link = unquote(qs["url"][0])
+                except Exception:
+                    pass  # If parsing fails, use original link
+
             articles.append({"title": title, "source_url": link,
-                             "published": pub, "source": "Google News"})
+                             "published": pub, "source": "Bing News"})
         return jsonify({"articles": articles})
     except Exception as e:
         logger.warning(f"commodity news fetch error '{q}': {e}")
@@ -2359,7 +2369,7 @@ _GEO_RISKS = [
 ]
 
 def _scan_one_geo_risk(risk, headers, cutoff):
-    """Scan Google News for one geopolitical risk entry. Returns result dict or None."""
+    """Scan Bing News for one geopolitical risk entry. Returns result dict or None."""
     import xml.etree.ElementTree as ET
     import re
     import time as _time
@@ -2412,8 +2422,8 @@ def _scan_one_geo_risk(risk, headers, cutoff):
         "region": risk["region"], "impact": risk["impact"],
         "supply": risk["supply"],
         "time": found_date, "status": "新聞持續報導中",
-        "source": "Google News自動監測",
-        "sourceUrl": f"https://news.google.com/search?q={_q(risk['kw'][0])}",
+        "source": "Bing News自動監測",
+        "sourceUrl": f"https://www.bing.com/news/search?q={_q(risk['kw'][0])}",
     }
 
 
@@ -2492,7 +2502,7 @@ _strike_cache: dict = {"data": None, "ts": 0.0}
 _strike_lock  = threading.Lock()
 
 def _scan_one_strike(target, headers, cutoff):
-    """Scan Google News for one strike target. Returns result dict or None."""
+    """Scan Bing News for one strike target. Returns result dict or None."""
     import xml.etree.ElementTree as ET
     import re
     import time as _time
@@ -2543,6 +2553,18 @@ def _scan_one_strike(target, headers, cutoff):
     if not found_article:
         logger.info(f"[STRIKE] ✗ {target['company']}: no matching articles")
         return None
+
+    # Decode Bing apiclick redirect URLs to get actual article URLs
+    article_url = found_article["url"]
+    if "bing.com/news/apiclick.aspx" in article_url:
+        try:
+            from urllib.parse import urlparse, parse_qs, unquote
+            qs = parse_qs(urlparse(article_url).query)
+            if "url" in qs:
+                article_url = unquote(qs["url"][0])
+        except Exception:
+            pass  # If parsing fails, use original URL
+
     return {
         "id":        f"strike-{target['company']}",
         "type":      "strike",
@@ -2552,8 +2574,8 @@ def _scan_one_strike(target, headers, cutoff):
         "time":      found_article["date"],
         "impact":    "HIGH",
         "supply":    f"{target['company']}勞資衝突，可能影響生產排程與出貨交期，建議評估替代供應",
-        "source":    "Google News自動監測",
-        "sourceUrl": found_article["url"],
+        "source":    "Bing News自動監測",
+        "sourceUrl": article_url,
         "newsTitle": found_article["title"],
     }
 
