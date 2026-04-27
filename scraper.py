@@ -244,6 +244,125 @@ def parse_date(raw: str) -> str:
         return raw[:16] if len(raw) > 16 else raw
 
 
+# ── Digitimes Web Scraper (using login) ──────────────────────────────────────
+def scrape_digitimes_with_login() -> list[dict]:
+    """Scrape Digitimes using credentials to access all articles."""
+    articles = []
+
+    dt_email = os.environ.get("DIGITIMES_EMAIL", "")
+    dt_password = os.environ.get("DIGITIMES_PASSWORD", "")
+
+    if not dt_email or not dt_password:
+        logger.warning("Digitimes credentials not set, skipping Digitimes scrape")
+        return articles
+
+    # Keywords to search on Digitimes
+    keywords = [
+        "AI 人工智慧",
+        "半導體 晶片",
+        "台積電 TSMC",
+        "筆電 PC",
+        "伺服器 資料中心",
+        "記憶體 DRAM HBM",
+        "面板 OLED LCD",
+        "財報 營收 法說",
+    ]
+
+    try:
+        import requests
+        session = requests.Session()
+        session.headers.update(HEADERS)
+
+        # Try to login to Digitimes
+        # Note: Actual login flow may vary - this is a template
+        login_url = "https://www.digitimes.com.tw/user/login"
+        login_data = {
+            "email": dt_email,
+            "password": dt_password,
+        }
+
+        logger.info(f"[Digitimes] Attempting login with {dt_email}...")
+        try:
+            r = session.post(login_url, data=login_data, timeout=15)
+            if r.status_code == 200:
+                logger.info(f"[Digitimes] Login successful")
+            else:
+                logger.warning(f"[Digitimes] Login returned {r.status_code}, continuing anyway")
+        except Exception as e:
+            logger.warning(f"[Digitimes] Login failed: {e}, trying search anyway")
+
+        # Search with keywords
+        base_search_url = "https://www.digitimes.com.tw/tech/searchdomain/srchlst_main.asp"
+
+        for keyword in keywords:
+            try:
+                # Try different parameter formats
+                params = {"q": keyword}
+                search_url = f"{base_search_url}?q={requests.utils.quote(keyword)}"
+
+                logger.info(f"[Digitimes] Searching: {keyword}")
+                resp = session.get(search_url, timeout=15)
+                resp.encoding = "utf-8"
+
+                if resp.status_code != 200:
+                    logger.warning(f"[Digitimes] Search returned {resp.status_code} for '{keyword}'")
+                    continue
+
+                soup = BeautifulSoup(resp.content, "html.parser")
+
+                # Parse search results - look for article links
+                # Common patterns for Digitimes
+                for link in soup.find_all("a", href=True):
+                    href = link.get("href", "")
+                    title = link.get_text(strip=True)
+
+                    # Filter for actual article links (not navigation)
+                    if "/tech/" in href and len(title) > 10:
+                        full_url = href if href.startswith("http") else f"https://www.digitimes.com.tw{href}"
+
+                        article = {
+                            "source": "Digitimes",
+                            "source_url": full_url,
+                            "title": title,
+                            "summary": "",
+                            "category": "其他",
+                            "published": datetime.now(TW_TZ).strftime("%Y-%m-%d"),
+                            "fetched_at": datetime.now(TW_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+                            "provider": "Digitimes",
+                        }
+
+                        # Classify category based on keyword
+                        if "AI" in keyword:
+                            article["category"] = "AI產業"
+                        elif "半導體" in keyword:
+                            article["category"] = "半導體"
+                        elif "筆電" in keyword or "PC" in keyword:
+                            article["category"] = "PC / NB"
+                        elif "伺服器" in keyword:
+                            article["category"] = "伺服器/雲端"
+                        elif "記憶體" in keyword:
+                            article["category"] = "記憶體/儲存"
+                        elif "面板" in keyword:
+                            article["category"] = "面板/顯示"
+                        elif "財報" in keyword:
+                            article["category"] = "財報/法說"
+
+                        articles.append(article)
+
+                logger.info(f"[Digitimes] Found {len(articles)} articles so far")
+
+            except Exception as e:
+                logger.warning(f"[Digitimes] Search error for '{keyword}': {e}")
+                continue
+
+        logger.info(f"[Digitimes] Scraped {len(articles)} total articles")
+        return articles
+
+    except Exception as e:
+        logger.error(f"[Digitimes] Scraper error: {e}")
+        return articles
+
+
 # ── Generic RSS parser ────────────────────────────────────────────────────────
 def parse_rss(url: str, source_name: str, hint: str = "") -> list[dict]:
     import time
@@ -592,6 +711,14 @@ def fetch_all_news() -> list[dict]:
                     logger.warning(f"Feed failed: {e}")
         except FuturesTimeoutError:
             logger.warning(f"Fetch timeout — returning {len(results)} partial results")
+
+    # Add Digitimes articles (with login)
+    try:
+        dt_articles = scrape_digitimes_with_login()
+        logger.info(f"Digitimes: scraped {len(dt_articles)} articles")
+        results.extend(dt_articles)
+    except Exception as e:
+        logger.warning(f"Digitimes scrape failed: {e}")
 
     # Deduplicate by normalised title prefix
     seen: set[str] = set()
