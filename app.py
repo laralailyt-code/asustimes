@@ -2499,14 +2499,48 @@ def api_risk_strikes():
 
 
 def _get_commodity_data() -> dict:
-    """Return parsed CSV + live data, with 5-min in-memory cache."""
-    with _csv_parse_lock:
-        if _csv_parse_cache["data"] is not None and time.time() - _csv_parse_cache["ts"] < 300:
-            return _csv_parse_cache["data"]
-        data = _parse_commodity_csv()
-        _csv_parse_cache["data"] = data
-        _csv_parse_cache["ts"]   = time.time()
-        return data
+    """Return only web/API prices (no CSV mixing). Use live cache data."""
+    # Build commodity data from live cache only (network prices, not CSV)
+    result = {}
+
+    # Category mapping
+    item_to_cat = {}
+    for cat, items in _COMMODITY_CATEGORIES.items():
+        for item in items:
+            item_to_cat[item] = cat
+
+    with _live_cache_lock:
+        for csv_name, live_points in _live_commodity_cache.items():
+            if not live_points:
+                continue
+
+            # Extract unit and category
+            unit = ""
+            _LIVE_UNIT_OVERRIDES = {"鎢": "元/千克"}
+            for name_key, u_val in _LIVE_UNIT_OVERRIDES.items():
+                if name_key == csv_name:
+                    unit = u_val
+                    break
+            if not unit:
+                for u in ["US$/tonne", "CNY$/tonne", "US$/盎司", "US$/桶", "USD/T", "CNY$/kg"]:
+                    if u in csv_name:
+                        unit = u
+                        break
+
+            cat = "其他"
+            for key, c in item_to_cat.items():
+                if key in csv_name:
+                    cat = c
+                    break
+
+            result[csv_name] = {
+                "unit":     unit,
+                "category": cat,
+                "dates":    [p[0] for p in live_points],
+                "values":   [p[1] for p in live_points],
+            }
+
+    return result
 
 
 @app.route("/api/commodities")
