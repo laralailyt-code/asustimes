@@ -1531,16 +1531,11 @@ def _refresh_live_prices():
                             "url":   "https://www.sci99.com/monitor-678-0.html"}
         logger.info(f"Yellow Phosphorus: {len(prev)} historical points (latest: {yp_val} CNY/tonne on {today})")
     else:
-        # If fetch fails, only keep data from today/yesterday; don't show stale data
-        yesterday = (datetime.now(TW_TZ) - timedelta(days=1)).strftime("%Y-%m-%d")
-        prev = [(d, p) for d, p in prev if d in (today, yesterday)]
+        # If fetch fails, preserve all historical data (don't delete history)
         fresh[yp_name] = prev
-        sources[yp_name] = {"label": "SCI99（等待更新）",
+        sources[yp_name] = {"label": "SCI99（待更新）",
                             "url":   "https://www.sci99.com/monitor-678-0.html"}
-        if prev:
-            logger.warning(f"Yellow Phosphorus fetch failed, showing only today/yesterday: {len(prev)} points")
-        else:
-            logger.warning(f"Yellow Phosphorus fetch failed and no data from today/yesterday available")
+        logger.warning(f"Yellow Phosphorus fetch failed, preserved {len(prev)} historical points")
 
     logger.info("[REFRESH] Starting Copper (LME source)...")
     copper_name = "銅 (copper) US$/tonne"
@@ -1748,17 +1743,13 @@ def _refresh_live_prices():
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(pulp_name, []))
 
-    # Keep ONLY MoneyDJ verified data (no CSV history initialization)
+    # Keep ONLY MoneyDJ verified data (preserve all historical data)
     # User requirement: Long Fiber Pulp must come from MoneyDJ only
-
-    # Filter to only today/yesterday to ensure fresh data
-    yesterday = (datetime.now(TW_TZ) - timedelta(days=1)).strftime("%Y-%m-%d")
-    prev = [(d, p) for d, p in prev if d in (today, yesterday)]
 
     fresh[pulp_name] = prev
     sources[pulp_name] = {"label": "MoneyDJ (長纖紙漿)",
                          "url": "https://concords.moneydj.com/z/ze/zeq/zeqa_D0190400.djhtm"}
-    logger.info(f"Long Fiber Pulp: {len(prev)} verified points from MoneyDJ (today/yesterday only)")
+    logger.info(f"Long Fiber Pulp: {len(prev)} verified points from MoneyDJ")
 
     logger.info("[REFRESH] Starting PC (Polycarbonate from sci99.com)...")
     pc_name = "PC塑料 (SABIC) CNY$/tonne"
@@ -1789,16 +1780,11 @@ def _refresh_live_prices():
                             "url":   "https://www.sci99.com/monitor-68-0.html"}
         logger.info(f"PC: {len(prev)} historical points (latest: {pc_val} CNY/tonne on {today})")
     else:
-        # If all sources fail, only keep data from today/yesterday; don't show stale data
-        yesterday = (datetime.now(TW_TZ) - timedelta(days=1)).strftime("%Y-%m-%d")
-        prev = [(d, p) for d, p in prev if d in (today, yesterday)]
+        # If all sources fail, preserve all historical data (don't delete history)
         fresh[pc_name] = prev
-        sources[pc_name] = {"label": "sci99.com + buyplas (等待更新)",
+        sources[pc_name] = {"label": "sci99.com + buyplas (待更新)",
                             "url":   "https://www.sci99.com/monitor-68-0.html"}
-        if prev:
-            logger.warning(f"PC fetch failed, showing only today/yesterday: {len(prev)} points")
-        else:
-            logger.warning(f"PC fetch failed and no data from today/yesterday available")
+        logger.warning(f"PC fetch failed, preserved {len(prev)} historical points")
 
     with _live_cache_lock:
         _live_commodity_cache.update(fresh)
