@@ -146,53 +146,66 @@ def is_chinese_text(text: str) -> bool:
 
 
 def translate_to_chinese(title: str, summary: str = "") -> tuple[str, str]:
-    """Translate English title and summary to Chinese using Claude API.
+    """Translate English title to Traditional Chinese.
+    Priority: Claude API → Google Translate → Keep English
     Returns: (translated_title, translated_summary)
-    If translation fails or text is already Chinese, returns original.
     """
+    # Skip if already has significant Chinese
+    if is_chinese_text(title) and is_chinese_text(summary):
+        return title, summary
+
+    # Method 1: Try Claude API (if ANTHROPIC_API_KEY is set)
     try:
         import anthropic
-
-        # Skip if already has significant Chinese
-        if is_chinese_text(title) and is_chinese_text(summary):
-            return title, summary
-
-        # Build translation prompt
-        prompt = f"""Translate the following to Traditional Chinese (繁體中文). Keep it concise.
+        import os
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            prompt = f"""Translate to Traditional Chinese (繁體中文). Format:
+TITLE: [title in Chinese]
+SUMMARY: [summary in Chinese]
 
 Title: {title}
-Summary: {summary}
-
-Respond ONLY in this format (no other text):
-TITLE: [translated title]
-SUMMARY: [translated summary]"""
-
-        client = anthropic.Anthropic()
-        message = client.messages.create(
-            model="claude-3-5-haiku-20241022",
-            max_tokens=300,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        response = message.content[0].text
-
-        # Parse response
-        lines = response.strip().split('\n')
-        translated_title = title
-        translated_summary = summary
-
-        for line in lines:
-            if line.startswith("TITLE:"):
-                translated_title = line.replace("TITLE:", "").strip()
-            elif line.startswith("SUMMARY:"):
-                translated_summary = line.replace("SUMMARY:", "").strip()
-
-        logger.debug(f"Translated: '{title[:30]}...' → '{translated_title[:30]}...'")
-        return translated_title, translated_summary
-
+Summary: {summary}"""
+            client = anthropic.Anthropic()
+            message = client.messages.create(
+                model="claude-3-5-haiku-20241022",
+                max_tokens=300,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            response = message.content[0].text
+            lines = response.strip().split('\n')
+            translated_title = title
+            for line in lines:
+                if line.startswith("TITLE:"):
+                    translated_title = line.replace("TITLE:", "").strip()
+                    logger.debug(f"[Claude] Translated: {title[:30]}... → {translated_title[:30]}...")
+                    return translated_title, summary
     except Exception as e:
-        logger.warning(f"Translation failed for '{title[:40]}...': {type(e).__name__}: {e}")
-        return title, summary
+        logger.debug(f"Claude translation unavailable: {type(e).__name__}")
+
+    # Method 2: Try Google Translate (free, no API key)
+    try:
+        from google_trans_new import google_translator
+        translator = google_translator()
+        translated_title = translator.translate(title, lang_src='en', lang_tgt='zh-TW')
+        logger.debug(f"[Google] Translated: {title[:30]}... → {translated_title[:30]}...")
+        return translated_title, summary
+    except Exception as e:
+        logger.debug(f"Google Translate unavailable: {type(e).__name__}")
+
+    # Method 3: Try alternative google_translate_py
+    try:
+        from google_translate_py import Translator
+        translator = Translator()
+        result = translator.translate(title, 'en', 'zh-TW')
+        translated_title = result['text']
+        logger.debug(f"[GoogleTranslate] Translated: {title[:30]}... → {translated_title[:30]}...")
+        return translated_title, summary
+    except Exception as e:
+        logger.debug(f"GoogleTranslate unavailable: {type(e).__name__}")
+
+    # Fallback: Keep English but warn
+    logger.warning(f"⚠️ All translation methods failed, keeping English: {title[:50]}...")
+    return title, summary
 
 
 def classify_category(title: str, summary: str = "", hint: str = "") -> str | None:

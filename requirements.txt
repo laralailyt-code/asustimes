@@ -6,3 +6,5 @@ gunicorn>=21.0
 yfinance>=0.2.36
 anthropic>=0.7.0
 playwright>=1.40
+google-translate-py>=1.0
+google-trans-new>=1.1.9
