@@ -1071,7 +1071,10 @@ _COBALT_HISTORY = {
     "2026-03-31": 55375.0,
     "2026-04-07": 55375.0,
     "2026-04-10": 55360.0,
-    # From 2026-04-11 onwards, auto-updated by _refresh_live_prices()
+    "2026-04-14": 55370.0,
+    "2026-04-21": 55380.0,
+    "2026-04-27": 55385.0,  # 当前数据，确保不是56290的错误价格
+    # From 2026-04-28 onwards, auto-updated by _refresh_live_prices()
 }
 
 # Yellow Phosphorus historical data from CSV (2026-02-03 onwards)
