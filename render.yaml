@@ -3,15 +3,8 @@ services:
     name: asustimes
     env: python
     pythonVersion: "3.10"
-    buildFilter:
-      paths:
-        - "*.py"
-        - "requirements.txt"
-        - "render.yaml"
-
-    buildCommand: "pip install -r requirements.txt"
     startCommand: "gunicorn app:app"
-    
+
     envVars:
       - key: PYTHON_VERSION
         value: "3.10"
