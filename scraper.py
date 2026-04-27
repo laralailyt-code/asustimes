@@ -261,16 +261,23 @@ def scrape_digitimes_with_login() -> list[dict]:
         logger.warning("Digitimes credentials not set, skipping Digitimes scrape")
         return articles
 
-    # Keywords to search on Digitimes
+    # Keywords to search on Digitimes (expanded for more coverage)
     keywords = [
         "AI 人工智慧",
+        "ChatGPT 大模型",
         "半導體 晶片",
         "台積電 TSMC",
-        "筆電 PC",
-        "伺服器 資料中心",
+        "Samsung 三星",
+        "Intel 英特爾",
+        "筆電 PC Laptop",
+        "GPU 顯卡 Nvidia",
+        "伺服器 資料中心 Server",
         "記憶體 DRAM HBM",
-        "面板 OLED LCD",
+        "面板 OLED LCD Display",
+        "iPhone 蘋果",
         "財報 營收 法說",
+        "供應鏈 生產 製造",
+        "日本 韓國 企業",
     ]
 
     # Rotate User-Agents to avoid detection
@@ -355,10 +362,13 @@ def scrape_digitimes_with_login() -> list[dict]:
                     if "/tech/" in href and len(title) > 10:
                         full_url = href if href.startswith("http") else f"https://www.digitimes.com.tw{href}"
 
+                        # Translate title to Chinese
+                        translated_title, _ = translate_to_chinese(title, "")
+
                         article = {
                             "source": "Digitimes",
                             "source_url": full_url,
-                            "title": title,
+                            "title": translated_title,  # Use translated title
                             "summary": "",
                             "category": "其他",
                             "published": datetime.now(TW_TZ).strftime("%Y-%m-%d"),
@@ -367,20 +377,26 @@ def scrape_digitimes_with_login() -> list[dict]:
                         }
 
                         # Classify category based on keyword
-                        if "AI" in keyword:
+                        if "AI" in keyword or "ChatGPT" in keyword:
                             article["category"] = "AI產業"
-                        elif "半導體" in keyword:
+                        elif "半導體" in keyword or "Intel" in keyword or "Samsung" in keyword:
                             article["category"] = "半導體"
-                        elif "筆電" in keyword or "PC" in keyword:
+                        elif "筆電" in keyword or "PC" in keyword or "Laptop" in keyword:
                             article["category"] = "PC / NB"
-                        elif "伺服器" in keyword:
-                            article["category"] = "伺服器/雲端"
-                        elif "記憶體" in keyword:
+                        elif "GPU" in keyword or "Nvidia" in keyword:
                             article["category"] = "記憶體/儲存"
-                        elif "面板" in keyword:
+                        elif "伺服器" in keyword or "Server" in keyword:
+                            article["category"] = "伺服器/雲端"
+                        elif "記憶體" in keyword or "DRAM" in keyword:
+                            article["category"] = "記憶體/儲存"
+                        elif "面板" in keyword or "Display" in keyword:
                             article["category"] = "面板/顯示"
-                        elif "財報" in keyword:
+                        elif "iPhone" in keyword or "蘋果" in keyword:
+                            article["category"] = "PC / NB"
+                        elif "財報" in keyword or "營收" in keyword:
                             article["category"] = "財報/法說"
+                        elif "供應鏈" in keyword:
+                            article["category"] = "供應鏈/關稅"
 
                         articles.append(article)
 
