@@ -864,11 +864,10 @@ def _fetch_te_price(slug: str) -> float | None:
 
 
 def _fetch_cobalt_price() -> float | None:
-    """Fetch cobalt price from metals.live API (LME data).
-    Primary: metals.live API (fresh, no cache)
-    Fallback: Trading Economics (if metals.live fails)
+    """Fetch cobalt price from metals.live API (LME data only).
+    Only use metals.live (LME), don't use Trading Economics fallback (unreliable for cobalt).
+    If fetch fails, return None and use cached price instead.
     """
-    # Primary: metals.live (with cache-busting)
     try:
         headers = HEADERS.copy()
         headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -883,20 +882,13 @@ def _fetch_cobalt_price() -> float | None:
             data = r.json()
             if isinstance(data, dict) and "price" in data:
                 price = float(data["price"])
-                if price > 0:
+                if price > 0 and 50000 < price < 60000:  # Sanity check: cobalt should be in this range
                     logger.info(f"Cobalt from metals.live (LME): ${price}/tonne (fresh)")
                     return price
+                else:
+                    logger.warning(f"Cobalt price {price} out of expected range, skipping")
     except Exception as e:
         logger.debug(f"metals.live cobalt fetch failed: {e}")
-
-    # Fallback: Trading Economics
-    try:
-        te_price = _fetch_te_price("cobalt")
-        if te_price and te_price > 0:
-            logger.info(f"Cobalt from Trading Economics (fallback): ${te_price}")
-            return te_price
-    except Exception as e:
-        logger.debug(f"Trading Economics cobalt fallback failed: {e}")
 
     return None
 
