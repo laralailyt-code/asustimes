@@ -520,10 +520,11 @@ def fetch_all_news() -> list[dict]:
                 a["category"]         = "財務風險"
         return articles
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    # Reduced from 8 to 4 workers to avoid overwhelming Google News with concurrent requests
+    with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {executor.submit(_fetch, feed): feed for feed in all_feeds}
         try:
-            for future in as_completed(futures, timeout=90):
+            for future in as_completed(futures, timeout=120):
                 try:
                     results.extend(future.result())
                 except Exception as e:
