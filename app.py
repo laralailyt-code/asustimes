@@ -2342,6 +2342,22 @@ def api_risk_crises():
 _geo_risk_cache: dict = {"data": None, "ts": 0.0}
 _geo_risk_lock  = threading.Lock()
 
+# ── Disaster Risks (Earthquakes, Typhoons, etc.) ────────────────────
+_DISASTER_RISKS = [
+    {"id":"disaster-aomori", "kw":["青森地震","Aomori earthquake","日本地震"],
+     "title":"青森地震","type":"disaster","lat":40.5,"lng":141.0,"region":"日本東北",
+     "impact":"HIGH","supply":"日本北部製造業中斷風險，光學元件/精密製造可能受影響",
+     "affected_materials":["光學元件","精密機械"],"shipping_routes":["日本港口"]},
+    {"id":"disaster-taiwan", "kw":["台灣地震","Taiwan earthquake","花蓮地震"],
+     "title":"台灣地震","type":"disaster","lat":24.0,"lng":121.0,"region":"台灣",
+     "impact":"CRITICAL","supply":"台積電等晶圓廠中斷風險（台灣最高供應鏈風險）",
+     "affected_materials":["晶片","半導體"],"shipping_routes":["台灣港口"]},
+    {"id":"disaster-typhoon", "kw":["颱風警報","typhoon warning","typhoon landing"],
+     "title":"颱風預警","type":"disaster","lat":23.0,"lng":120.0,"region":"西太平洋",
+     "impact":"HIGH","supply":"海運中斷、製造業停工風險",
+     "affected_materials":["晶片","電子產品"],"shipping_routes":["東亞航線","太平洋航線"]},
+]
+
 _GEO_RISKS = [
     {"id":"geo-redsea",  "kw":["Houthi Red Sea ship attack","Red Sea shipping attack"],
      "title":"紅海航運威脅（胡塞武裝）","type":"war","lat":14.5,"lng":42.5,"region":"葉門/紅海",
@@ -2434,7 +2450,7 @@ def _scan_one_geo_risk(risk, headers, cutoff):
 
 
 def _do_geo_scan():
-    """Run parallel geopolitical scan and update cache. Returns results list."""
+    """Run parallel geopolitical AND disaster scan and update cache. Returns results list."""
     from datetime import datetime, timezone, timedelta
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
@@ -2442,10 +2458,11 @@ def _do_geo_scan():
     }
     cutoff = datetime.now(timezone.utc) - timedelta(days=45)
     results = []
-    executor = ThreadPoolExecutor(max_workers=min(2, len(_GEO_RISKS)))  # Limit to 2 parallel (reduce rate-limit triggers)
+    all_risks = _GEO_RISKS + _DISASTER_RISKS  # Include both geopolitical and disaster risks
+    executor = ThreadPoolExecutor(max_workers=min(2, len(all_risks)))  # Limit to 2 parallel (reduce rate-limit triggers)
     try:
         futs = [executor.submit(_scan_one_geo_risk, risk, headers, cutoff)
-                for risk in _GEO_RISKS]
+                for risk in all_risks]
         done, not_done = fut_wait(futs, timeout=60)  # Increased from 20 to 60
         for fut in not_done:
             fut.cancel()
@@ -2466,7 +2483,7 @@ def _do_geo_scan():
         elif _geo_risk_cache["data"] is None:
             _geo_risk_cache["data"] = []
         _geo_risk_cache["ts"] = time.time()
-    logger.info(f"Geopolitical risks detected: {len(results)}/{len(_GEO_RISKS)}")
+    logger.info(f"Geopolitical + Disaster risks detected: {len(results)}/{len(all_risks)}")
     return results
 
 
