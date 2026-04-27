@@ -123,8 +123,9 @@ def _risk_cache_preload_loop():
 
 
 def _digitimes_refresh_loop():
-    """Refresh Digitimes articles every 2 hours (enterprise account anti-detection)."""
-    from scraper import scrape_digitimes_with_login
+    """Refresh all news (including Digitimes from Bing RSS) every 2 hours.
+    Note: Digitimes articles are now sourced from Bing News RSS feeds,
+    so this loop refreshes all articles to ensure Digitimes coverage is up-to-date."""
 
     logger.info("[Digitimes] Background refresh loop starting (2-hour interval)...")
     first_run = True
@@ -132,27 +133,14 @@ def _digitimes_refresh_loop():
     while True:
         try:
             if not first_run:
-                logger.debug("[Digitimes] Waiting 2 hours before next scrape...")
+                logger.debug("[Digitimes] Waiting 2 hours before next refresh...")
                 time.sleep(2 * 3600)  # 2 hours
+            else:
+                time.sleep(30 * 60)  # First refresh at 30 minutes (after main loop starts)
 
-            logger.info("[Digitimes] Starting 2-hour refresh...")
-            dt_articles = scrape_digitimes_with_login()
-
-            if dt_articles:
-                # Merge with existing cache
-                with _cache_lock:
-                    current = list(_cache["articles"])
-                    # Remove old Digitimes articles (older than 24 hours)
-                    cutoff = (datetime.now(TW_TZ) - timedelta(hours=24)).strftime("%Y-%m-%d")
-                    current = [a for a in current if a.get("source") != "Digitimes" or a.get("published", "") >= cutoff]
-                    # Add new Digitimes articles
-                    current.extend(dt_articles)
-                    # Re-sort by date
-                    current.sort(key=lambda a: a.get("published", "") or a.get("fetched_at", ""), reverse=True)
-                    _cache["articles"] = current
-                    _cache["last_updated"] = datetime.now(TW_TZ).strftime("%Y-%m-%d %H:%M:%S")
-
-                logger.info(f"[Digitimes] Merged {len(dt_articles)} articles into cache")
+            logger.info("[Digitimes] Starting 2-hour news refresh (Bing News sources)...")
+            refresh_news()
+            logger.info("[Digitimes] Refresh complete - Digitimes articles updated from Bing News")
         except Exception as e:
             logger.error(f"[Digitimes] Refresh loop error: {e}")
 
