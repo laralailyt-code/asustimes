@@ -877,18 +877,26 @@ def _fetch_te_price(slug: str) -> float | None:
 
 def _fetch_cobalt_price() -> float | None:
     """Fetch cobalt price from metals.live API (LME data).
-    Primary: metals.live API
+    Primary: metals.live API (fresh, no cache)
     Fallback: Trading Economics (if metals.live fails)
     """
-    # Primary: metals.live
+    # Primary: metals.live (with cache-busting)
     try:
-        r = req_lib.get("https://api.metals.live/v1/spot/cobalt", timeout=10)
+        headers = HEADERS.copy()
+        headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        headers["Pragma"] = "no-cache"
+        r = req_lib.get(
+            "https://api.metals.live/v1/spot/cobalt",
+            headers=headers,
+            timeout=10,
+            params={"nocache": int(time.time())}  # Cache-bust with timestamp
+        )
         if r.status_code == 200:
             data = r.json()
             if isinstance(data, dict) and "price" in data:
                 price = float(data["price"])
                 if price > 0:
-                    logger.info(f"Cobalt from metals.live (LME): ${price}")
+                    logger.info(f"Cobalt from metals.live (LME): ${price}/tonne (fresh)")
                     return price
     except Exception as e:
         logger.debug(f"metals.live cobalt fetch failed: {e}")
