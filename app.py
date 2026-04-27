@@ -1257,60 +1257,61 @@ def _fetch_ebaiyin_tungsten() -> tuple:
 
 
 def _fetch_smm_tungsten_powder_price() -> float | None:
-    """Fetch tungsten POWDER (钨粉) price from SMM.
+    """Fetch tungsten POWDER (钨粉) price from SMM using Playwright.
     Source: SMM (上海有色網 - 国产钨粉 domestic tungsten powder)
     Returns price in CNY/kg or None if fetch fails.
     """
     import re
-    import json
     try:
-        # Try SMM API endpoint first (if available)
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto("https://hq.smm.cn/h5/tungsten-powder-price", timeout=15000)
+            page.wait_for_load_state("networkidle", timeout=10000)
+
+            content = page.content()
+            browser.close()
+
+            # Extract average price from "2100 - 2140 (avg: 2120)" format
+            # Pattern: digits - digits with optional average
+            pattern = r'(\d{3,4})\s*-\s*(\d{3,4})'
+            matches = re.findall(pattern, content)
+
+            if matches:
+                # Get first match and calculate average
+                low, high = matches[0]
+                avg_price = (float(low) + float(high)) / 2
+                if 200 < avg_price < 5000:
+                    logger.info(f"Tungsten powder from SMM (Playwright): {avg_price:.0f} CNY/kg")
+                    return avg_price
+    except ImportError:
+        logger.warning("Playwright not installed for SMM tungsten, falling back to requests")
+    except Exception as e:
+        logger.debug(f"Playwright tungsten fetch error: {e}")
+
+    # Fallback: try basic requests if Playwright fails
+    try:
         r = req_lib.get(
             "https://hq.smm.cn/h5/tungsten-powder-price",
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                     "Accept-Language": "zh-CN,zh;q=0.9",
-                     "Accept-Encoding": "gzip, deflate"},
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
             timeout=12
         )
 
-        # Look for price in multiple formats from SMM page
-        # The page contains: 国产钨粉价格, 钨粉出口价格, etc.
-        patterns = [
-            # Try to find data in script tags (common for React apps)
-            r'"avg"\s*:\s*(\d+(?:\.\d+)?)',  # {"avg": 2340}
-            r'"price"\s*:\s*(\d+(?:\.\d+)?)',  # {"price": 2340}
-            r'均价[：:]\s*(\d+(?:\.\d+)?)',  # 均价: 2340
-            r'国产钨粉[^0-9]*(\d{3,4}(?:\.\d+)?)',  # 国产钨粉 2340
-            r'>(\d{3,4}(?:\.\d+)?)\s*<',  # >2340<
-            r'(\d{3,4}(?:\.\d+)?)\s*元/千克',  # 2340 元/千克
-        ]
+        pattern = r'(\d{3,4})\s*-\s*(\d{3,4})'
+        matches = re.findall(pattern, r.text)
 
-        best_price = None
-        for pattern in patterns:
-            try:
-                matches = re.findall(pattern, r.text)
-                for match in matches:
-                    try:
-                        price = float(match.replace(',', ''))
-                        # Validate price range for tungsten powder (200-5000 CNY/kg typical)
-                        if 200 < price < 5000:
-                            best_price = price
-                            break
-                    except (ValueError, TypeError):
-                        continue
-                if best_price:
-                    break
-            except:
-                continue
-
-        if best_price:
-            logger.info(f"Tungsten powder from SMM: {best_price} CNY/kg")
-            return best_price
-
-        logger.warning(f"SMM tungsten powder: could not extract price from page")
+        if matches:
+            low, high = matches[0]
+            avg_price = (float(low) + float(high)) / 2
+            if 200 < avg_price < 5000:
+                logger.info(f"Tungsten powder from SMM (requests fallback): {avg_price:.0f} CNY/kg")
+                return avg_price
     except Exception as e:
-        logger.warning(f"SMM tungsten powder fetch error: {e}")
+        logger.warning(f"SMM tungsten fallback error: {e}")
 
+    logger.warning(f"SMM tungsten powder: could not extract price")
     return None
 
 
