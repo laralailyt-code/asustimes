@@ -141,15 +141,21 @@ _SUPPLY_CHAIN_RISK_KEYWORDS = {
 
 
 def is_chinese_article(title: str, summary: str = "") -> bool:
-    """Check if article is primarily in Chinese (Traditional or Simplified).
-    Returns True if article contains Chinese characters.
+    """Check if article is in Chinese or mixed language (allow Digitimes English articles).
+    Returns True if article contains ANY Chinese characters (title is in Chinese).
+    Digitimes often has English titles with Chinese content, so allow those too.
     """
+    # Check if title has ANY Chinese characters
+    title_has_chinese = any('一' <= char <= '鿿' for char in title)
+    if title_has_chinese:
+        return True
+
+    # If title is English but summary has lots of Chinese, allow it
     text = f"{title} {summary}"
-    # Chinese character ranges: CJK Unified Ideographs
     chinese_char_count = sum(1 for char in text if '一' <= char <= '鿿')
     total_chars = len(text)
-    # Consider Chinese if >20% of chars are Chinese
-    return chinese_char_count > max(5, total_chars * 0.2)
+    # If >15% Chinese chars, consider it Chinese article
+    return chinese_char_count > total_chars * 0.15
 
 
 def classify_category(title: str, summary: str = "", hint: str = "") -> str | None:

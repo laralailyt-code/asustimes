@@ -1512,16 +1512,9 @@ def _refresh_live_prices():
         with _live_cache_lock:
             prev = list(_live_commodity_cache.get(csv_name, []))
 
-        # Initialize with 1-year yfinance history if cache is empty
+        # Use LME API only (yfinance futures have unreliable units)
         if not prev:
-            yf_symbols = {"Tin": "ZS=F", "Nickel": "NI=F", "Zinc": "ZC=F"}
-            yf_symbol = yf_symbols.get(display_name)
-            if yf_symbol:
-                prev = _fetch_1year_lme_history(yf_symbol, multiplier=1.0)
-                if prev:
-                    logger.info(f"Initialized {display_name} with {len(prev)} points from yfinance (1-year history)")
-                else:
-                    logger.info(f"Initializing {display_name} with LME API only (yfinance unavailable)")
+            logger.info(f"Initializing {display_name} with LME API only (empty history)")
 
         price = _fetch_lme_metal_price(display_name, api_slug)
         if price is not None:
