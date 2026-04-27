@@ -958,12 +958,6 @@
       <span class="stat-label">科技新報</span>
       <span class="stat-value" id="statTechnews">—</span>
     </div>
-    <div class="stat-sep"></div>
-    <div class="stat-item">
-      <div class="stat-dot" style="background:#f87171"></div>
-      <span class="stat-label">Tom's HW</span>
-      <span class="stat-value" id="statToms">—</span>
-    </div>
     <span class="last-update" id="lastUpdate">更新中…</span>
   </div>
 
@@ -983,7 +977,6 @@
     <button class="source-pill" data-source="工商時報">工商時報</button>
     <button class="source-pill" data-source="科技新報">科技新報</button>
     <button class="source-pill" data-source="iThome">iThome</button>
-    <button class="source-pill" data-source="Tom's Hardware">Tom's HW</button>
     <button class="source-pill" data-source="Global Tech">Global</button>
     <button class="source-pill" data-source="Yahoo財經">Yahoo</button>
   </div>
@@ -1295,7 +1288,6 @@ const SRC_CLASS = {
   '經濟日報':        'src-udn',
   '科技新報':        'src-technews',
   'iThome':         'src-ithome',
-  "Tom's Hardware": 'src-toms',
   'Yahoo財經':       'src-yahoo',
   'Yahoo新聞':       'src-yahoo',
   '電腦王':          'src-technews',
@@ -1382,7 +1374,6 @@ async function loadNews() {
       document.getElementById('statDigitimes').textContent = data.src_counts['Digitimes']     || 0;
       document.getElementById('statCtee').textContent      = data.src_counts['工商時報']       || 0;
       document.getElementById('statTechnews').textContent  = data.src_counts['科技新報']       || 0;
-      document.getElementById('statToms').textContent      = data.src_counts["Tom's Hardware"] || 0;
     }
 
     // Update filtered result count
@@ -1409,7 +1400,6 @@ async function loadStats() {
     document.getElementById('statDigitimes').textContent = data.sources['Digitimes']     || 0;
     document.getElementById('statCtee').textContent      = data.sources['工商時報']       || 0;
     document.getElementById('statTechnews').textContent  = data.sources['科技新報']       || 0;
-    document.getElementById('statToms').textContent      = data.sources["Tom's Hardware"] || 0;
 
     document.getElementById('cnt-全部').textContent = data.total;
     CATS.forEach(cat => {
