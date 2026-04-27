@@ -2273,6 +2273,7 @@ const _RS = {
   filters: { disaster:true, war:true, power:true, strike:true },
   selectedEvent: null,
   viewMode: 'markers',
+  mapContext: 'events',    // 'events' | 'suppliers' | 'riskindex' - controls what markers to show
   eventMarkers: [], supMarkers: [],
   heatLayer: null,
   supFilter: null,         // 'danger' | 'watch' | 'safe' | null
@@ -2313,7 +2314,7 @@ function initRiskMap() {
     : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
   _riskMap = L.map('riskMap', { zoomControl: true, attributionControl: false, minZoom: 2 });
   L.tileLayer(tile, { maxZoom: 18 }).addTo(_riskMap);
-  _riskMap.setView([25, 112], 3);
+  _riskMap.setView([20, 0], 2);  // Global view: center at equator, zoom 2 shows entire world
 }
 
 // ── Region fly ───────────────────────────────────────────────
@@ -2371,7 +2372,9 @@ function switchRiskSideTab(tab) {
     const c = document.getElementById('rst-content-'+t);
     if (c) c.style.display = t===tab ? 'flex' : 'none';
   });
-  // Re-render on switch to ensure data is shown even if loadRisk was still in flight
+  // Set map context and re-render
+  _RS.mapContext = tab;  // 'events', 'suppliers', or 'riskindex'
+  _renderRiskMarkers();  // Re-render map based on new context
   if (tab === 'suppliers') _renderSupList();
   if (tab === 'riskindex') _renderRiskIndex();
 }
@@ -2437,8 +2440,17 @@ function _eventPopup(ev) {
     ev.status? ['狀態', ev.status] : null,
     ev.time  ? ['時間', ev.time.slice?.(0,10)||ev.time] : null,
   ].filter(Boolean).map(([k,v])=>`<div class="rmap-popup-row"><span class="pk">${k}</span><span class="pv">${v}</span></div>`).join('');
+
+  const materialsHtml = (ev.affected_materials && ev.affected_materials.length)
+    ? `<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--border)"><div style="font-size:0.65rem;font-weight:600;color:var(--text-primary);margin-bottom:3px">🔴 受影響物料：</div><div style="display:flex;flex-wrap:wrap;gap:3px">${ev.affected_materials.map(m=>`<span style="background:var(--bg-secondary);padding:2px 6px;border-radius:3px;font-size:0.6rem;color:var(--text-secondary)">${m}</span>`).join('')}</div></div>`
+    : '';
+
+  const shippingHtml = (ev.shipping_routes && ev.shipping_routes.length)
+    ? `<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--border)"><div style="font-size:0.65rem;font-weight:600;color:var(--text-primary);margin-bottom:3px">⛴️ 受影響航運：</div><div style="display:flex;flex-wrap:wrap;gap:3px">${ev.shipping_routes.map(r=>`<span style="background:var(--bg-secondary);padding:2px 6px;border-radius:3px;font-size:0.6rem;color:var(--text-secondary)">${r}</span>`).join('')}</div></div>`
+    : '';
+
   const srcHtml = ev.source ? `<div style="margin-top:5px;font-size:0.62rem;color:var(--text-muted)">📎 來源：${ev.sourceUrl?`<a href="${ev.sourceUrl}" target="_blank" style="color:var(--accent-2)">${ev.source}</a>`:ev.source}</div>` : '';
-  return `<div class="rmap-popup"><div class="rmap-popup-type" style="color:${clr}">${lbl}</div><div class="rmap-popup-title">${ev.title}</div><div class="rmap-popup-rows">${rows}</div>${ev.supply?`<div class="rmap-popup-supply">📦 ${ev.supply}</div>`:''}${srcHtml}</div>`;
+  return `<div class="rmap-popup"><div class="rmap-popup-type" style="color:${clr}">${lbl}</div><div class="rmap-popup-title">${ev.title}</div><div class="rmap-popup-rows">${rows}</div>${ev.supply?`<div class="rmap-popup-supply">📦 ${ev.supply}</div>`:''}${materialsHtml}${shippingHtml}${srcHtml}</div>`;
 }
 
 function _supPopup(s) {
@@ -2454,23 +2466,48 @@ function _renderRiskMarkers() {
   [..._RS.eventMarkers, ..._RS.supMarkers].forEach(m => _riskMap.removeLayer(m));
   _RS.eventMarkers = []; _RS.supMarkers = [];
   if (_RS.viewMode === 'heatmap') return;
-  _RS.events.filter(e => _eventVisible(e) && e.lat && e.lng).forEach(ev => {
-    const m = L.marker([ev.lat, ev.lng], { icon: _makeRiskIcon(ev) }).addTo(_riskMap);
-    m.bindPopup(_eventPopup(ev), { maxWidth: 260 });
-    m.on('click', () => { _RS.selectedEvent = ev.id; _renderEventList(); });
-    _RS.eventMarkers.push(m);
-  });
-  _RS.suppliers.filter(s => s.lat && s.lng).forEach(s => {
-    const m = L.marker([s.lat, s.lng], { icon: _makeSupIcon(s) }).addTo(_riskMap);
-    m.bindPopup(_supPopup(s), { maxWidth: 240 });
-    _RS.supMarkers.push(m);
-  });
+
+  // Only show events when in events tab
+  if (_RS.mapContext === 'events' || !_RS.mapContext) {
+    _RS.events.filter(e => _eventVisible(e) && e.lat && e.lng).forEach(ev => {
+      const m = L.marker([ev.lat, ev.lng], { icon: _makeRiskIcon(ev) }).addTo(_riskMap);
+      m.bindPopup(_eventPopup(ev), { maxWidth: 260 });
+      m.on('click', () => { _RS.selectedEvent = ev.id; _renderEventList(); });
+      _RS.eventMarkers.push(m);
+    });
+  }
+
+  // Only show suppliers when in suppliers tab
+  if (_RS.mapContext === 'suppliers') {
+    _RS.suppliers.filter(s => s.lat && s.lng).forEach(s => {
+      const m = L.marker([s.lat, s.lng], { icon: _makeSupIcon(s) }).addTo(_riskMap);
+      m.bindPopup(_supPopup(s), { maxWidth: 240 });
+      _RS.supMarkers.push(m);
+    });
+  }
+
+  // Risk index view: show both but dimmed
+  if (_RS.mapContext === 'riskindex') {
+    _RS.events.filter(e => _eventVisible(e) && e.lat && e.lng).forEach(ev => {
+      const m = L.marker([ev.lat, ev.lng], { icon: _makeRiskIcon(ev) }).addTo(_riskMap);
+      m.bindPopup(_eventPopup(ev), { maxWidth: 260 });
+      m.on('click', () => { _RS.selectedEvent = ev.id; _renderEventList(); });
+      _RS.eventMarkers.push(m);
+    });
+    _RS.suppliers.filter(s => s.lat && s.lng).forEach(s => {
+      const m = L.marker([s.lat, s.lng], { icon: _makeSupIcon(s) }).addTo(_riskMap);
+      m.bindPopup(_supPopup(s), { maxWidth: 240 });
+      _RS.supMarkers.push(m);
+    });
+  }
 }
 
 function _renderHeatmap() {
   if (!_riskMap) return;
   if (_RS.heatLayer) { _riskMap.removeLayer(_RS.heatLayer); _RS.heatLayer = null; }
   if (_RS.viewMode === 'markers') return;
+  // Only show heatmap for events (not suppliers)
+  if (_RS.mapContext !== 'events' && _RS.mapContext !== undefined) return;
   if (typeof L.heatLayer !== 'function') return;
   const pts = _RS.events.filter(e => _eventVisible(e) && e.lat && e.lng)
     .map(e => [e.lat, e.lng, { CRITICAL:1.0, HIGH:0.7, MED:0.45, LOW:0.2 }[e.impact]||0.3]);
@@ -2552,7 +2589,10 @@ function _renderEventList() {
   weekOrder.forEach(wkLabel => {
     if (!weeks[wkLabel]) return;
     html += `<div style="padding:4px 0.65rem 2px;font-size:0.67rem;font-weight:700;color:var(--accent-2);background:var(--bg-card);border-bottom:1px solid var(--border);flex-shrink:0;letter-spacing:0.04em">📅 ${wkLabel} <span style="font-weight:400;color:var(--text-muted)">(${weeks[wkLabel].length}件)</span></div>`;
-    html += weeks[wkLabel].map(ev => `
+    html += weeks[wkLabel].map(ev => {
+      const matHtml = (ev.affected_materials && ev.affected_materials.length) ? `<div style="margin-top:3px;font-size:0.6rem;color:var(--text-secondary)">🔴 物料: ${ev.affected_materials.slice(0,3).join(' · ')}</div>` : '';
+      const shipHtml = (ev.shipping_routes && ev.shipping_routes.length) ? `<div style="margin-top:2px;font-size:0.6rem;color:var(--text-secondary)">⛴️ 航運: ${ev.shipping_routes.slice(0,2).join(' · ')}</div>` : '';
+      return `
     <div class="recard rc-${ev.type}${_RS.selectedEvent===ev.id?' re-sel':''}" onclick="focusRiskEvent('${ev.id}')">
       <div class="recard-top">
         <div class="recard-title">${icons[ev.type]||'⚠️'} ${esc(ev.title)}</div>
@@ -2565,7 +2605,9 @@ function _renderEventList() {
         ${ev.time   ? `<span>🕐${(ev.time+'').slice(0,10)}</span>` : ''}
         ${ev.source ? `<span style="color:var(--text-muted);opacity:.7">📎${esc(ev.source)}</span>` : ''}
       </div>
-    </div>`).join('');
+      ${matHtml}${shipHtml}
+    </div>`;
+    }).join('');
   });
   list.innerHTML = html;
 }
@@ -2592,10 +2634,10 @@ function _renderSupList() {
     <div class="scard-v2 sc-${s.riskStatus}" onclick="${s.lat?`focusSupplierRisk(${s._idx})`:''}">
       <div class="scard-v2-top">
         <div class="scard-v2-name">📍 ${esc(s.region)}</div>
-        <span class="sc-badge ${s.riskStatus==='danger'?'scb-danger':s.riskStatus==='watch'?'scb-watch':'scb-safe'}">${s.riskStatus==='danger'?'高風險':s.riskStatus==='watch'?'監控中':'安全'}</span>
+        <span class="sc-badge ${s.riskStatus==='danger'?'scb-danger':s.riskStatus==='watch'?'scb-watch':'scb-safe'}">${s.riskStatus==='danger'?'🚨 高風險':s.riskStatus==='watch'?'⚠️ 監控中':'✅ 安全'}</span>
       </div>
       <div class="scard-v2-sub">🔩 ${esc(s.part_category||'—')}${s.tier?` · ${esc(s.tier)}`:''}</div>
-      ${(s.nearbyEvents||[]).length ? `<div class="scard-v2-alerts">${s.nearbyEvents.slice(0,2).map(a=>`<span class="sc-alert-tag">${esc(a)}</span>`).join('')}</div>` : ''}
+      ${(s.nearbyEvents||[]).length ? `<div class="scard-v2-alerts" style="border-top:1px solid var(--border);padding-top:4px;margin-top:4px">${(s.riskStatus==='danger'?'<div style="font-size:0.6rem;color:var(--text-muted);margin-bottom:3px">❌ 風險來源：</div>':'')}<div style="display:flex;flex-direction:column;gap:2px">${s.nearbyEvents.slice(0,3).map(a=>`<span class="sc-alert-tag" style="font-size:0.62rem">${esc(a)}</span>`).join('')}</div></div>` : '<div style="font-size:0.6rem;color:var(--text-muted);margin-top:4px">✅ 周邊無近期風險事件</div>'}
     </div>`).join('');
 }
 

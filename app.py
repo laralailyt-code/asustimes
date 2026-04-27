@@ -2077,26 +2077,33 @@ _geo_risk_lock  = threading.Lock()
 _GEO_RISKS = [
     {"id":"geo-redsea",  "kw":["Houthi Red Sea ship attack","Red Sea shipping attack"],
      "title":"紅海航運威脅（胡塞武裝）","type":"war","lat":14.5,"lng":42.5,"region":"葉門/紅海",
-     "impact":"CRITICAL","supply":"亞歐航程延長10-14天，運費上漲200-400%，建議改走好望角或提前備貨"},
+     "impact":"CRITICAL","supply":"亞歐航程延長10-14天，運費上漲200-400%，建議改走好望角或提前備貨",
+     "affected_materials":["晶片","電子產品","汽車零件"],"shipping_routes":["蘇伊士運河","紅海","亞歐航線"]},
     {"id":"geo-taiwan",  "kw":["PLA Taiwan Strait military","China Taiwan military exercise"],
      "title":"台灣海峽地緣緊張","type":"war","lat":24.0,"lng":122.0,"region":"東亞",
-     "impact":"HIGH","supply":"全球半導體（TSMC等）供應鏈最高風險區"},
+     "impact":"HIGH","supply":"全球半導體（TSMC等）供應鏈最高風險區",
+     "affected_materials":["晶片","半導體","記憶體"],"shipping_routes":["台灣海峽","東北亞航線"]},
     {"id":"geo-iran",    "kw":["Iran Israel attack war","Iran US military strike","Iran attack Israel"],
      "title":"伊朗地區衝突","type":"war","lat":32.0,"lng":53.0,"region":"中東/波斯灣",
-     "impact":"HIGH","supply":"荷姆茲海峽石油供應威脅，波斯灣航運風險"},
+     "impact":"HIGH","supply":"荷姆茲海峽石油供應威脅，波斯灣航運風險",
+     "affected_materials":["石油","天然氣","化工品"],"shipping_routes":["荷姆茲海峽","波斯灣","中東航線"]},
     {"id":"geo-ukraine", "kw":["Ukraine Russia war attack","Russia Ukraine missile"],
      "title":"俄烏戰爭","type":"war","lat":49.0,"lng":32.0,"region":"東歐",
-     "impact":"CRITICAL","supply":"穀物、化肥、氖氣供應中斷；黑海航運受限"},
+     "impact":"CRITICAL","supply":"穀物、化肥、氖氣供應中斷；黑海航運受限",
+     "affected_materials":["氖氣","鈀","穀物","化肥"],"shipping_routes":["黑海","烏克蘭港口","歐亞航線"]},
     {"id":"geo-drc",     "kw":["DRC Congo M23 conflict cobalt","Congo mineral conflict"],
      "title":"剛果衝突（礦產風險）","type":"war","lat":-1.5,"lng":29.0,"region":"中非",
-     "impact":"HIGH","supply":"鈷、鋰等電池礦產供應不穩定"},
+     "impact":"HIGH","supply":"鈷、鋰等電池礦產供應不穩定",
+     "affected_materials":["鈷","鋰","銅礦"],"shipping_routes":["中非港口","非洲航線"]},
     {"id":"geo-myanmar", "kw":["Myanmar civil war military","Myanmar junta conflict"],
      "title":"緬甸內戰","type":"war","lat":19.8,"lng":96.2,"region":"東南亞",
-     "impact":"HIGH","supply":"稀土、天然氣出口受阻；紡織供應鏈中斷"},
+     "impact":"HIGH","supply":"稀土、天然氣出口受阻；紡織供應鏈中斷",
+     "affected_materials":["稀土","天然氣","紡織品"],"shipping_routes":["馬六甲海峽","仰光港"]},
     {"id":"geo-india-pak",
      "kw":["India Pakistan military tension border","India Pakistan conflict"],
      "title":"印巴邊境緊張","type":"war","lat":30.0,"lng":71.0,"region":"南亞",
-     "impact":"MED","supply":"南亞製造業（電子/紡織）物流中斷風險"},
+     "impact":"MED","supply":"南亞製造業（電子/紡織）物流中斷風險",
+     "affected_materials":["紡織品","電子零件"],"shipping_routes":["南亞港口","阿拉伯海"]},
 ]
 
 def _scan_one_geo_risk(risk, headers, cutoff):
@@ -2435,8 +2442,22 @@ _REGION_TO_CLUSTERS = {
 }
 
 _REGION_LABELS = {
-    "TW": "🇹🇼 台灣", "CN": "🇨🇳 中國", "KR": "🇰🇷 韓國",
-    "JP": "🇯🇵 日本", "US": "🇺🇸 美國", "MY": "🇲🇾 東南亞", "EU": "🇪🇺 歐洲",
+    # Cluster regions
+    "TW": "🇹🇼 台灣 (Taiwan)",
+    "CN": "🇨🇳 中國 (China)",
+    "KR": "🇰🇷 韓國 (South Korea)",
+    "JP": "🇯🇵 日本 (Japan)",
+    "US": "🇺🇸 美國 (USA)",
+    "MY": "🇲🇾 馬來西亞 (Malaysia)",
+    "EU": "🇪🇺 歐洲 (Europe)",
+    # Geopolitical regions
+    "東亞": "🗺️ 東亞 (East Asia)",
+    "東南亞": "🗺️ 東南亞 (Southeast Asia)",
+    "南亞": "🗺️ 南亞 (South Asia)",
+    "中東/波斯灣": "🗺️ 中東/波斯灣 (Middle East/Persian Gulf)",
+    "葉門/紅海": "🗺️ 葉門/紅海 (Yemen/Red Sea)",
+    "東歐": "🗺️ 東歐 (Eastern Europe)",
+    "中非": "🗺️ 中非 (Central Africa)",
 }
 
 # Map broader geopolitical/event regions to specific fab cluster regions
