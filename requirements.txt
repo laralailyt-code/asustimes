@@ -4,3 +4,5 @@ beautifulsoup4>=4.12
 lxml>=5.0
 gunicorn>=21.0
 yfinance>=0.2.36
+anthropic>=0.7.0
+playwright>=1.40
