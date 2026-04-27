@@ -452,12 +452,18 @@ def scrape_digitimes_with_login() -> list[dict]:
                         continue
 
                     soup = BeautifulSoup(r.content, "html.parser")
+                    all_links = soup.find_all("a", href=True)
                     found_count = 0
-                    for link in soup.find_all("a", href=True):
+                    logger.debug(f"[Digitimes] Found {len(all_links)} total links on page {page}")
+                    for link in all_links:
                         href = link.get("href", "")
                         title = link.get_text(strip=True)
 
-                        if "/tech/" in href and len(title) > 10 and href not in seen_urls:
+                        # Accept: /tech/, /news/, /events/, or any digitimes.com article URL
+                        is_valid_url = (href.startswith("http") and "digitimes.com" in href) or \
+                                      any(marker in href for marker in ["/tech/", "/news/", "/events/"])
+
+                        if is_valid_url and len(title) > 10 and href not in seen_urls:
                             full_url = href if href.startswith("http") else f"https://www.digitimes.com.tw{href}"
                             seen_urls.add(href)
 
