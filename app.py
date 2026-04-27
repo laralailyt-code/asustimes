@@ -2941,16 +2941,32 @@ def api_risk():
 
             risk_found = False
             if rtype == "disaster":
-                # ONLY typhoon/flood count as disaster risk (per user requirement)
-                # Other disasters (earthquake, tsunami, etc.) are NOT counted as supply chain risk
-                if any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
-                    # Typhoon/flood only count if: (a) not pure forecast, AND (b) has severity keywords
-                    # AND (c) within 3 days (as per user requirement: "洪水 氣旋 三天內才顯示")
+                # Disaster risk: two categories
+                # (1) Earthquakes: 5.0+ magnitude, no time limit
+                # (2) Typhoon/flood/tsunami/blizzard: need severity keywords + within 3 days
+
+                is_earthquake = any(ek.lower() in text for ek in ["地震", "earthquake", "magnitude", "震度"])
+
+                if is_earthquake:
+                    # Earthquake: check for magnitude >= 5.0
+                    # Look for patterns like "5.0", "5級", "5强", etc.
+                    import re as _re
+                    magnitude_patterns = [
+                        r'(?:magnitude|震度|級)\s*[5-9]',  # magnitude 5-9
+                        r'[5-9](?:\.[0-9])?(?:級|强|magnitude)?',  # 5.0-9.9 magnitude
+                    ]
+                    if any(_re.search(pat, text, _re.IGNORECASE) for pat in magnitude_patterns):
+                        risk_found = True
+                        logger.debug(f"Earthquake 5.0+ detected: {text[:60]}")
+
+                elif any(tk.lower() in text for tk in _TYPHOON_KEYWORDS):
+                    # Typhoon/flood/tsunami/blizzard: need severity + 3 days limit
                     if days_old > 3:
-                        continue  # Skip typhoon/flood events older than 3 days
+                        continue  # Skip events older than 3 days
                     if not is_typhoon_forecast and any(sk.lower() in text for sk in _DISASTER_SEVERITY_KEYWORDS):
                         risk_found = True
-                # All other disasters: skip (continue to next risk type)
+                        logger.debug(f"Severe disaster within 3 days: {text[:60]}")
+                # Other disasters not mentioned above: skip
             elif any(rk.lower() in text for rk in rkws):
                 risk_found = True
 
