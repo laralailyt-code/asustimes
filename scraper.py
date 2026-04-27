@@ -788,6 +788,7 @@ FEEDS = [
     {"url": "https://www.ithome.com.tw/rss",                  "source": "iThome",      "hint": "科技"},
     {"url": "https://feeds.feedburner.com/cool3c-all",        "source": "電腦王",      "hint": "科技"},
     {"url": "https://tw.news.yahoo.com/rss/finance",          "source": "Yahoo財經",   "hint": "科技"},
+    {"url": "https://tw.news.yahoo.com/rss/tech",             "source": "Yahoo科技",   "hint": "科技"},
     {"url": "https://www.ctee.com.tw/rss.xml",                "source": "工商時報",    "hint": "科技"},
 
     # ── Bing News 搜尋（site: 操作符有效）────────────────────────────────────
