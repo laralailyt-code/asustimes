@@ -191,56 +191,66 @@ def parse_date(raw: str) -> str:
 
 # ── Generic RSS parser ────────────────────────────────────────────────────────
 def parse_rss(url: str, source_name: str, hint: str = "") -> list[dict]:
+    import time
     articles = []
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
-        resp.encoding = "utf-8"
-        soup = BeautifulSoup(resp.content, "xml")
-        items = soup.find_all("item")
-        logger.info(f"  {source_name}: {len(items)} items")
+    # Retry logic for transient network failures (especially Google News SSL issues)
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            # Increased timeout for Google News which can be slow
+            timeout = 20 if "news.google.com" in url else TIMEOUT
+            resp = requests.get(url, headers=HEADERS, timeout=timeout)
+            resp.encoding = "utf-8"
+            soup = BeautifulSoup(resp.content, "xml")
+            items = soup.find_all("item")
+            logger.info(f"  {source_name}: {len(items)} items (attempt {attempt+1})")
 
-        for item in items:
-            title_el = item.find("title")
-            link_el  = item.find("link")
-            desc_el  = item.find("description")
-            date_el  = item.find("pubDate")
-            src_el   = item.find("source")
+            # Successfully fetched, now parse items
+            for item in items:
+                title_el = item.find("title")
+                link_el  = item.find("link")
+                desc_el  = item.find("description")
+                date_el  = item.find("pubDate")
+                src_el   = item.find("source")
 
-            title    = clean(title_el.get_text() if title_el else "")
-            raw_url  = link_el.get_text(strip=True) if link_el else ""
-            summary  = clean(desc_el.get_text() if desc_el else "")[:220]
-            pub_date = parse_date(date_el.get_text() if date_el else "")
+                title    = clean(title_el.get_text() if title_el else "")
+                raw_url  = link_el.get_text(strip=True) if link_el else ""
+                summary  = clean(desc_el.get_text() if desc_el else "")[:220]
+                pub_date = parse_date(date_el.get_text() if date_el else "")
 
-            if len(title) < 8:
-                continue
+                if len(title) < 8:
+                    continue
 
-            # Strip source name suffix (e.g., "Article Title - Digitimes")
-            # but only if stripped result has meaningful length
-            if " - " in title or " – " in title:
-                stripped = re.sub(r"\s*[-–]\s*[^-–]{2,}\s*$", "", title).strip()
-                if len(stripped) >= 4:
-                    title = stripped
+                # Strip source name suffix (e.g., "Article Title - Digitimes")
+                if " - " in title or " – " in title:
+                    stripped = re.sub(r"\s*[-–]\s*[^-–]{2,}\s*$", "", title).strip()
+                    if len(stripped) >= 4:
+                        title = stripped
 
-            if len(title) < 8:
-                continue
+                if len(title) < 8:
+                    continue
 
-            category = classify_category(title, summary, hint)
-            if category is None:
-                continue  # not tech-relevant, skip
+                category = classify_category(title, summary, hint)
+                if category is None:
+                    continue  # not tech-relevant, skip
 
-            articles.append({
-                "source":     source_name,
-                "source_url": raw_url,
-                "title":      title,
-                "summary":    summary,
-                "category":   category,
-                "published":  pub_date,
-                "fetched_at": datetime.now(TW_TZ).strftime("%Y-%m-%d %H:%M:%S"),
-                "provider":   clean(src_el.get_text() if src_el else source_name),
-            })
-
-    except Exception as e:
-        logger.warning(f"RSS failed ({source_name}): {e}")
+                articles.append({
+                    "source":     source_name,
+                    "source_url": raw_url,
+                    "title":      title,
+                    "summary":    summary,
+                    "category":   category,
+                    "published":  pub_date,
+                    "fetched_at": datetime.now(TW_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+                    "provider":   clean(src_el.get_text() if src_el else source_name),
+                })
+            break  # Success, exit retry loop
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logger.debug(f"  {source_name} attempt {attempt+1} failed, retrying in 2s: {type(e).__name__}")
+                time.sleep(2)
+            else:
+                logger.warning(f"RSS failed ({source_name}) after {max_retries} attempts: {type(e).__name__}")
 
     return articles
 
