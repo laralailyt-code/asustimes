@@ -154,31 +154,29 @@ def translate_to_chinese(title: str, summary: str = "") -> tuple[str, str]:
     if is_chinese_text(title) and is_chinese_text(summary):
         return title, summary
 
-    # Method 1: google-translate-py (faster)
+    # Method 1: google-translate-py (faster, with timeout protection)
     try:
         from google_translate_py import Translator
         translator = Translator()
         result = translator.translate(title, 'en', 'zh-TW')
-        translated_title = result['text']
-        if translated_title and translated_title != title:
-            logger.debug(f"[google-translate-py] OK: {title[:30]}... → {translated_title[:30]}...")
+        translated_title = result['text'] if result else title
+        if translated_title and translated_title != title and len(translated_title) > 2:
             return translated_title, summary
     except Exception as e:
-        logger.debug(f"google-translate-py error: {type(e).__name__}")
+        logger.warning(f"[TRANS] google-translate-py failed ({type(e).__name__}): {str(e)[:50]}")
 
     # Method 2: google-trans-new (fallback)
     try:
         from google_trans_new import google_translator
         translator = google_translator()
         translated_title = translator.translate(title, lang_src='en', lang_tgt='zh-TW')
-        if translated_title and translated_title != title:
-            logger.debug(f"[google-trans-new] OK: {title[:30]}... → {translated_title[:30]}...")
+        if translated_title and translated_title != title and len(translated_title) > 2:
             return translated_title, summary
     except Exception as e:
-        logger.debug(f"google-trans-new error: {type(e).__name__}")
+        logger.warning(f"[TRANS] google-trans-new failed ({type(e).__name__}): {str(e)[:50]}")
 
     # Fallback: Keep English
-    logger.debug(f"Translation failed, keep English: {title[:40]}...")
+    logger.debug(f"[TRANS] All methods failed, keeping English: {title[:40]}...")
     return title, summary
 
 
