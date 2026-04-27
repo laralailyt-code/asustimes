@@ -2376,10 +2376,10 @@ def api_commodity_history():
 _SUPPLY_CHAIN_CLUSTERS = [
     {"id": "hsinchu",    "name": "新竹",     "name_en": "Hsinchu",        "lat": 24.76, "lng": 120.99, "industries": ["半導體", "IC設計"],      "region": "TW"},
     {"id": "taichung",   "name": "台中",     "name_en": "Taichung",       "lat": 24.15, "lng": 120.68, "industries": ["精密製造", "電子"],       "region": "TW"},
-    {"id": "shenzhen",   "name": "深圳",     "name_en": "Shenzhen",       "lat": 22.54, "lng": 114.06, "industries": ["消費電子", "PCB"],         "region": "CN"},
-    {"id": "kunshan",    "name": "昆山",     "name_en": "Kunshan",        "lat": 31.39, "lng": 121.16, "industries": ["PCB", "NB代工"],          "region": "CN"},
-    {"id": "zhengzhou",  "name": "鄭州",     "name_en": "Zhengzhou",      "lat": 34.75, "lng": 113.62, "industries": ["手機組裝", "EMS"],         "region": "CN"},
-    {"id": "shanghai",   "name": "上海",     "name_en": "Shanghai",       "lat": 31.23, "lng": 121.47, "industries": ["汽車電子", "IC設計"],      "region": "CN"},
+    {"id": "shenzhen",   "name": "深圳",     "name_en": "Shenzhen",       "lat": 22.54, "lng": 114.06, "industries": ["消費電子", "PCB"],         "region": "CN", "region_macro": "華南", "region_city": "深圳"},
+    {"id": "kunshan",    "name": "昆山",     "name_en": "Kunshan",        "lat": 31.39, "lng": 121.16, "industries": ["PCB", "NB代工"],          "region": "CN", "region_macro": "華東", "region_city": "昆山"},
+    {"id": "zhengzhou",  "name": "鄭州",     "name_en": "Zhengzhou",      "lat": 34.75, "lng": 113.62, "industries": ["手機組裝", "EMS"],         "region": "CN", "region_macro": "華中", "region_city": "鄭州"},
+    {"id": "shanghai",   "name": "上海",     "name_en": "Shanghai",       "lat": 31.23, "lng": 121.47, "industries": ["汽車電子", "IC設計"],      "region": "CN", "region_macro": "華東", "region_city": "上海"},
     {"id": "penang",     "name": "檳城",     "name_en": "Penang",         "lat": 5.41,  "lng": 100.33, "industries": ["IC封測", "電子製造"],      "region": "MY"},
     {"id": "pyeongtaek", "name": "平澤",     "name_en": "Pyeongtaek",     "lat": 36.99, "lng": 127.11, "industries": ["DRAM", "NAND Flash"],     "region": "KR"},
     {"id": "icheon",     "name": "利川",     "name_en": "Icheon",         "lat": 37.27, "lng": 127.44, "industries": ["DRAM", "記憶體"],          "region": "KR"},
@@ -2433,6 +2433,10 @@ _REGION_TO_CLUSTERS = {
     "台灣": ["hsinchu", "taichung"],  # 台灣供應商集中在新竹、台中
     "台北": ["hsinchu"],  # 台北新竹相近
     "中國大陸": ["shenzhen", "kunshan", "zhengzhou", "shanghai"],  # 中國集群
+    # 中國宏觀地區分層
+    "華東": ["shanghai", "kunshan"],  # 上海、昆山
+    "華南": ["shenzhen"],  # 深圳
+    "華中": ["zhengzhou"],  # 鄭州
     "日本": ["kumamoto", "osaka"],  # 日本集群
     "韓國": ["pyeongtaek", "icheon"],  # 韓國集群
     "馬來西亞": ["penang"],  # 馬來西亞集群
@@ -2450,6 +2454,10 @@ _REGION_LABELS = {
     "US": "🇺🇸 美國 (USA)",
     "MY": "🇲🇾 馬來西亞 (Malaysia)",
     "EU": "🇪🇺 歐洲 (Europe)",
+    # China macro regions
+    "華東": "📍 華東 (East China)",
+    "華南": "📍 華南 (South China)",
+    "華中": "📍 華中 (Central China)",
     # Geopolitical regions
     "東亞": "🗺️ 東亞 (East Asia)",
     "東南亞": "🗺️ 東南亞 (Southeast Asia)",
