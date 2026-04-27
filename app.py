@@ -1557,19 +1557,11 @@ def _refresh_live_prices():
                                   "url":   "https://www.lme.com"}
         logger.info(f"Aluminum: {len(prev)} historical points (latest: {aluminum_val} USD/tonne on {today})")
     else:
-        # If fetch fails, still update today with last known price
-        existing_dates = {d for d, _ in prev}
-        if today not in existing_dates:
-            last_price = prev[-1][1] if prev else None
-            if last_price is not None:
-                prev.append((today, last_price))
-                logger.warning(f"Aluminum fetch failed, using last known price {last_price} for {today}")
-            else:
-                logger.error(f"Aluminum fetch failed and no historical data available for {today}")
+        # If fetch fails, preserve data without appending stale prices
         fresh[aluminum_name] = prev
-        sources[aluminum_name] = {"label": "LME (cached)",
+        sources[aluminum_name] = {"label": "LME (verified data only)",
                                   "url":   "https://www.lme.com"}
-        logger.warning(f"Aluminum fetch failed, preserved data ({len(prev)} points)")
+        logger.warning(f"Aluminum fetch failed, preserved verified data only ({len(prev)} points)")
 
     logger.info("[REFRESH] Starting Tungsten Powder (SMM 国产钨粉 only)...")
     tungsten_name = "鎢"
