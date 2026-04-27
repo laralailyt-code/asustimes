@@ -1624,7 +1624,6 @@ def _refresh_live_prices():
         sources[cobalt_name] = {"label": "LME (fetch failed)",
                                 "url":   "https://www.lme.com"}
         logger.warning(f"✗ Cobalt: LME API failed, no data for {today}")
-        logger.warning(f"Cobalt fetch failed, preserved verified data only ({len(prev)} points)")
 
     logger.info("[REFRESH] Starting Aluminum (LME source)...")
     aluminum_name = "鋁 (aluminum) US$/tonne"
