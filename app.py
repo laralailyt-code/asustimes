@@ -2703,7 +2703,7 @@ _STRIKE_TARGETS = [
      "lat": 33.75, "lng": -84.39,  "region": "美國", "industry": "logistics"},
 ]
 
-_strike_cache: dict = {"data": None, "ts": 0.0}
+_strike_cache: dict = {"data": None, "ts": 0.0}  # Force refresh on startup (ts=0)
 _strike_lock  = threading.Lock()
 
 def _scan_one_strike(target, headers, cutoff):
@@ -2824,11 +2824,22 @@ def _do_strike_scan():
 @app.route("/api/risk/strikes")
 def api_risk_strikes():
     """Return cached strike events instantly. Background loop refreshes every 3 hours."""
+    # Companies to exclude (non-tech/non-supply-chain)
+    EXCLUDED_COMPANIES = {"現代汽車", "Hyundai", "波音", "Boeing", "通用汽車", "GM", "Volkswagen", "VW", "福斯"}
+
     with _strike_lock:
         data = _strike_cache["data"]
+
     if data is None:
         return jsonify([])
-    return jsonify(data)
+
+    # Filter out excluded companies
+    filtered_data = [
+        event for event in data
+        if not any(excluded in event.get("title", "") for excluded in EXCLUDED_COMPANIES)
+    ]
+
+    return jsonify(filtered_data)
 
 
 def _get_commodity_data() -> dict:
