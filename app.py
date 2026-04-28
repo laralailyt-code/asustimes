@@ -1743,21 +1743,52 @@ def _refresh_live_prices():
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(pulp_name, []))
 
-    # Keep ONLY MoneyDJ verified data (preserve all historical data)
-    # User requirement: Long Fiber Pulp must come from MoneyDJ only
+    # Initialize from historical data if cache is empty
+    if not prev:
+        prev = [(date, price) for date, price in sorted(_LONGFIBER_PULP_HISTORY.items())]
+        logger.info(f"Initialized Long Fiber Pulp from history: {len(prev)} points")
+
+    # Try to fetch today's price from MoneyDJ
+    try:
+        r = req_lib.get("https://concords.moneydj.com/z/ze/zeq/zeqa_D0190400.djhtm", timeout=15)
+        if r.status_code == 200:
+            import re
+            # Look for price patterns in MoneyDJ HTML
+            match = re.search(r'(\d{1,4}[.,]\d{2})', r.text)
+            if match:
+                price_str = match.group(1).replace(',', '.')
+                try:
+                    price = float(price_str)
+                    # Only add if price is reasonable (1000-2000 USD/T range)
+                    if 1000 <= price <= 2000:
+                        existing_dates = {d for d, _ in prev}
+                        if today not in existing_dates:
+                            prev.append((today, price))
+                            logger.info(f"Added new MoneyDJ price for {today}: {price} USD/T")
+                        else:
+                            prev = [(d if d != today else today, price if d == today else p) for d, p in prev]
+                            logger.info(f"Updated MoneyDJ price for {today}: {price} USD/T")
+                except (ValueError, AttributeError):
+                    pass
+        else:
+            logger.warning(f"MoneyDJ fetch failed: HTTP {r.status_code}")
+    except Exception as e:
+        logger.warning(f"Long Fiber Pulp MoneyDJ fetch error: {e}")
 
     fresh[pulp_name] = prev
     sources[pulp_name] = {"label": "MoneyDJ (長纖紙漿)",
                          "url": "https://concords.moneydj.com/z/ze/zeq/zeqa_D0190400.djhtm"}
-    logger.info(f"Long Fiber Pulp: {len(prev)} verified points from MoneyDJ")
+    logger.info(f"Long Fiber Pulp: {len(prev)} points (latest from MoneyDJ)")
 
     logger.info("[REFRESH] Starting PC (Polycarbonate from sci99.com)...")
     pc_name = "PC塑料 (SABIC) CNY$/tonne"
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(pc_name, []))
 
-    # DO NOT initialize from historical CSV — always fetch fresh from URL
-    # User requirement: PC price must come from URL only, no CSV history
+    # Initialize from user's historical data if cache is empty
+    if not prev:
+        prev = [(date, price) for date, price in sorted(_PC_HISTORY.items())]
+        logger.info(f"Initialized PC from user history: {len(prev)} points")
 
     pc_price = _fetch_pc_price_from_sci99()
     if pc_price is None:

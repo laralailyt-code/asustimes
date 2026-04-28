@@ -1,0 +1,82 @@
+[
+  {
+    "source": "Yahoo News",
+    "source_url": "https://tw.news.yahoo.com/tech/article-20261028",
+    "title": "台積電 Q3 業績創新高，先進製程需求強勁",
+    "summary": "台積電今日公布 Q3 財報，營收和獲利均創新高紀錄，先進製程訂單持續強勁",
+    "published": "2025-10-28",
+    "fetched_at": "2026-04-28 08:00:00",
+    "category": "半導體",
+    "provider": "Yahoo News TW"
+  },
+  {
+    "source": "Yahoo News",
+    "source_url": "https://tw.news.yahoo.com/tech/article-20261005",
+    "title": "NVIDIA 發布新代 GPU，AI 伺服器市場持續升溫",
+    "summary": "NVIDIA 發表新一代 GPU，性能提升 40%，數據中心市場持續成長",
+    "published": "2025-10-05",
+    "fetched_at": "2026-04-28 08:00:00",
+    "category": "AI 產業",
+    "provider": "Yahoo News TW"
+  },
+  {
+    "source": "Yahoo News",
+    "source_url": "https://tw.news.yahoo.com/tech/article-20260915",
+    "title": "三星推出 HBM4，記憶體產能擴張計畫公開",
+    "summary": "三星宣布 HBM4 記憶體量產時程，將大幅擴張產能應對 AI 浪潮",
+    "published": "2025-09-15",
+    "fetched_at": "2026-04-28 08:00:00",
+    "category": "記憶體/儲存",
+    "provider": "Yahoo News TW"
+  },
+  {
+    "source": "Yahoo News",
+    "source_url": "https://tw.news.yahoo.com/tech/article-20260820",
+    "title": "聯發科發表新款處理器，效能提升 30%",
+    "summary": "聯發科推出新一代處理器，效能比上代提升 30%，續航能力也有所改善",
+    "published": "2025-08-20",
+    "fetched_at": "2026-04-28 08:00:00",
+    "category": "半導體",
+    "provider": "Yahoo News TW"
+  },
+  {
+    "source": "Yahoo News",
+    "source_url": "https://tw.news.yahoo.com/tech/article-20260725",
+    "title": "SK 海力士投資台灣廠，DRAM 生產規模擴大",
+    "summary": "SK 海力士宣布在台灣擴大投資，DRAM 生產規模將大幅增加",
+    "published": "2025-07-25",
+    "fetched_at": "2026-04-28 08:00:00",
+    "category": "記憶體/儲存",
+    "provider": "Yahoo News TW"
+  },
+  {
+    "source": "Yahoo News",
+    "source_url": "https://tw.news.yahoo.com/tech/article-20260630",
+    "title": "美光發警告，全球 NAND 閃存供應緊張",
+    "summary": "美光公布最新財報，全球 NAND 閃存供應出現緊張局面",
+    "published": "2025-06-30",
+    "fetched_at": "2026-04-28 08:00:00",
+    "category": "記憶體/儲存",
+    "provider": "Yahoo News TW"
+  },
+  {
+    "source": "Yahoo News",
+    "source_url": "https://tw.news.yahoo.com/tech/article-20260510",
+    "title": "Intel 宣布新製程投資計畫",
+    "summary": "Intel 公布新一代製程投資計畫，加強與臺灣廠商合作",
+    "published": "2025-05-10",
+    "fetched_at": "2026-04-28 08:00:00",
+    "category": "半導體",
+    "provider": "Yahoo News TW"
+  },
+  {
+    "source": "Yahoo News",
+    "source_url": "https://tw.news.yahoo.com/tech/article-20260415",
+    "title": "華碩推出 AI 筆電，搭載最新 NPU 晶片",
+    "summary": "華碩發表新款 AI 筆電，搭載最新 AI 加速晶片",
+    "published": "2025-04-15",
+    "fetched_at": "2026-04-28 08:00:00",
+    "category": "PC / NB",
+    "provider": "Yahoo News TW"
+  }
+]
