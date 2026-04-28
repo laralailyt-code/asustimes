@@ -2264,51 +2264,53 @@ def api_commodity_news():
     import xml.etree.ElementTree as ET
     from urllib.parse import quote, urlparse, parse_qs, unquote
     q = request.args.get("q", "").strip()
-    if not q:
-        return jsonify({"articles": []})
 
     articles = []
 
-    # Try Bing News first
-    url = f"https://www.bing.com/news/search?format=rss&q={quote(q)}"
-    try:
-        resp = req_lib.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-        root = ET.fromstring(resp.content)
-        for item in root.findall(".//item")[:8]:
-            title = item.findtext("title") or ""
-            link  = item.findtext("link") or ""
-            pub   = item.findtext("pubDate") or ""
-
-            # Decode Bing apiclick redirect URLs to get actual article URLs
-            if "bing.com/news/apiclick.aspx" in link:
-                try:
-                    qs = parse_qs(urlparse(link).query)
-                    if "url" in qs:
-                        link = unquote(qs["url"][0])
-                except Exception:
-                    pass  # If parsing fails, use original link
-
-            articles.append({"title": title, "source_url": link,
-                             "published": pub, "source": "Bing News"})
-    except Exception as e:
-        logger.debug(f"commodity news fetch error '{q}': {e}")
-
-    # Fallback: if Bing returns nothing, use latest articles from archive
-    if not articles:
+    # Try Bing News first (only if q is provided)
+    if q:
+        url = f"https://www.bing.com/news/search?format=rss&q={quote(q)}"
         try:
-            with open("news_archive.json", "r", encoding="utf-8") as f:
-                archived = json.load(f)
-            # Just return first 5 articles from archive as placeholder
-            for article in archived[:5]:
-                articles.append({
-                    "title": article.get("title", ""),
-                    "source_url": article.get("source_url", ""),
-                    "published": article.get("published", ""),
-                    "source": article.get("source", "Archive")
-                })
-        except Exception as e:
-            logger.debug(f"archive fallback error: {e}")
+            resp = req_lib.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+            root = ET.fromstring(resp.content)
+            for item in root.findall(".//item")[:8]:
+                title = item.findtext("title") or ""
+                link  = item.findtext("link") or ""
+                pub   = item.findtext("pubDate") or ""
 
+                # Decode Bing apiclick redirect URLs to get actual article URLs
+                if "bing.com/news/apiclick.aspx" in link:
+                    try:
+                        qs = parse_qs(urlparse(link).query)
+                        if "url" in qs:
+                            link = unquote(qs["url"][0])
+                    except Exception:
+                        pass  # If parsing fails, use original link
+
+                articles.append({"title": title, "source_url": link,
+                                 "published": pub, "source": "Bing News"})
+        except Exception as e:
+            logger.debug(f"commodity news fetch error '{q}': {e}")
+
+    # Fallback: always add latest articles from archive
+    try:
+        with open("news_archive.json", "r", encoding="utf-8") as f:
+            archived = json.load(f)
+        if archived:
+            # Add up to 5 archive articles
+            for article in archived[:5]:
+                # Avoid duplicates
+                if not any(a["source_url"] == article.get("source_url") for a in articles):
+                    articles.append({
+                        "title": article.get("title", ""),
+                        "source_url": article.get("source_url", ""),
+                        "published": article.get("published", ""),
+                        "source": article.get("source", "Archive")
+                    })
+    except Exception as e:
+        logger.debug(f"archive fallback error: {e}")
+
+    logger.info(f"[COMMODITY-NEWS] q='{q}' returned {len(articles)} articles")
     return jsonify({"articles": articles})
 
 
