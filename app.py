@@ -2822,8 +2822,15 @@ def _do_strike_scan():
 @app.route("/api/risk/strikes")
 def api_risk_strikes():
     """Return cached strike events instantly. Background loop refreshes every 3 hours."""
-    # Companies to exclude (non-tech/non-supply-chain)
-    EXCLUDED_COMPANIES = {"現代汽車", "Hyundai", "波音", "Boeing", "通用汽車", "GM", "Volkswagen", "VW", "福斯"}
+    # Companies to exclude (non-tech/non-supply-chain, or no actual strikes)
+    EXCLUDED_COMPANIES = {
+        "現代汽車", "Hyundai",          # Automotive
+        "波音", "Boeing",              # Aerospace
+        "通用汽車", "GM",              # Automotive
+        "Volkswagen", "VW", "福斯",    # Automotive
+        "台積電", "TSMC",              # No actual strike
+        "聯發科", "MediaTek",          # No actual strike
+    }
 
     with _strike_lock:
         data = _strike_cache["data"]
