@@ -2166,6 +2166,9 @@ async function renderMarketNews() {
   document.getElementById('marketNewsTitle').textContent = `相關新聞（${rangeLabel}）`;
   wrap.innerHTML = `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">🔍 搜尋中…</div>`;
 
+  // Render supply chain impact IMMEDIATELY (don't wait for news)
+  renderSupplyChainImpact();
+
   let q = kw + ' 價格';
   if (start) q += ` after:${start}`;
   if (end)   q += ` before:${end}`;
@@ -2202,9 +2205,6 @@ async function renderMarketNews() {
     } catch(annotErr) {
       console.warn('annotation update skipped', annotErr);
     }
-
-    // Render supply chain impact
-    renderSupplyChainImpact();
 
     if (!articles.length) {
       wrap.innerHTML = `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">此區間無相關新聞</div>`;
