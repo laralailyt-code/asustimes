@@ -2844,14 +2844,32 @@ def _do_strike_scan():
     finally:
         executor.shutdown(wait=False)
 
+    # Validate results: ensure each result's company matches expected data
+    validated = []
+    for res in results:
+        company_in_result = res.get("title", "")
+        # Check if result title contains actual company name (not misattributed)
+        expected_companies = [t["company"] for t in _STRIKE_TARGETS]
+        found_match = False
+        for company in expected_companies:
+            if company in company_in_result:
+                found_match = True
+                break
+
+        if found_match:
+            validated.append(res)
+            logger.info(f"[STRIKE] ✓ Validated: {res['title']}")
+        else:
+            logger.warning(f"[STRIKE] ✗ REJECTED (company mismatch): '{company_in_result}'")
+
     with _strike_lock:
-        # Temporary: Disable strike cache until we fix the company attribution bug
-        # Currently strikes are being misattributed (Samsung news tagged as TSMC, etc.)
-        _strike_cache["data"] = []
+        if validated:
+            _strike_cache["data"] = validated
+        else:
+            _strike_cache["data"] = []
         _strike_cache["ts"] = time.time()
-    logger.warning(f"[STRIKE] DISABLED: Strike detection temporarily disabled due to misattribution bugs")
-    logger.warning(f"[STRIKE] Found {len(results)} results but not storing due to company mix-up issues")
-    return []
+    logger.info(f"[STRIKE] Stored {len(validated)}/{len(results)} validated results")
+    return validated
 
 
 @app.route("/api/risk/strikes")
