@@ -817,7 +817,32 @@ GN_EN = "https://www.bing.com/news/search?format=rss&q="
 
 FEEDS = [
     # ── Digitimes 官方 RSS（優先級最高）────────────────────────────────────
-    *[{"url": feed, "source": "Digitimes", "hint": "半導體"} for feed in DIGITIMES_FEEDS],
+    # 科技/產業分類
+    {"url": DIGITIMES_FEEDS[0], "source": "Digitimes", "hint": "半導體"},              # 半導體．零組件
+    {"url": DIGITIMES_FEEDS[1], "source": "Digitimes", "hint": "供應鏈/關稅"},        # IT．系統供應鏈
+    {"url": DIGITIMES_FEEDS[2], "source": "Digitimes", "hint": "AI 產業"},             # AI．智慧應用．電商物流
+    {"url": DIGITIMES_FEEDS[3], "source": "Digitimes", "hint": "供應鏈/關稅"},        # 物聯科技．智慧製造
+    {"url": DIGITIMES_FEEDS[4], "source": "Digitimes", "hint": "AI 產業"},             # 行動．通訊．XR
+    {"url": DIGITIMES_FEEDS[5], "source": "Digitimes", "hint": "面板/顯示"},          # 光電．顯示．光學 ⭐
+    {"url": DIGITIMES_FEEDS[6], "source": "Digitimes", "hint": "供應鏈/關稅"},        # CarTech．綠能
+    {"url": DIGITIMES_FEEDS[7], "source": "Digitimes", "hint": "供應鏈/關稅"},        # 航太．衛星．軍工
+    {"url": DIGITIMES_FEEDS[8], "source": "Digitimes", "hint": "供應鏈/關稅"},        # 科技政策
+    {"url": DIGITIMES_FEEDS[9], "source": "Digitimes", "hint": "科技"},               # 全部 (科技/產業)
+    # Research 報告類
+    {"url": DIGITIMES_FEEDS[10], "source": "Digitimes", "hint": "半導體"},            # IC 設計
+    {"url": DIGITIMES_FEEDS[11], "source": "Digitimes", "hint": "半導體"},            # IC 製造
+    {"url": DIGITIMES_FEEDS[12], "source": "Digitimes", "hint": "伺服器/雲端"},       # 伺服器
+    {"url": DIGITIMES_FEEDS[13], "source": "Digitimes", "hint": "PC / NB"},           # 電腦運算
+    {"url": DIGITIMES_FEEDS[14], "source": "Digitimes", "hint": "AI 產業"},           # AI Focus
+    # 區域
+    {"url": DIGITIMES_FEEDS[15], "source": "Digitimes", "hint": "供應鏈/關稅"},       # 東亞 / 中國
+    {"url": DIGITIMES_FEEDS[16], "source": "Digitimes", "hint": "供應鏈/關稅"},       # 國際
+    {"url": DIGITIMES_FEEDS[17], "source": "Digitimes", "hint": "供應鏈/關稅"},       # 印度
+    {"url": DIGITIMES_FEEDS[18], "source": "Digitimes", "hint": "供應鏈/關稅"},       # 東南亞
+    # 商情（報價/缺貨）
+    {"url": DIGITIMES_FEEDS[19], "source": "Digitimes", "hint": "半導體"},            # 半導體 / 零組件商情
+    {"url": DIGITIMES_FEEDS[20], "source": "Digitimes", "hint": "伺服器/雲端"},       # 伺服儲存 / 軟體服務
+    {"url": DIGITIMES_FEEDS[21], "source": "Digitimes", "hint": "PC / NB"},           # PC / CE / 週邊
 
     # ── 直接 RSS（有真實文章 URL，可抓摘要）──────────────────────────────
     {"url": "https://technews.tw/feed/",                      "source": "科技新報",    "hint": "AI 產業"},
