@@ -2686,7 +2686,7 @@ def api_risk_geopolitical():
 # ── Strike risk monitor ─────────────────────────────────────────────────────
 _STRIKE_TARGETS = [
     # ── 3C/半導體/物流相關罷工（ASUS 供應鏈相關）
-    # 只包含有實際罷工事件的公司
+    # 持續監控所有相關公司，但只顯示有實際罷工事件的新聞
     {"company": "三星電子",  "kw": ["三星 罷工", "Samsung strike", "Samsung workers strike"],
      "lat": 37.00, "lng": 127.06, "region": "韓國", "industry": "semiconductor"},
     {"company": "富士康",    "kw": ["富士康 罷工", "Foxconn strike", "foxconn workers"],
@@ -2697,11 +2697,15 @@ _STRIKE_TARGETS = [
      "lat": 37.52, "lng": 126.89,  "region": "韓國", "industry": "electronics"},
     {"company": "比亞迪",    "kw": ["比亞迪 罷工", "BYD strike", "BYD workers"],
      "lat": 22.58, "lng": 114.09,  "region": "中國", "industry": "battery_ev"},
+    {"company": "台積電",    "kw": ["台積電 罷工", "TSMC strike", "TSMC workers"],
+     "lat": 24.82, "lng": 120.97,  "region": "台灣", "industry": "semiconductor"},
+    {"company": "聯發科",    "kw": ["聯發科 罷工", "MediaTek strike", "MediaTek workers"],
+     "lat": 24.96, "lng": 121.19,  "region": "台灣", "industry": "semiconductor"},
     {"company": "UPS",       "kw": ["UPS strike", "UPS workers walkout"],
      "lat": 33.75, "lng": -84.39,  "region": "美國", "industry": "logistics"},
 ]
 
-_strike_cache: dict = {"data": None, "ts": 0.0}  # Force refresh on startup (ts=0)
+_strike_cache: dict = {"data": None, "ts": 0.0}  # Force refresh on every startup (ts=0 = cache expired)
 _strike_lock  = threading.Lock()
 
 def _scan_one_strike(target, headers, cutoff):
@@ -2822,14 +2826,13 @@ def _do_strike_scan():
 @app.route("/api/risk/strikes")
 def api_risk_strikes():
     """Return cached strike events instantly. Background loop refreshes every 3 hours."""
-    # Companies to exclude (non-tech/non-supply-chain, or no actual strikes)
+    # Companies to exclude (non-tech/non-supply-chain only)
+    # Taiwan semiconductor companies (TSMC, MediaTek) are included if they have actual strikes
     EXCLUDED_COMPANIES = {
         "現代汽車", "Hyundai",          # Automotive
         "波音", "Boeing",              # Aerospace
         "通用汽車", "GM",              # Automotive
         "Volkswagen", "VW", "福斯",    # Automotive
-        "台積電", "TSMC",              # No actual strike
-        "聯發科", "MediaTek",          # No actual strike
     }
 
     with _strike_lock:
@@ -2838,7 +2841,7 @@ def api_risk_strikes():
     if data is None:
         return jsonify([])
 
-    # Filter out excluded companies
+    # Filter out excluded companies only
     filtered_data = [
         event for event in data
         if not any(excluded in event.get("title", "") for excluded in EXCLUDED_COMPANIES)
