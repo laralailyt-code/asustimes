@@ -2443,6 +2443,42 @@ _GEO_RISKS = [
      "affected_materials":["紡織品","電子零件"],"shipping_routes":["南亞港口","阿拉伯海"]},
 ]
 
+def _extract_earthquake_date(text):
+    """Extract actual earthquake date from article text (not publication date)."""
+    import re
+    from datetime import datetime
+
+    # Common earthquake date patterns in news
+    patterns = [
+        # "April 20", "April 20, 2026", "20 April", "20 April 2026"
+        r'(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})(?:\s*,?\s*(?:2026|2025|2024))?',
+        # "4月20日", "20日4月", "4/20"
+        r'(\d{1,2})\s*[月\/]\s*(\d{1,2})',
+        # "on Monday, April 20" pattern
+        r'(?:on|struck|hit)\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?,?\s+(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})',
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            try:
+                matched_text = match.group(0)
+                # Try to parse the matched text as a date
+                for fmt in ['%B %d, %Y', '%B %d', '%b %d, %Y', '%b %d', '%d %B %Y', '%d %b %Y']:
+                    try:
+                        dt = datetime.strptime(matched_text, fmt)
+                        # Assume current year if not specified
+                        if dt.year == 1900:
+                            dt = dt.replace(year=2026)
+                        return dt.strftime('%Y-%m-%d')
+                    except ValueError:
+                        continue
+            except:
+                pass
+
+    return None
+
+
 def _scan_one_geo_risk(risk, headers, cutoff):
     """Scan Bing News for one geopolitical risk entry. Returns result dict or None."""
     import xml.etree.ElementTree as ET
@@ -2494,8 +2530,21 @@ def _scan_one_geo_risk(risk, headers, cutoff):
                                 if not has_high_magnitude:
                                     logger.debug(f"[GEO] Skipping {risk['title']}: no 5.0+ magnitude in article")
                                     continue
-                            found_date = str(dt.date())
-                            logger.info(f"[GEO] ✓ {risk['title']}: found recent article")
+
+                            # For earthquakes: extract actual earthquake date from article content
+                            if 'earthquake' in risk['type'].lower() or 'disaster' in risk['type'].lower() or any('地震' in kw for kw in risk['kw']):
+                                article_text = f"{title} {description}"
+                                earthquake_date = _extract_earthquake_date(article_text)
+                                if earthquake_date:
+                                    found_date = earthquake_date
+                                    logger.info(f"[GEO] ✓ {risk['title']}: earthquake on {earthquake_date}")
+                                else:
+                                    # Fallback to news publication date if we can't extract earthquake date
+                                    found_date = str(dt.date())
+                                    logger.debug(f"[GEO] {risk['title']}: using publication date {found_date}")
+                            else:
+                                found_date = str(dt.date())
+                                logger.info(f"[GEO] ✓ {risk['title']}: found recent article")
                             break
                     except (ValueError, TypeError):
                         pass
