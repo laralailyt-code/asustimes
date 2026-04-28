@@ -2764,9 +2764,9 @@ def _scan_one_strike(target, headers, cutoff):
 
                             if not has_strike_action or has_exclude:
                                 if not has_strike_action:
-                                    logger.debug(f"[STRIKE] Skipping {target['company']}: no strike action keywords")
+                                    logger.warning(f"[STRIKE] FILTERED {target['company']}: '{title[:70]}' — no strike action keywords")
                                 else:
-                                    logger.debug(f"[STRIKE] Skipping {target['company']}: excluded context (deal/agreement)")
+                                    logger.warning(f"[STRIKE] FILTERED {target['company']}: '{title[:70]}' — excluded: {[k for k in ['court','fine','theft','deal','agreement'] if k in full_text]}")
                                 continue
                             # Keep track of latest article across all keywords
                             if latest_date is None or dt > latest_date:
@@ -2776,7 +2776,7 @@ def _scan_one_strike(target, headers, cutoff):
                                     "url":   item.findtext("link", ""),
                                     "date":  str(dt.date()),
                                 }
-                                logger.info(f"[STRIKE] ✓ {target['company']}: {latest_article['title'][:60]}")
+                                logger.warning(f"[STRIKE] ✓✓✓ ACCEPTED {target['company']}: '{latest_article['title'][:70]}'")
                     except Exception:
                         pass
                 break
