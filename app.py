@@ -2448,26 +2448,48 @@ def _extract_earthquake_date(text):
     import re
     from datetime import datetime
 
-    # Common earthquake date patterns in news
+    # Search for dates in contexts mentioning earthquake/地震 first
+    # This helps avoid matching publication dates
 
-    # 1. Try MM/DD or M/D format (e.g. "4/20", "04/20")
-    match = re.search(r'\b(\d{1,2})[\/\-](\d{1,2})\b', text)
+    # 1. Look for dates near earthquake keywords (higher priority)
+    contexts = [
+        r'地震.*?(\d{1,2})[\/\-](\d{1,2})',  # Chinese pattern: 地震...M/D
+        r'earthquake.*?(\d{1,2})[\/\-](\d{1,2})',  # English: earthquake...M/D
+        r'(\d{1,2})[\/\-](\d{1,2}).*?地震',  # M/D...地震
+        r'(\d{1,2})[\/\-](\d{1,2}).*?earthquake',  # M/D...earthquake
+    ]
+
+    for pattern in contexts:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            try:
+                month, day = int(match.group(1)), int(match.group(2))
+                if 1 <= month <= 12 and 1 <= day <= 31:
+                    return f"2026-{month:02d}-{day:02d}"
+            except:
+                pass
+
+    # 2. Try Chinese format "4月20日" with earthquake context
+    pattern = r'地震.*?(\d{1,2})月(\d{1,2})日|(\d{1,2})月(\d{1,2})日.*?地震'
+    match = re.search(pattern, text)
     if match:
         try:
-            month, day = int(match.group(1)), int(match.group(2))
+            if match.group(1):  # 地震...M月D日 format
+                month, day = int(match.group(1)), int(match.group(2))
+            else:  # M月D日...地震 format
+                month, day = int(match.group(3)), int(match.group(4))
             if 1 <= month <= 12 and 1 <= day <= 31:
                 return f"2026-{month:02d}-{day:02d}"
         except:
             pass
 
-    # 2. Try English month names (e.g. "April 20", "April 20, 2026")
+    # 3. Fallback: try English month names (e.g. "April 20")
     match = re.search(r'(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})(?:\s*,?\s*(\d{4}))?', text, re.IGNORECASE)
     if match:
         try:
             month_name, day = match.group(1), int(match.group(2))
             year = int(match.group(3)) if match.group(3) else 2026
 
-            # Parse month name to number
             month_map = {'january':1, 'february':2, 'march':3, 'april':4, 'may':5, 'june':6,
                         'july':7, 'august':8, 'september':9, 'october':10, 'november':11, 'december':12,
                         'jan':1, 'feb':2, 'mar':3, 'apr':4, 'may':5, 'jun':6, 'jul':7, 'aug':8,
@@ -2478,8 +2500,8 @@ def _extract_earthquake_date(text):
         except:
             pass
 
-    # 3. Try Chinese format "4月20日", "04月20日"
-    match = re.search(r'(\d{1,2})月(\d{1,2})日', text)
+    # 4. Last resort: any M/D or M-D format
+    match = re.search(r'\b(\d{1,2})[\/\-](\d{1,2})\b', text)
     if match:
         try:
             month, day = int(match.group(1)), int(match.group(2))
