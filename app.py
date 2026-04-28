@@ -2690,22 +2690,30 @@ def api_risk_geopolitical():
 # ── Strike risk monitor ─────────────────────────────────────────────────────
 _STRIKE_TARGETS = [
     # ── 3C/半導體/物流相關罷工（ASUS 供應鏈相關）
-    # 持續監控所有相關公司，但只顯示有實際罷工事件的新聞
+    # aliases: 該公司的中英文別名（小寫），用於文章主語驗證
     {"company": "三星電子",  "kw": ["三星 罷工", "Samsung strike", "Samsung workers strike"],
+     "aliases": ["三星", "samsung"],
      "lat": 37.00, "lng": 127.06, "region": "韓國", "industry": "semiconductor"},
     {"company": "富士康",    "kw": ["富士康 罷工", "Foxconn strike", "foxconn workers"],
+     "aliases": ["富士康", "鴻海", "foxconn"],
      "lat": 34.75, "lng": 113.62, "region": "中國", "industry": "electronics"},
     {"company": "SK海力士",  "kw": ["SK Hynix strike", "SK海力士 罷工"],
+     "aliases": ["sk海力士", "海力士", "sk hynix", "hynix"],
      "lat": 37.27, "lng": 127.44,  "region": "韓國", "industry": "semiconductor"},
     {"company": "LG",        "kw": ["LG strike", "LG 罷工"],
+     "aliases": ["lg電子", "lg "],  # 加空格避免誤匹配 "lgbt" 等
      "lat": 37.52, "lng": 126.89,  "region": "韓國", "industry": "electronics"},
     {"company": "比亞迪",    "kw": ["比亞迪 罷工", "BYD strike", "BYD workers"],
+     "aliases": ["比亞迪", "byd"],
      "lat": 22.58, "lng": 114.09,  "region": "中國", "industry": "battery_ev"},
     {"company": "台積電",    "kw": ["台積電 罷工", "TSMC strike", "TSMC workers"],
+     "aliases": ["台積電", "tsmc"],
      "lat": 24.82, "lng": 120.97,  "region": "台灣", "industry": "semiconductor"},
     {"company": "聯發科",    "kw": ["聯發科 罷工", "MediaTek strike", "MediaTek workers"],
+     "aliases": ["聯發科", "mediatek"],
      "lat": 24.96, "lng": 121.19,  "region": "台灣", "industry": "semiconductor"},
     {"company": "UPS",       "kw": ["UPS strike", "UPS workers walkout"],
+     "aliases": ["ups "],
      "lat": 33.75, "lng": -84.39,  "region": "美國", "industry": "logistics"},
 ]
 
@@ -2768,6 +2776,37 @@ def _scan_one_strike(target, headers, cutoff):
                                 else:
                                     logger.warning(f"[STRIKE] FILTERED {target['company']}: '{title[:70]}' — excluded: {[k for k in ['court','fine','theft','deal','agreement'] if k in full_text]}")
                                 continue
+
+                            # === 公司主語驗證（避免新聞只順帶提及目標公司）===
+                            # 對每個「罷工」關鍵字位置，檢查鄰近窗口內是否有目標公司別名。
+                            # 中文窗口較小（12 字），因為中文標題訊息密度高；
+                            # 英文窗口較大（30 字），因為英文「strike」前後常隔著 workers/at/in 等詞。
+                            # 例：「SK海力士Q1利潤增4倍創新高 三星因獎金爭議陷罷工危機」
+                            #     "罷工" 鄰近 12 字內只有「三星」，沒有海力士別名 → 排除。
+                            strike_kws_short = ["罷工", "工潮", "strike", "walkout", "walk out"]
+                            aliases = target.get("aliases", [target["company"].lower()])
+
+                            def _is_cn(s):
+                                return any('一' <= c <= '鿿' for c in s)
+
+                            def _subject_match(text):
+                                for sk in strike_kws_short:
+                                    win = 12 if _is_cn(sk) else 30
+                                    idx = 0
+                                    while True:
+                                        p = text.find(sk, idx)
+                                        if p < 0:
+                                            break
+                                        window_text = text[max(0, p - win): p + len(sk) + win]
+                                        if any(a in window_text for a in aliases):
+                                            return True
+                                        idx = p + 1
+                                return False
+
+                            if not _subject_match(full_text):
+                                logger.warning(f"[STRIKE] FILTERED {target['company']}: '{title[:70]}' — company not subject of strike (proximity check failed)")
+                                continue
+
                             # Keep track of latest article across all keywords
                             if latest_date is None or dt > latest_date:
                                 latest_date = dt
