@@ -677,8 +677,8 @@ _LIVE_COMMODITY_SYMBOLS = {
     "SI=F":  ("銀 (silver) US$/盎司",          1.0),       # Silver $/oz
     "CL=F":  ("石油 西德州 ( US$/桶)",          1.0),       # WTI $/barrel
     "BZ=F":  ("石油 北海布蘭特 (US$/桶)",       1.0),       # Brent $/barrel
-    "HG=F":  ("銅 (copper) US$/tonne",         100.0),    # Copper (convert from ¢/lb to USD/tonne)
-    "ALI=F": ("鋁 (aluminum) US$/tonne",       220.0),    # Aluminum (convert from ¢/lb to USD/tonne)
+    "HG=F":  ("銅 (copper) US$/tonne",         2204.62),  # Copper (USD/lb → USD/tonne)
+    "ALI=F": ("鋁 (aluminum) US$/tonne",       1.0),      # Aluminum LME futures (already USD/tonne)
 }
 
 # yfinance FX tickers → (exact CSV item name, multiplier)
@@ -864,10 +864,10 @@ def _fetch_te_price(slug: str) -> float | None:
 
 
 def _fetch_cobalt_price() -> float | None:
-    """Fetch cobalt price from metals.live API (LME data only).
-    Only use metals.live (LME), don't use Trading Economics fallback (unreliable for cobalt).
-    If fetch fails, return None and use cached price instead.
+    """Fetch cobalt price. Primary: metals.live; Fallback: Trading Economics.
+    Returns USD/tonne, or None if both fail.
     """
+    # Primary: metals.live LME
     try:
         headers = HEADERS.copy()
         headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -876,20 +876,27 @@ def _fetch_cobalt_price() -> float | None:
             "https://api.metals.live/v1/spot/cobalt",
             headers=headers,
             timeout=10,
-            params={"nocache": int(time.time())}  # Cache-bust with timestamp
+            params={"nocache": int(time.time())}
         )
         if r.status_code == 200:
             data = r.json()
             if isinstance(data, dict) and "price" in data:
                 price = float(data["price"])
-                # Relaxed range: cobalt can fluctuate (30000-80000 USD/tonne)
-                if price > 0 and 30000 < price < 80000:
+                if 30000 < price < 80000:
                     logger.info(f"Cobalt from metals.live (LME): ${price}/tonne (fresh)")
                     return price
-                else:
-                    logger.warning(f"Cobalt price {price} out of expected range (30000-80000), skipping")
+                logger.warning(f"Cobalt metals.live price {price} out of range, trying TE")
     except Exception as e:
         logger.debug(f"metals.live cobalt fetch failed: {e}")
+
+    # Fallback: Trading Economics (USD/tonne)
+    try:
+        te_price = _fetch_te_price("cobalt")
+        if te_price and 30000 < te_price < 80000:
+            logger.info(f"Cobalt from Trading Economics (fallback): ${te_price}/tonne")
+            return te_price
+    except Exception as e:
+        logger.debug(f"TE cobalt fallback failed: {e}")
 
     return None
 
@@ -920,10 +927,9 @@ def _fetch_1year_lme_history(yf_symbol: str, multiplier: float = 1.0) -> list[tu
 
 
 def _fetch_aluminum_price() -> float | None:
-    """Fetch aluminum price from LME (metals.live primary, with retries).
-    Only use reliable sources with proper unit handling.
+    """Fetch aluminum price. Primary: metals.live LME; Fallback: Trading Economics.
+    Returns USD/tonne, or None if both fail.
     """
-    # Try metals.live multiple times with user-agent
     for attempt in range(2):
         try:
             headers = {
@@ -934,7 +940,7 @@ def _fetch_aluminum_price() -> float | None:
                 data = r.json()
                 if isinstance(data, dict) and "price" in data:
                     price = float(data["price"])
-                    if 1500 < price < 5000:  # Sanity check: aluminum should be in this range USD/tonne
+                    if 1500 < price < 5000:
                         logger.info(f"Aluminum from metals.live (LME): ${price:.2f}/tonne")
                         return price
         except Exception as e:
@@ -942,15 +948,24 @@ def _fetch_aluminum_price() -> float | None:
             if attempt == 0:
                 time.sleep(2)
 
+    # Fallback: Trading Economics (USD/tonne)
+    try:
+        te_price = _fetch_te_price("aluminum")
+        if te_price and 1500 < te_price < 5000:
+            logger.info(f"Aluminum from Trading Economics (fallback): ${te_price:.2f}/tonne")
+            return te_price
+    except Exception as e:
+        logger.debug(f"TE aluminum fallback failed: {e}")
+
     logger.warning("Aluminum fetch failed from all sources")
     return None
 
 
 def _fetch_copper_price() -> float | None:
-    """Fetch copper price from LME (metals.live primary, with retries).
-    Only use reliable sources with proper unit handling.
+    """Fetch copper price. Primary: metals.live LME; Fallback: Trading Economics.
+    Returns USD/tonne, or None if both fail.
+    Note: TE returns copper in USD/lb (e.g. 5.92), convert via *2204.62 to USD/tonne.
     """
-    # Try metals.live multiple times with user-agent
     for attempt in range(2):
         try:
             headers = {
@@ -961,13 +976,24 @@ def _fetch_copper_price() -> float | None:
                 data = r.json()
                 if isinstance(data, dict) and "price" in data:
                     price = float(data["price"])
-                    if 5000 < price < 20000:  # Sanity check: copper should be in this range USD/tonne
+                    if 5000 < price < 20000:
                         logger.info(f"Copper from metals.live (LME): ${price:.2f}/tonne")
                         return price
         except Exception as e:
             logger.debug(f"metals.live copper attempt {attempt+1} failed: {e}")
             if attempt == 0:
                 time.sleep(2)
+
+    # Fallback: Trading Economics. TE copper is USD/lb → USD/tonne via 2204.62.
+    try:
+        te_price = _fetch_te_price("copper")
+        if te_price and te_price > 0:
+            converted = te_price * 2204.62 if te_price < 100 else te_price  # auto-detect unit
+            if 5000 < converted < 20000:
+                logger.info(f"Copper from Trading Economics (fallback): ${converted:.2f}/tonne (raw {te_price})")
+                return converted
+    except Exception as e:
+        logger.debug(f"TE copper fallback failed: {e}")
 
     logger.warning("Copper fetch failed from all sources")
     return None
@@ -1941,7 +1967,9 @@ def _parse_commodity_csv() -> dict:
                     values.append(None)
                 else:
                     try:
-                        values.append(float(v.replace(",", "")))
+                        # Strip carry-forward marker '*' before parsing
+                        clean = v.replace(",", "").rstrip("*").strip()
+                        values.append(float(clean))
                     except Exception:
                         values.append(None)
 
@@ -2054,6 +2082,66 @@ def _parse_commodity_csv() -> dict:
     return result
 
 
+def _apply_carry_forward(rows: list, header: list, carry_back_days: int = 30) -> None:
+    """Fill empty cells using nearest real value, tagged with trailing '*'.
+
+    Two-pass:
+      1) Carry-forward: empty cell ← most recent prior real value (no time limit)
+      2) Carry-back:    leading empties ← first real value, BUT only within the
+         last `carry_back_days` days (to avoid polluting 10+ years of history
+         when a commodity only has recent points).
+
+    Both tagged with '*' (e.g. '27000*'). Real values in cache overwrite tags
+    automatically on next save.
+    """
+    from datetime import datetime as _dt, timedelta as _td
+    if len(rows) < 2:
+        return
+    n_cols = len(header)
+    cutoff = _dt.now().date() - _td(days=carry_back_days)
+
+    # Pre-parse header dates for cutoff comparison
+    header_dates = [None] * n_cols
+    for i, h in enumerate(header):
+        if i == 0:
+            continue
+        try:
+            header_dates[i] = _dt.strptime(h, "%Y/%m/%d").date()
+        except (ValueError, TypeError):
+            pass
+
+    for ridx in range(1, len(rows)):
+        row = rows[ridx]
+        while len(row) < n_cols:
+            row.append("")
+        # Pass 1: carry-forward (always allowed)
+        last_real = None
+        for cidx in range(1, n_cols):
+            cell = row[cidx].strip() if cidx < len(row) else ""
+            if cell and cell != "0":
+                if not cell.endswith("*"):
+                    last_real = cell
+                continue
+            if last_real is not None:
+                row[cidx] = f"{last_real}*"
+        # Pass 2: carry-back, but only for cells within carry_back_days
+        first_real = None
+        for cidx in range(1, n_cols):
+            cell = row[cidx].strip() if cidx < len(row) else ""
+            if cell and cell != "0" and not cell.endswith("*"):
+                first_real = cell
+                break
+        if first_real is not None:
+            for cidx in range(1, n_cols):
+                cell = row[cidx].strip() if cidx < len(row) else ""
+                if cell and cell != "0":
+                    break
+                d = header_dates[cidx]
+                if d is None or d < cutoff:
+                    continue  # too old, skip
+                row[cidx] = f"{first_real}*"
+
+
 def _save_commodity_csv():
     """Save current _live_commodity_cache back to CSV file in wide-format."""
     try:
@@ -2119,12 +2207,16 @@ def _save_commodity_csv():
                     row.append("")
             rows.append(row)
 
+        # Carry-forward: fill empty cells with most recent prior value (tagged with *).
+        # Ensures no commodity stays blank for more than 1 day after first real point.
+        _apply_carry_forward(rows, rows[0])
+
         # Write to CSV with utf-8-sig encoding (preserves BOM for Excel compatibility)
         with open(_COMMODITY_CSV, "w", encoding="utf-8-sig", newline="") as f:
             writer = csv.writer(f)
             writer.writerows(rows)
 
-        logger.info(f"Saved commodity CSV: {len(cache_copy)} items, {len(sorted_dates)} dates")
+        logger.info(f"Saved commodity CSV: {len(cache_copy)} items, {len(sorted_dates)} dates (with carry-forward)")
     except Exception as e:
         logger.error(f"Commodity CSV save error: {e}", exc_info=True)
 
