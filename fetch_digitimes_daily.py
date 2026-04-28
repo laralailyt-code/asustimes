@@ -69,72 +69,85 @@ def fetch_digitimes_news():
         ]
 
         all_articles = {}
-        max_articles = 200  # 增加到 200 篇
+        max_articles = 300  # 增加到 300 篇
 
         for keyword in keywords:
+            if len(all_articles) >= max_articles:
+                print(f"  已达到 {max_articles} 篇限制，停止抓取")
+                break
+
             try:
                 # 使用 Digitimes 的 AJAX API 获取搜索结果（JSON 格式）
-                # srchlst_main3.asp 返回 JSON 而非 HTML
                 ajax_url = f"https://www.digitimes.com.tw/tech/searchdomain/srchlst_main3.asp"
 
-                # 分页抓取每个关键字
-                for page_idx in range(4):  # 最多抓 4 页（每页 50 篇）
+                # 分页抓取每个关键字，每页最多 100 篇
+                for page_idx in range(10):  # 最多抓 10 页
                     if len(all_articles) >= max_articles:
-                        print(f"  已达到 {max_articles} 篇限制，停止抓取")
                         break
 
-                    params = {
-                        "q": keyword,
-                        "pageindex": page_idx,
-                        "pagesize": 50
-                    }
-
-                    r = session.get(ajax_url, params=params, headers=headers, timeout=15)
-
-                    # 尝试解析 JSON 响应
                     try:
-                        data = r.json()
-                        items = data.get("items", []) if isinstance(data, dict) else []
-                    except:
-                        # 如果不是 JSON，回退到 HTML 解析
-                        soup = BeautifulSoup(r.content, "html.parser")
+                        params = {
+                            "q": keyword,
+                            "pageindex": page_idx,
+                            "pagesize": 100  # 增加单页大小
+                        }
+
+                        r = session.get(ajax_url, params=params, headers=headers, timeout=20)
+                        r.encoding = "utf-8"
+
+                        # 尝试解析 JSON 响应
                         items = []
-                        for link in soup.find_all("a", href=True):
-                            href = link.get("href", "")
-                            text = link.get_text(strip=True)
-                            if ("/tech/" in href or "/news/" in href) and len(text) > 8:
-                                items.append({"href": href, "title": text})
+                        try:
+                            data = r.json()
+                            items = data.get("items", []) if isinstance(data, dict) else []
+                        except:
+                            # 如果不是 JSON，回退到 HTML 解析
+                            soup = BeautifulSoup(r.content, "html.parser")
+                            for link in soup.find_all("a", href=True):
+                                href = link.get("href", "")
+                                text = link.get_text(strip=True)
+                                if ("/tech/" in href or "/news/" in href) and len(text) > 8:
+                                    items.append({"href": href, "title": text})
 
-                    if not items:
-                        break  # 无更多结果，退出分页循环
+                        if not items:
+                            break  # 无更多结果，退出分页循环
 
-                    # 处理搜索结果
-                    for item in items:
-                        if len(all_articles) >= max_articles:
-                            break
+                        # 处理搜索结果
+                        added = 0
+                        for item in items:
+                            if len(all_articles) >= max_articles:
+                                break
 
-                        if isinstance(item, dict):
-                            href = item.get("href") or item.get("url") or ""
-                            text = item.get("title") or item.get("name") or ""
-                        else:
-                            continue
+                            if isinstance(item, dict):
+                                href = item.get("href") or item.get("url") or ""
+                                text = item.get("title") or item.get("name") or ""
+                            else:
+                                continue
 
-                        if len(text) > 8 and ("/tech/" in href or "/news/" in href or "digitimes" in href.lower()):
-                            if not href.startswith("http"):
-                                href = f"https://www.digitimes.com.tw{href}"
+                            if len(text) > 8 and ("/tech/" in href or "/news/" in href or "digitimes" in href.lower()):
+                                if not href.startswith("http"):
+                                    href = f"https://www.digitimes.com.tw{href}"
 
-                            if href not in all_articles and "digitimes" in href.lower() and href not in archive_urls:
-                                all_articles[href] = text
+                                if href not in all_articles and "digitimes" in href.lower() and href not in archive_urls:
+                                    all_articles[href] = text
+                                    added += 1
 
-                    time.sleep(0.5)
+                        if added == 0:
+                            break  # 这一页没有新文章，可能已经到末尾
+
+                        time.sleep(1)  # 增加延迟以避免限流
+
+                    except Exception as page_err:
+                        print(f"    Page {page_idx} error: {page_err}")
+                        break
 
                 found_count = len(all_articles)
                 print(f"  {keyword:12} → 累计 {found_count} 篇")
+                time.sleep(2)  # 关键字之间增加延迟
 
             except Exception as e:
                 print(f"  {keyword:12} → 错误: {e}")
                 import traceback
-                logger = type('Logger', (), {'debug': print})()
                 traceback.print_exc()
                 continue
 
