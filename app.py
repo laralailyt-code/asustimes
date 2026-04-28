@@ -2746,6 +2746,12 @@ def _scan_one_strike(target, headers, cutoff):
                     try:
                         dt = parsedate_to_datetime(pub)
                         if dt >= cutoff:
+                            title = item.findtext("title", "").lower()
+                            # Verify title contains actual strike keywords (not just "strike" in other context)
+                            has_strike_kw = any(kw.lower() in title for kw in ["罷工", "工潮", "strike threat", "strike action", "strike", "workers strike", "labor strike"])
+                            if not has_strike_kw:
+                                logger.debug(f"[STRIKE] Skipping {target['company']}: no strike keywords in '{title[:50]}'")
+                                continue
                             # Keep track of latest article across all keywords
                             if latest_date is None or dt > latest_date:
                                 latest_date = dt
