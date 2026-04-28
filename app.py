@@ -1490,26 +1490,30 @@ def _refresh_live_prices():
     # User requirement: Yellow Phosphorus price must come from URL only, no CSV history
 
     # Fetch from SCI99 (FIXED SOURCE - monitor-678-0.html)
+    # Uses table parsing instead of text search for reliability
     yp_price = None
     try:
         r = req_lib.get("https://www.sci99.com/monitor-678-0.html", timeout=10, headers=HEADERS)
         if r.status_code == 200:
             soup = _BS(r.content, "html.parser")
-            # Look for price in table/text (adjust selector if needed)
-            # sci99 typically shows prices in <td> or <span> elements
-            price_elements = soup.find_all(["td", "span"])
-            for elem in price_elements:
-                text = elem.get_text(strip=True)
-                # Try to extract numeric price (format: "23400" or "23,400" CNY)
-                price_match = _re.search(r'(\d{4,5}(?:,\d{3})?)', text)
-                if price_match:
+            # Extract price from first row of price table
+            # Table structure: <tr> with <td> elements containing [日期, 价格, 涨跌, 幅度, 七日均价]
+            rows = soup.find_all("tr")
+            for row in rows:
+                cells = row.find_all("td")
+                if len(cells) >= 2:
                     try:
-                        price_str = price_match.group(1).replace(",", "")
-                        yp_price = float(price_str)
-                        if yp_price > 0:
-                            logger.info(f"Yellow Phosphorus from SCI99: {yp_price} CNY/tonne")
-                            break
-                    except:
+                        # First cell is date (2026-04-27), second cell is price (27033.33)
+                        date_text = cells[0].get_text(strip=True)
+                        price_text = cells[1].get_text(strip=True)
+
+                        # Validate it looks like a date (contains - or /)
+                        if ("-" in date_text or "/" in date_text) and len(date_text) >= 8:
+                            yp_price = float(price_text.replace(',', ''))
+                            if yp_price > 0:
+                                logger.info(f"Yellow Phosphorus from SCI99 table: {yp_price} CNY/tonne (date: {date_text})")
+                                break
+                    except (ValueError, TypeError, AttributeError):
                         continue
     except Exception as e:
         logger.debug(f"SCI99 yellow phosphorus fetch failed: {e}")
