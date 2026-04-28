@@ -2682,7 +2682,7 @@ def api_risk_geopolitical():
 
 # ── Strike risk monitor ─────────────────────────────────────────────────────
 _STRIKE_TARGETS = [
-    # ── 3C/半導體相關罷工（ASUS 供應鏈相關）
+    # ── 3C/半導體/物流相關罷工（ASUS 供應鏈相關）
     {"company": "三星電子",  "kw": ["三星 罷工", "Samsung strike", "Samsung workers strike"],
      "lat": 37.00, "lng": 127.06, "region": "韓國", "industry": "semiconductor"},
     {"company": "富士康",    "kw": ["富士康 罷工", "Foxconn strike", "foxconn workers"],
@@ -2697,6 +2697,8 @@ _STRIKE_TARGETS = [
      "lat": 24.82, "lng": 120.97,  "region": "台灣", "industry": "semiconductor"},
     {"company": "聯發科",    "kw": ["聯發科 罷工", "MediaTek strike", "MediaTek workers"],
      "lat": 24.96, "lng": 121.19,  "region": "台灣", "industry": "semiconductor"},
+    {"company": "UPS",       "kw": ["UPS strike", "UPS workers walkout"],
+     "lat": 33.75, "lng": -84.39,  "region": "美國", "industry": "logistics"},
 ]
 
 _strike_cache: dict = {"data": None, "ts": 0.0}
