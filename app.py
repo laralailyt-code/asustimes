@@ -882,11 +882,12 @@ def _fetch_cobalt_price() -> float | None:
             data = r.json()
             if isinstance(data, dict) and "price" in data:
                 price = float(data["price"])
-                if price > 0 and 50000 < price < 60000:  # Sanity check: cobalt should be in this range
+                # Relaxed range: cobalt can fluctuate (30000-80000 USD/tonne)
+                if price > 0 and 30000 < price < 80000:
                     logger.info(f"Cobalt from metals.live (LME): ${price}/tonne (fresh)")
                     return price
                 else:
-                    logger.warning(f"Cobalt price {price} out of expected range, skipping")
+                    logger.warning(f"Cobalt price {price} out of expected range (30000-80000), skipping")
     except Exception as e:
         logger.debug(f"metals.live cobalt fetch failed: {e}")
 
