@@ -2682,26 +2682,21 @@ def api_risk_geopolitical():
 
 # ── Strike risk monitor ─────────────────────────────────────────────────────
 _STRIKE_TARGETS = [
+    # ── 3C/半導體相關罷工（ASUS 供應鏈相關）
     {"company": "三星電子",  "kw": ["三星 罷工", "Samsung strike", "Samsung workers strike"],
-     "lat": 37.00, "lng": 127.06, "region": "韓國"},
-    {"company": "現代汽車",  "kw": ["現代 罷工", "Hyundai strike", "Hyundai workers"],
-     "lat": 37.49, "lng": 126.86, "region": "韓國"},
+     "lat": 37.00, "lng": 127.06, "region": "韓國", "industry": "semiconductor"},
     {"company": "富士康",    "kw": ["富士康 罷工", "Foxconn strike", "foxconn workers"],
-     "lat": 34.75, "lng": 113.62, "region": "中國"},
-    {"company": "波音",      "kw": ["波音 罷工", "Boeing strike", "Boeing workers walkout"],
-     "lat": 47.44, "lng": -122.31, "region": "美國"},
-    {"company": "UPS",       "kw": ["UPS strike", "UPS workers walkout"],
-     "lat": 33.75, "lng": -84.39,  "region": "美國"},
-    {"company": "Volkswagen","kw": ["Volkswagen strike", "VW strike", "福斯 罷工"],
-     "lat": 52.42, "lng": 10.79,   "region": "德國"},
-    {"company": "通用汽車",  "kw": ["GM strike", "General Motors strike", "UAW strike"],
-     "lat": 42.33, "lng": -83.04,  "region": "美國"},
+     "lat": 34.75, "lng": 113.62, "region": "中國", "industry": "electronics"},
     {"company": "SK海力士",  "kw": ["SK Hynix strike", "SK海力士 罷工"],
-     "lat": 37.27, "lng": 127.44,  "region": "韓國"},
+     "lat": 37.27, "lng": 127.44,  "region": "韓國", "industry": "semiconductor"},
     {"company": "LG",        "kw": ["LG strike", "LG 罷工"],
-     "lat": 37.52, "lng": 126.89,  "region": "韓國"},
+     "lat": 37.52, "lng": 126.89,  "region": "韓國", "industry": "electronics"},
     {"company": "比亞迪",    "kw": ["比亞迪 罷工", "BYD strike", "BYD workers"],
-     "lat": 22.58, "lng": 114.09,  "region": "中國"},
+     "lat": 22.58, "lng": 114.09,  "region": "中國", "industry": "battery_ev"},
+    {"company": "台積電",    "kw": ["台積電 罷工", "TSMC strike", "TSMC workers"],
+     "lat": 24.82, "lng": 120.97,  "region": "台灣", "industry": "semiconductor"},
+    {"company": "聯發科",    "kw": ["聯發科 罷工", "MediaTek strike", "MediaTek workers"],
+     "lat": 24.96, "lng": 121.19,  "region": "台灣", "industry": "semiconductor"},
 ]
 
 _strike_cache: dict = {"data": None, "ts": 0.0}
