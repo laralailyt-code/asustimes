@@ -2851,7 +2851,9 @@ def api_risk_strikes():
         return jsonify([])
 
     # Only show strikes with recent news (within the past 7 days)
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).date()
+    # Use Taiwan timezone to match event timestamps
+    TW_TZ = timezone(timedelta(hours=8))
+    cutoff = (datetime.now(TW_TZ) - timedelta(days=7)).date()
 
     filtered_data = [
         event for event in data
