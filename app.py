@@ -2397,12 +2397,12 @@ _geo_risk_lock  = threading.Lock()
 
 # ── Disaster Risks (Earthquakes, Typhoons, etc.) ────────────────────
 _DISASTER_RISKS = [
-    {"id":"disaster-aomori", "kw":["青森地震","Aomori earthquake","日本地震"],
-     "title":"青森地震","type":"disaster","lat":40.5,"lng":141.0,"region":"日本東北",
+    {"id":"disaster-aomori", "kw":["青森地震 magnitude 7","Aomori earthquake 7","青森 7級地震","Aomori 7.4","青森地震"],
+     "title":"青森地震 5級+","type":"disaster","lat":40.5,"lng":141.0,"region":"日本東北",
      "impact":"HIGH","supply":"日本北部製造業中斷風險，光學元件/精密製造可能受影響",
      "affected_materials":["光學元件","精密機械"],"shipping_routes":["日本港口"]},
-    {"id":"disaster-taiwan", "kw":["台灣地震","Taiwan earthquake","花蓮地震"],
-     "title":"台灣地震","type":"disaster","lat":24.0,"lng":121.0,"region":"台灣",
+    {"id":"disaster-taiwan", "kw":["台灣地震 5級","Taiwan earthquake 5.0","台灣 5級以上","花蓮地震"],
+     "title":"台灣地震 5級+","type":"disaster","lat":24.0,"lng":121.0,"region":"台灣",
      "impact":"CRITICAL","supply":"台積電等晶圓廠中斷風險（台灣最高供應鏈風險）",
      "affected_materials":["晶片","半導體"],"shipping_routes":["台灣港口"]},
     {"id":"disaster-typhoon", "kw":["颱風警報","typhoon warning","typhoon landing"],
@@ -2472,9 +2472,28 @@ def _scan_one_geo_risk(risk, headers, cutoff):
                 logger.info(f"[GEO] {risk['title']} + '{kw}': {len(items)} items (status {r.status_code})")
                 for item in items:
                     pub = item.findtext('pubDate', '')
+                    title = item.findtext('title', '')
+                    description = item.findtext('description', '')
                     try:
                         dt = parsedate_to_datetime(pub)
                         if dt >= cutoff:
+                            # For earthquakes: check magnitude >= 5.0
+                            if 'earthquake' in risk['type'].lower() or 'disaster' in risk['type'].lower() or any('地震' in kw for kw in risk['kw']):
+                                text = f"{title} {description}".lower()
+                                # Check for magnitude 5.0 or higher
+                                has_high_magnitude = any([
+                                    mag_pattern in text for mag_pattern in [
+                                        '5.0', '5.1', '5.2', '5.3', '5.4', '5.5', '5.6', '5.7', '5.8', '5.9',
+                                        '6.0', '6.1', '6.2', '6.3', '6.4', '6.5', '6.6', '6.7', '6.8', '6.9',
+                                        '7.0', '7.1', '7.2', '7.3', '7.4', '7.5', '7.6', '7.7', '7.8', '7.9',
+                                        '8.0', '8.1', '8.2', '8.3', '8.4', '8.5', '8.6', '8.7', '8.8', '8.9',
+                                        '5級', '6級', '7級', '8級', '9級',
+                                        'magnitude 5', 'magnitude 6', 'magnitude 7', 'magnitude 8', 'magnitude 9'
+                                    ]
+                                ])
+                                if not has_high_magnitude:
+                                    logger.debug(f"[GEO] Skipping {risk['title']}: no 5.0+ magnitude in article")
+                                    continue
                             found_date = str(dt.date())
                             logger.info(f"[GEO] ✓ {risk['title']}: found recent article")
                             break
