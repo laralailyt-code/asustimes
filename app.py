@@ -2709,7 +2709,7 @@ _STRIKE_TARGETS = [
      "lat": 33.75, "lng": -84.39,  "region": "美國", "industry": "logistics"},
 ]
 
-_strike_cache: dict = {"data": [], "ts": 0.0}  # Force refresh on every startup, start with empty list
+_strike_cache: dict = {"data": None, "ts": 0.0}  # ts=0 forces immediate refresh on startup
 _strike_lock  = threading.Lock()
 
 def _scan_one_strike(target, headers, cutoff):
@@ -2796,11 +2796,13 @@ def _scan_one_strike(target, headers, cutoff):
 
 def _do_strike_scan():
     """Run parallel strike scan and update cache. Returns results list."""
+    logger.info(f"[STRIKE] ===== SCAN START =====")
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
     }
     cutoff = datetime.now(timezone.utc) - timedelta(days=56)
+    logger.info(f"[STRIKE] Cutoff: {cutoff.date()} (56 days)")
     results = []
     executor = ThreadPoolExecutor(max_workers=min(2, len(_STRIKE_TARGETS)))  # Limit to 2 parallel (reduce rate-limit triggers)
     try:
