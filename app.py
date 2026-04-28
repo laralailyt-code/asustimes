@@ -2758,7 +2758,8 @@ def _scan_one_strike(target, headers, cutoff):
                             ])
                             has_exclude = any(kw in full_text for kw in [
                                 "not affected", "unaffected", "strike deal", "strike agreement",
-                                "strike price", "strike settlement"
+                                "strike price", "strike settlement", "court", "fine", "theft",
+                                "legal", "lawsuit", "patent", "intellectual property"
                             ])
 
                             if not has_strike_action or has_exclude:
