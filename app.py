@@ -2450,9 +2450,16 @@ def _get_earthquake_date_from_usgs(location_keyword):
 
         # Map location keywords to USGS bounding boxes (format: minlatitude,minlongitude,maxlatitude,maxlongitude)
         location_boxes = {
-            'aomori': '39.5,139.0,41.5,142.0',    # Aomori prefecture, Japan
-            'taiwan': '21.5,119.5,25.5,122.5',    # Taiwan
-            'tohoku': '36.0,136.0,42.0,144.0',    # Tohoku region
+            'aomori': '39.5,139.0,41.5,142.0',
+            '青森': '39.5,139.0,41.5,142.0',
+            'tohoku': '36.0,136.0,42.0,144.0',
+            '日本東北': '36.0,136.0,42.0,144.0',    # matches risk['region']
+            '日本北部': '36.0,136.0,42.0,144.0',
+            'japan': '30.0,130.0,45.0,145.0',       # Broader Japan area
+            'taiwan': '21.5,119.5,25.5,122.5',
+            '台灣': '21.5,119.5,25.5,122.5',        # matches risk['region']
+            'western pacific': '5.0,120.0,35.0,160.0',
+            '西太平洋': '5.0,120.0,35.0,160.0',     # matches risk['region']
         }
 
         # Find matching location
