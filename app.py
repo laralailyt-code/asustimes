@@ -2709,7 +2709,7 @@ _STRIKE_TARGETS = [
      "lat": 33.75, "lng": -84.39,  "region": "美國", "industry": "logistics"},
 ]
 
-_strike_cache: dict = {"data": None, "ts": 0.0}  # ts=0 forces immediate refresh on startup
+_strike_cache: dict = {"data": [], "ts": 0.0}  # Force empty on startup + immediate refresh
 _strike_lock  = threading.Lock()
 
 def _scan_one_strike(target, headers, cutoff):
