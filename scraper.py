@@ -816,9 +816,16 @@ FEEDS = [
     {"url": GN_EN + "earnings+semiconductor+quarterly",      "source": "Global Tech", "hint": "財報/法說"},
 
     # ── Supply chain risks: strikes, conflicts, disasters ───────────────────
-    {"url": GN + "罷工",                                    "source": "Google News", "hint": "供應鏈/關稅"},
-    {"url": GN + "工人罷工+三星+富士康+鴻海",               "source": "Google News", "hint": "供應鏈/關稅"},
-    {"url": GN + "罷工+供應鏈+工潮",                        "source": "Google News", "hint": "供應鏈/關稅"},
+    # Strikes - use English for better Bing results
+    {"url": GN + "workers+strike",                         "source": "Bing News", "hint": "供應鏈/關稅"},
+    {"url": GN + "strike+Samsung",                         "source": "Bing News", "hint": "供應鏈/關稅"},
+    {"url": GN + "strike+Foxconn",                         "source": "Bing News", "hint": "供應鏈/關稅"},
+    {"url": GN + "labor+strike+semiconductor",             "source": "Bing News", "hint": "供應鏈/關稅"},
+    {"url": GN + "strike+tech+factory",                    "source": "Bing News", "hint": "供應鏈/關稅"},
+    # Traditional Chinese searches
+    {"url": GN + "罷工",                                    "source": "Bing News", "hint": "供應鏈/關稅"},
+    {"url": GN + "工人罷工+三星+富士康+鴻海",               "source": "Bing News", "hint": "供應鏈/關稅"},
+    {"url": GN + "罷工+供應鏈+工潮",                        "source": "Bing News", "hint": "供應鏈/關稅"},
     {"url": GN + "戰爭+衝突+地緣政治",                      "source": "Google News", "hint": "供應鏈/關稅"},
     {"url": GN + "伊朗+美國+中東+衝突",                     "source": "Google News", "hint": "供應鏈/關稅"},
     {"url": GN + "紅海+胡塞+航運",                          "source": "Google News", "hint": "供應鏈/關稅"},
