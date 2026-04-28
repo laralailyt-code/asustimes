@@ -1714,8 +1714,20 @@ def _refresh_live_prices():
         prev = [(date, price) for date, price in sorted(_TUNGSTEN_HISTORY.items())]
         logger.info(f"Initialized tungsten from user history: {len(prev)} points")
 
-    # Get today's price from SMM
+    # Get today's price from SMM (primary), fallback to ebaiyin tungsten rod
     tungsten_price = _fetch_smm_tungsten_powder_price()
+    tungsten_source_used = "SMM"
+
+    if tungsten_price is None:
+        # Fallback to ebaiyin tungsten rod price
+        try:
+            ebaiyin_data = _fetch_ebaiyin_tungsten()
+            if ebaiyin_data:
+                tungsten_price = ebaiyin_data[0]  # Get price from tuple
+                tungsten_source_used = "ebaiyin"
+                logger.info(f"Using ebaiyin tungsten rod as fallback: {tungsten_price}")
+        except:
+            pass
 
     if tungsten_price is not None:
         # Always update/add today's price from SMM
