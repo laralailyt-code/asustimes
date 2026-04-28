@@ -2845,14 +2845,13 @@ def _do_strike_scan():
         executor.shutdown(wait=False)
 
     with _strike_lock:
-        # Fallback: if scan returns no results, keep last cached data
-        if results:
-            _strike_cache["data"] = results
-        elif _strike_cache["data"] is None:
-            _strike_cache["data"] = []
+        # Temporary: Disable strike cache until we fix the company attribution bug
+        # Currently strikes are being misattributed (Samsung news tagged as TSMC, etc.)
+        _strike_cache["data"] = []
         _strike_cache["ts"] = time.time()
-    logger.info(f"Strike events: {len(results)}/{len(_STRIKE_TARGETS)}")
-    return results
+    logger.warning(f"[STRIKE] DISABLED: Strike detection temporarily disabled due to misattribution bugs")
+    logger.warning(f"[STRIKE] Found {len(results)} results but not storing due to company mix-up issues")
+    return []
 
 
 @app.route("/api/risk/strikes")
