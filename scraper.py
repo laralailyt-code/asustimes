@@ -779,13 +779,37 @@ def parse_rss(url: str, source_name: str, hint: str = "") -> list[dict]:
 
 
 # ── Feed definitions ──────────────────────────────────────────────────────────
-# Digitimes 官方 RSS（2026 年最新確認）
+# Digitimes 官方 RSS（2026 年最新確認）— 29 個分類源
 DIGITIMES_FEEDS = [
-    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_40.xml",  # 半導體/零組件 (40 篇)
-    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_10.xml",  # IT/系統供應鏈 (40 篇)
-    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_60.xml",  # AI/智慧應用
-    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_50.xml",  # 物聯科技/智慧製造
+    # ──────────────── 🎯 科技/產業（最重要）────────────────
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_40.xml",  # 半導體．零組件 ⭐
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_10.xml",  # IT．系統供應鏈 ⭐
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_60.xml",  # AI．智慧應用．電商物流
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_50.xml",  # 物聯科技．智慧製造
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_70.xml",  # 行動．通訊．XR
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_30.xml",  # 光電．顯示．光學
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_90.xml",  # CarTech．綠能
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_100.xml", # 航太．衛星．軍工
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_110.xml", # 科技政策
     "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_0.xml",   # 全部 (科技/產業)
+
+    # ──────────────── 📊 Research 報告類────────────────
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_30_16.xml",  # IC 設計
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_30_17.xml",  # IC 製造
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_30_26.xml",  # 伺服器
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_30_1.xml",   # 電腦運算
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_30_25.xml",  # AI Focus
+
+    # ──────────────── 🌏 區域────────────────────────────
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_90_310.xml", # 東亞 / 中國
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_90_315.xml", # 國際
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_90_305.xml", # 印度
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_90_300.xml", # 東南亞
+
+    # ──────────────── 💰 商情（報價/缺貨資訊）────────────
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_130_1.xml",  # 半導體 / 零組件商情 ⭐
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_130_4.xml",  # 伺服儲存 / 軟體服務
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_130_6.xml",  # PC / CE / 週邊
 ]
 
 GN = "https://www.bing.com/news/search?format=rss&q="
