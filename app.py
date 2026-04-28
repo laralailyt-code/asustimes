@@ -1306,8 +1306,8 @@ def _fetch_smm_tungsten_powder_price() -> float | None:
 def _fetch_pc_price_from_sci99() -> float | None:
     """Fetch PC (Polycarbonate) price from sci99.com/monitor-68-0.html.
     Returns price in CNY/tonne or None if fetch fails.
+    Uses table parser instead of regex for reliability.
     """
-    import re
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -1319,34 +1319,30 @@ def _fetch_pc_price_from_sci99() -> float | None:
             timeout=12
         )
 
-        # Try to find PC price in multiple formats from sci99 page
-        patterns = [
-            # "PC: 17350" or "PC（聚碳酸酯）: 17350"
-            r'PC[^0-9]*?(\d{4,5}(?:\.\d+)?)',
-            # "聚碳酸酯: 17350"
-            r'聚碳酸酯[：:]\s*(\d{4,5}(?:\.\d+)?)',
-            # Price in HTML/JSON format
-            r'"pc"\s*:\s*(\d{4,5}(?:\.\d+)?)',
-            # Generic pattern: number between 15000-20000 (PC typical range)
-            r'>(\d{5}(?:\.\d+)?)\s*<',
-        ]
+        soup = _BS(r.content, "html.parser")
 
-        for pattern in patterns:
-            try:
-                matches = re.findall(pattern, r.text, re.IGNORECASE)
-                for match in matches:
-                    try:
-                        price = float(match.replace(',', ''))
+        # Find the price table and extract the first row's price (latest day)
+        # Table structure: <tr> with <td> elements containing [日期, 价格, 涨跌, 幅度, 七日均价]
+        rows = soup.find_all("tr")
+        for row in rows:
+            cells = row.find_all("td")
+            if len(cells) >= 2:
+                try:
+                    # First cell is date (2026-04-27), second cell is price (16950.00)
+                    date_text = cells[0].get_text(strip=True)
+                    price_text = cells[1].get_text(strip=True)
+
+                    # Validate it looks like a date (contains - or /)
+                    if ("-" in date_text or "/" in date_text) and len(date_text) >= 8:
+                        price = float(price_text.replace(',', ''))
                         # Validate price range for PC (10000-25000 CNY/tonne typical)
                         if 10000 < price < 25000:
-                            logger.info(f"PC price from sci99.com: {price} CNY/tonne")
+                            logger.info(f"PC price from sci99.com table: {price} CNY/tonne (date: {date_text})")
                             return price
-                    except (ValueError, TypeError):
-                        continue
-            except:
-                continue
+                except (ValueError, TypeError, AttributeError):
+                    continue
 
-        logger.warning(f"sci99.com PC: could not extract price from page")
+        logger.warning(f"sci99.com PC: could not extract price from table")
     except Exception as e:
         logger.warning(f"sci99.com PC fetch error: {e}")
 
