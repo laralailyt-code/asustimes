@@ -1304,50 +1304,56 @@ def _fetch_smm_tungsten_powder_price() -> float | None:
     return None
 
 
-def _fetch_pc_price_from_sci99() -> float | None:
-    """Fetch PC (Polycarbonate) price from sci99.com/monitor-68-0.html.
-    Returns price in CNY/tonne or None if fetch fails.
-    Uses table parser instead of regex for reliability.
+def _fetch_sci99_price(old_id: int, label: str = "") -> tuple[float | None, str | None]:
+    """Fetch latest price from sci99.com JSON API.
+
+    sci99.com switched its monitor pages to JS-rendered empty tables in 2026,
+    so parsing the static HTML returns nothing. Use the AJAX endpoint that the
+    site itself calls. `oldId` matches the number in the page URL — e.g.
+    monitor-678-0.html → oldId=678 (黃磷); monitor-68-0.html → oldId=68 (PC).
+
+    Returns (price as float, date_str) or (None, None) on failure.
     """
-    from bs4 import BeautifulSoup as _BS
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept-Language": "zh-CN,zh;q=0.9",
+            "Accept": "application/json, text/plain, */*",
+            "Referer": f"https://www.sci99.com/monitor-{old_id}-0.html",
         }
         r = req_lib.get(
-            "https://www.sci99.com/monitor-68-0.html",
+            "https://www.sci99.com/priceMonitor/listProductPagePrice",
+            params={"oldId": old_id, "type": 0},
             headers=headers,
-            timeout=12
+            timeout=12,
         )
-
-        soup = _BS(r.content, "html.parser")
-
-        # Find the price table and extract the first row's price (latest day)
-        # Table structure: <tr> with <td> elements containing [日期, 价格, 涨跌, 幅度, 七日均价]
-        rows = soup.find_all("tr")
-        for row in rows:
-            cells = row.find_all("td")
-            if len(cells) >= 2:
-                try:
-                    # First cell is date (2026-04-27), second cell is price (16950.00)
-                    date_text = cells[0].get_text(strip=True)
-                    price_text = cells[1].get_text(strip=True)
-
-                    # Validate it looks like a date (contains - or /)
-                    if ("-" in date_text or "/" in date_text) and len(date_text) >= 8:
-                        price = float(price_text.replace(',', ''))
-                        # Validate price range for PC (10000-25000 CNY/tonne typical)
-                        if 10000 < price < 25000:
-                            logger.info(f"PC price from sci99.com table: {price} CNY/tonne (date: {date_text})")
-                            return price
-                except (ValueError, TypeError, AttributeError):
-                    continue
-
-        logger.warning(f"sci99.com PC: could not extract price from table")
+        if r.status_code != 200:
+            logger.warning(f"sci99 API {label or old_id}: HTTP {r.status_code}")
+            return None, None
+        body = r.json()
+        if body.get("code") != 200 or not body.get("data"):
+            logger.warning(f"sci99 API {label or old_id}: empty data")
+            return None, None
+        first = body["data"][0]
+        date_str = first.get("dateRange")
+        price_str = first.get("mdataValue")
+        if not date_str or not price_str:
+            return None, None
+        return float(price_str.replace(",", "")), date_str
     except Exception as e:
-        logger.warning(f"sci99.com PC fetch error: {e}")
+        logger.warning(f"sci99 API {label or old_id} fetch error: {e}")
+        return None, None
 
+
+def _fetch_pc_price_from_sci99() -> float | None:
+    """Fetch PC (Polycarbonate) price from sci99.com (oldId=68).
+    Returns price in CNY/tonne or None if fetch fails.
+    """
+    price, date_str = _fetch_sci99_price(68, label="PC")
+    if price and 10000 < price < 25000:
+        logger.info(f"PC price from sci99 API: {price} CNY/tonne (date: {date_str})")
+        return price
+    if price is not None:
+        logger.warning(f"PC price out of range from sci99 API: {price}")
     return None
 
 
@@ -1492,34 +1498,14 @@ def _refresh_live_prices():
     # DO NOT initialize from historical CSV — always fetch fresh from URL
     # User requirement: Yellow Phosphorus price must come from URL only, no CSV history
 
-    # Fetch from SCI99 (FIXED SOURCE - monitor-678-0.html)
-    # Uses table parsing instead of text search for reliability
-    yp_price = None
-    try:
-        r = req_lib.get("https://www.sci99.com/monitor-678-0.html", timeout=10, headers=HEADERS)
-        if r.status_code == 200:
-            soup = _BS(r.content, "html.parser")
-            # Extract price from first row of price table
-            # Table structure: <tr> with <td> elements containing [日期, 价格, 涨跌, 幅度, 七日均价]
-            rows = soup.find_all("tr")
-            for row in rows:
-                cells = row.find_all("td")
-                if len(cells) >= 2:
-                    try:
-                        # First cell is date (2026-04-27), second cell is price (27033.33)
-                        date_text = cells[0].get_text(strip=True)
-                        price_text = cells[1].get_text(strip=True)
-
-                        # Validate it looks like a date (contains - or /)
-                        if ("-" in date_text or "/" in date_text) and len(date_text) >= 8:
-                            yp_price = float(price_text.replace(',', ''))
-                            if yp_price > 0:
-                                logger.info(f"Yellow Phosphorus from SCI99 table: {yp_price} CNY/tonne (date: {date_text})")
-                                break
-                    except (ValueError, TypeError, AttributeError):
-                        continue
-    except Exception as e:
-        logger.debug(f"SCI99 yellow phosphorus fetch failed: {e}")
+    # Fetch from SCI99 JSON API (oldId=678 for 黃磷, matches monitor-678-0.html URL).
+    # The HTML monitor page is now JS-rendered (empty static <table>), so we hit
+    # the same AJAX endpoint that the page itself calls.
+    yp_price, yp_date = _fetch_sci99_price(678, label="Yellow Phosphorus")
+    if yp_price and yp_price > 0:
+        logger.info(f"Yellow Phosphorus from SCI99 API: {yp_price} CNY/tonne (date: {yp_date})")
+    else:
+        yp_price = None
 
     if yp_price and yp_price > 0:
         yp_val = round(yp_price, 2)
