@@ -1308,6 +1308,7 @@ def _fetch_pc_price_from_sci99() -> float | None:
     Returns price in CNY/tonne or None if fetch fails.
     Uses table parser instead of regex for reliability.
     """
+    from bs4 import BeautifulSoup as _BS
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -1381,6 +1382,7 @@ def _load_commodity_csv_to_cache():
 
 def _refresh_live_prices():
     """Fetch commodity & FX prices with 1-year history. Called on startup and periodically."""
+    from bs4 import BeautifulSoup as _BS
     logger.info("[REFRESH] Starting refresh...")
     today = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
     fresh: dict = {}
