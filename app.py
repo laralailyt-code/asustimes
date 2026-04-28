@@ -2820,12 +2820,6 @@ def _do_strike_scan():
     finally:
         executor.shutdown(wait=False)
 
-    # Clean up: filter out old strikes (>7 days) before caching
-    from datetime import datetime as dt_class, timezone, timedelta
-    TW_TZ = timezone(timedelta(hours=8))
-    cutoff_7d = (dt_class.now(TW_TZ) - timedelta(days=7)).date()
-    results = [r for r in results if r.get("time", "") >= str(cutoff_7d)]
-
     with _strike_lock:
         # Fallback: if scan returns no results, keep last cached data
         if results:
