@@ -2541,7 +2541,8 @@ def _scan_one_geo_risk(risk, headers, cutoff):
     import time as _time
     from urllib.parse import quote
     from email.utils import parsedate_to_datetime
-    found_date = ""
+    latest_article = None
+    latest_date = None
     for kw in risk["kw"]:
         for attempt in range(3):
             try:
@@ -2610,7 +2611,10 @@ def _scan_one_geo_risk(risk, headers, cutoff):
                             else:
                                 found_date = str(dt.date())
                                 logger.info(f"[GEO] ✓ {risk['title']}: found recent article")
-                            break
+                            # Keep track of latest article across all keywords
+                            if latest_date is None or dt > latest_date:
+                                latest_date = dt
+                                latest_article = found_date
                     except (ValueError, TypeError):
                         pass
                 break
@@ -2620,8 +2624,8 @@ def _scan_one_geo_risk(risk, headers, cutoff):
             except Exception as e:
                 logger.warning(f"[GEO] {risk['title']} + '{kw}' ERROR: {type(e).__name__}: {e}")
                 break
-    if not found_date:
-        logger.info(f"[GEO] ✗ {risk['title']}: no matching articles")
+    if not latest_article:
+        logger.info(f"[GEO] ✗ {risk['title']}: no matching articles within 8 weeks")
         return None
     from urllib.parse import quote as _q
     return {
@@ -2629,7 +2633,7 @@ def _scan_one_geo_risk(risk, headers, cutoff):
         "title": risk["title"], "lat": risk["lat"], "lng": risk["lng"],
         "region": risk["region"], "impact": risk["impact"],
         "supply": risk["supply"],
-        "time": found_date, "status": "新聞持續報導中",
+        "time": latest_article, "status": "新聞持續報導中",
         "source": "Bing News自動監測",
         "sourceUrl": f"https://www.bing.com/news/search?q={_q(risk['kw'][0])}",
     }
@@ -2642,7 +2646,7 @@ def _do_geo_scan():
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
         "Accept-Language": "en-US,en;q=0.9",
     }
-    cutoff = datetime.now(timezone.utc) - timedelta(days=45)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=56)
     results = []
     all_risks = _GEO_RISKS + _DISASTER_RISKS  # Include both geopolitical and disaster risks
     executor = ThreadPoolExecutor(max_workers=min(2, len(all_risks)))  # Limit to 2 parallel (reduce rate-limit triggers)
@@ -2715,7 +2719,8 @@ def _scan_one_strike(target, headers, cutoff):
     import time as _time
     from urllib.parse import quote
     from email.utils import parsedate_to_datetime
-    found_article = None
+    latest_article = None
+    latest_date = None
     for kw in target["kw"]:
         for attempt in range(3):
             try:
@@ -2741,13 +2746,15 @@ def _scan_one_strike(target, headers, cutoff):
                     try:
                         dt = parsedate_to_datetime(pub)
                         if dt >= cutoff:
-                            found_article = {
-                                "title": item.findtext("title", ""),
-                                "url":   item.findtext("link", ""),
-                                "date":  str(dt.date()),
-                            }
-                            logger.info(f"[STRIKE] ✓ {target['company']}: {found_article['title'][:60]}")
-                            break
+                            # Keep track of latest article across all keywords
+                            if latest_date is None or dt > latest_date:
+                                latest_date = dt
+                                latest_article = {
+                                    "title": item.findtext("title", ""),
+                                    "url":   item.findtext("link", ""),
+                                    "date":  str(dt.date()),
+                                }
+                                logger.info(f"[STRIKE] ✓ {target['company']}: {latest_article['title'][:60]}")
                     except Exception:
                         pass
                 break
@@ -2757,12 +2764,12 @@ def _scan_one_strike(target, headers, cutoff):
             except Exception as e:
                 logger.warning(f"[STRIKE] {target['company']} + '{kw}' ERROR: {type(e).__name__}: {e}")
                 break
-    if not found_article:
-        logger.info(f"[STRIKE] ✗ {target['company']}: no matching articles")
+    if not latest_article:
+        logger.info(f"[STRIKE] ✗ {target['company']}: no matching articles within 8 weeks")
         return None
 
     # Decode Bing apiclick redirect URLs to get actual article URLs
-    article_url = found_article["url"]
+    article_url = latest_article["url"]
     if "bing.com/news/apiclick.aspx" in article_url:
         try:
             from urllib.parse import urlparse, parse_qs, unquote
@@ -2778,12 +2785,12 @@ def _scan_one_strike(target, headers, cutoff):
         "title":     f"{target['company']} 罷工事件",
         "lat":       target["lat"], "lng": target["lng"],
         "region":    target["region"],
-        "time":      found_article["date"],
+        "time":      latest_article["date"],
         "impact":    "HIGH",
         "supply":    f"{target['company']}勞資衝突，可能影響生產排程與出貨交期，建議評估替代供應",
         "source":    "Bing News自動監測",
         "sourceUrl": article_url,
-        "newsTitle": found_article["title"],
+        "newsTitle": latest_article["title"],
     }
 
 
@@ -2793,7 +2800,7 @@ def _do_strike_scan():
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
     }
-    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=56)
     results = []
     executor = ThreadPoolExecutor(max_workers=min(2, len(_STRIKE_TARGETS)))  # Limit to 2 parallel (reduce rate-limit triggers)
     try:
