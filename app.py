@@ -2446,69 +2446,75 @@ _GEO_RISKS = [
 def _extract_earthquake_date(text):
     """Extract actual earthquake date from article text (not publication date)."""
     import re
-    from datetime import datetime
 
-    # Search for dates in contexts mentioning earthquake/地震 first
-    # This helps avoid matching publication dates
+    text_lower = text.lower()
 
-    # 1. Look for dates near earthquake keywords (higher priority)
-    contexts = [
-        r'地震.*?(\d{1,2})[\/\-](\d{1,2})',  # Chinese pattern: 地震...M/D
-        r'earthquake.*?(\d{1,2})[\/\-](\d{1,2})',  # English: earthquake...M/D
-        r'(\d{1,2})[\/\-](\d{1,2}).*?地震',  # M/D...地震
-        r'(\d{1,2})[\/\-](\d{1,2}).*?earthquake',  # M/D...earthquake
-    ]
+    # Strategy: Find all date patterns, then check which ones are near earthquake keywords
+    # This avoids matching the publication date
 
-    for pattern in contexts:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            try:
-                month, day = int(match.group(1)), int(match.group(2))
-                if 1 <= month <= 12 and 1 <= day <= 31:
-                    return f"2026-{month:02d}-{day:02d}"
-            except:
-                pass
+    # Find all M/D or M月D日 patterns with their positions
+    all_dates = []
 
-    # 2. Try Chinese format "4月20日" with earthquake context
-    pattern = r'地震.*?(\d{1,2})月(\d{1,2})日|(\d{1,2})月(\d{1,2})日.*?地震'
-    match = re.search(pattern, text)
-    if match:
-        try:
-            if match.group(1):  # 地震...M月D日 format
-                month, day = int(match.group(1)), int(match.group(2))
-            else:  # M月D日...地震 format
-                month, day = int(match.group(3)), int(match.group(4))
-            if 1 <= month <= 12 and 1 <= day <= 31:
-                return f"2026-{month:02d}-{day:02d}"
-        except:
-            pass
+    # Pattern 1: M/D or M-D format (e.g. 4/20 or 4-20)
+    for match in re.finditer(r'\b(\d{1,2})[\/\-](\d{1,2})\b', text):
+        month, day = int(match.group(1)), int(match.group(2))
+        if 1 <= month <= 12 and 1 <= day <= 31:
+            all_dates.append({
+                'date': f"2026-{month:02d}-{day:02d}",
+                'pos': match.start(),
+                'text': match.group(0)
+            })
 
-    # 3. Fallback: try English month names (e.g. "April 20")
-    match = re.search(r'(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})(?:\s*,?\s*(\d{4}))?', text, re.IGNORECASE)
-    if match:
-        try:
-            month_name, day = match.group(1), int(match.group(2))
-            year = int(match.group(3)) if match.group(3) else 2026
+    # Pattern 2: Chinese format M月D日 (e.g. 4月20日)
+    for match in re.finditer(r'(\d{1,2})月(\d{1,2})日', text):
+        month, day = int(match.group(1)), int(match.group(2))
+        if 1 <= month <= 12 and 1 <= day <= 31:
+            all_dates.append({
+                'date': f"2026-{month:02d}-{day:02d}",
+                'pos': match.start(),
+                'text': match.group(0)
+            })
 
-            month_map = {'january':1, 'february':2, 'march':3, 'april':4, 'may':5, 'june':6,
-                        'july':7, 'august':8, 'september':9, 'october':10, 'november':11, 'december':12,
-                        'jan':1, 'feb':2, 'mar':3, 'apr':4, 'may':5, 'jun':6, 'jul':7, 'aug':8,
-                        'sep':9, 'oct':10, 'nov':11, 'dec':12}
-            month = month_map.get(month_name.lower())
-            if month:
-                return f"{year}-{month:02d}-{day:02d}"
-        except:
-            pass
+    # Pattern 3: English month names (e.g. April 20)
+    month_map = {
+        'january':1, 'february':2, 'march':3, 'april':4, 'may':5, 'june':6,
+        'july':7, 'august':8, 'september':9, 'october':10, 'november':11, 'december':12,
+        'jan':1, 'feb':2, 'mar':3, 'apr':4, 'may':5, 'jun':6, 'jul':7, 'aug':8,
+        'sep':9, 'oct':10, 'nov':11, 'dec':12
+    }
 
-    # 4. Last resort: any M/D or M-D format
-    match = re.search(r'\b(\d{1,2})[\/\-](\d{1,2})\b', text)
-    if match:
-        try:
-            month, day = int(match.group(1)), int(match.group(2))
-            if 1 <= month <= 12 and 1 <= day <= 31:
-                return f"2026-{month:02d}-{day:02d}"
-        except:
-            pass
+    for match in re.finditer(r'(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2})(?:\s*,?\s*(\d{4}))?', text, re.IGNORECASE):
+        month_name, day = match.group(1), int(match.group(2))
+        year = int(match.group(3)) if match.group(3) else 2026
+        month = month_map.get(month_name.lower())
+        if month and 1 <= day <= 31:
+            all_dates.append({
+                'date': f"{year}-{month:02d}-{day:02d}",
+                'pos': match.start(),
+                'text': match.group(0)
+            })
+
+    if not all_dates:
+        return None
+
+    # Check which dates are near earthquake keywords (within 100 chars)
+    earthquake_keywords = ['地震', 'earthquake', 'quake', '震度']
+
+    for date_info in all_dates:
+        pos = date_info['pos']
+        # Check context around this date (50 chars before and after)
+        start = max(0, pos - 150)
+        end = min(len(text), pos + 150)
+        context = text[start:end].lower()
+
+        # If any earthquake keyword is in the context, prefer this date
+        if any(kw in context for kw in earthquake_keywords):
+            return date_info['date']
+
+    # If no date is near earthquake keywords, return the earliest date
+    # (most likely to be the actual earthquake date, not publication date)
+    if all_dates:
+        return sorted(all_dates, key=lambda x: x['pos'])[0]['date']
 
     return None
 
