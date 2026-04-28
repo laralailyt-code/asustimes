@@ -2443,78 +2443,48 @@ _GEO_RISKS = [
      "affected_materials":["紡織品","電子零件"],"shipping_routes":["南亞港口","阿拉伯海"]},
 ]
 
-def _extract_earthquake_date(text):
-    """Extract actual earthquake date from article text (not publication date)."""
-    import re
+def _get_earthquake_date_from_usgs(location_keyword):
+    """Query USGS API for recent earthquake date in location (e.g. 'Aomori')."""
+    try:
+        from datetime import datetime, timezone, timedelta
 
-    text_lower = text.lower()
+        # Map location keywords to USGS bounding boxes (format: minlatitude,minlongitude,maxlatitude,maxlongitude)
+        location_boxes = {
+            'aomori': '39.5,139.0,41.5,142.0',    # Aomori prefecture, Japan
+            'taiwan': '21.5,119.5,25.5,122.5',    # Taiwan
+            'tohoku': '36.0,136.0,42.0,144.0',    # Tohoku region
+        }
 
-    # Strategy: Find all date patterns, then check which ones are near earthquake keywords
-    # This avoids matching the publication date
+        # Find matching location
+        box = None
+        for loc_kw, bbox in location_boxes.items():
+            if loc_kw in location_keyword.lower():
+                box = bbox
+                break
 
-    # Find all M/D or M月D日 patterns with their positions
-    all_dates = []
+        if not box:
+            return None
 
-    # Pattern 1: M/D or M-D format (e.g. 4/20 or 4-20)
-    for match in re.finditer(r'\b(\d{1,2})[\/\-](\d{1,2})\b', text):
-        month, day = int(match.group(1)), int(match.group(2))
-        if 1 <= month <= 12 and 1 <= day <= 31:
-            all_dates.append({
-                'date': f"2026-{month:02d}-{day:02d}",
-                'pos': match.start(),
-                'text': match.group(0)
-            })
+        # Query USGS API for earthquakes in past 30 days
+        url = f"https://earthquake.usgs.gov/fdsnws/event/1/query?format=json&starttime={datetime.now(timezone.utc) - timedelta(days=30)}&bbox={box}&minmagnitude=5.0"
+        r = req_lib.get(url, timeout=10)
 
-    # Pattern 2: Chinese format M月D日 (e.g. 4月20日)
-    for match in re.finditer(r'(\d{1,2})月(\d{1,2})日', text):
-        month, day = int(match.group(1)), int(match.group(2))
-        if 1 <= month <= 12 and 1 <= day <= 31:
-            all_dates.append({
-                'date': f"2026-{month:02d}-{day:02d}",
-                'pos': match.start(),
-                'text': match.group(0)
-            })
+        if r.status_code != 200:
+            return None
 
-    # Pattern 3: English month names (e.g. April 20)
-    month_map = {
-        'january':1, 'february':2, 'march':3, 'april':4, 'may':5, 'june':6,
-        'july':7, 'august':8, 'september':9, 'october':10, 'november':11, 'december':12,
-        'jan':1, 'feb':2, 'mar':3, 'apr':4, 'may':5, 'jun':6, 'jul':7, 'aug':8,
-        'sep':9, 'oct':10, 'nov':11, 'dec':12
-    }
+        data = r.json()
+        features = data.get('features', [])
 
-    for match in re.finditer(r'(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2})(?:\s*,?\s*(\d{4}))?', text, re.IGNORECASE):
-        month_name, day = match.group(1), int(match.group(2))
-        year = int(match.group(3)) if match.group(3) else 2026
-        month = month_map.get(month_name.lower())
-        if month and 1 <= day <= 31:
-            all_dates.append({
-                'date': f"{year}-{month:02d}-{day:02d}",
-                'pos': match.start(),
-                'text': match.group(0)
-            })
+        if features:
+            # Get the most recent earthquake
+            latest = features[0]
+            props = latest.get('properties', {})
+            timestamp = props.get('time', 0) / 1000  # Convert ms to seconds
+            eq_date = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+            return eq_date.strftime('%Y-%m-%d')
 
-    if not all_dates:
-        return None
-
-    # Check which dates are near earthquake keywords (within 100 chars)
-    earthquake_keywords = ['地震', 'earthquake', 'quake', '震度']
-
-    for date_info in all_dates:
-        pos = date_info['pos']
-        # Check context around this date (50 chars before and after)
-        start = max(0, pos - 150)
-        end = min(len(text), pos + 150)
-        context = text[start:end].lower()
-
-        # If any earthquake keyword is in the context, prefer this date
-        if any(kw in context for kw in earthquake_keywords):
-            return date_info['date']
-
-    # If no date is near earthquake keywords, return the earliest date
-    # (most likely to be the actual earthquake date, not publication date)
-    if all_dates:
-        return sorted(all_dates, key=lambda x: x['pos'])[0]['date']
+    except Exception as e:
+        logger.debug(f"USGS API error: {e}")
 
     return None
 
@@ -2571,17 +2541,17 @@ def _scan_one_geo_risk(risk, headers, cutoff):
                                     logger.debug(f"[GEO] Skipping {risk['title']}: no 5.0+ magnitude in article")
                                     continue
 
-                            # For earthquakes: extract actual earthquake date from article content
+                            # For earthquakes: get actual earthquake date from USGS API
                             if 'earthquake' in risk['type'].lower() or 'disaster' in risk['type'].lower() or any('地震' in kw for kw in risk['kw']):
-                                article_text = f"{title} {description}"
-                                earthquake_date = _extract_earthquake_date(article_text)
-                                if earthquake_date:
-                                    found_date = earthquake_date
-                                    logger.info(f"[GEO] ✓ {risk['title']}: earthquake on {earthquake_date}")
+                                # Try USGS API first (most reliable)
+                                usgs_date = _get_earthquake_date_from_usgs(risk['region'])
+                                if usgs_date:
+                                    found_date = usgs_date
+                                    logger.info(f"[GEO] ✓ {risk['title']}: earthquake on {usgs_date} (USGS)")
                                 else:
-                                    # Fallback to news publication date if we can't extract earthquake date
+                                    # Fallback to news publication date
                                     found_date = str(dt.date())
-                                    logger.debug(f"[GEO] {risk['title']}: using publication date {found_date}")
+                                    logger.debug(f"[GEO] {risk['title']}: using publication date {found_date} (USGS API unavailable)")
                             else:
                                 found_date = str(dt.date())
                                 logger.info(f"[GEO] ✓ {risk['title']}: found recent article")
