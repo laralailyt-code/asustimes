@@ -1,0 +1,11 @@
+[
+  {
+    "source": "Bing News",
+    "source_url": "https://example.com/placeholder",
+    "title": "News archive will be auto-populated on next app startup",
+    "summary": "When app.py runs, it will fetch current news and save to this archive. Run bootstrap-yahoo-news.yml GitHub Actions for full 6-month history.",
+    "published": "2026-04-28T00:00:00Z",
+    "fetched_at": "2026-04-28T00:00:00Z",
+    "category": "科技"
+  }
+]
