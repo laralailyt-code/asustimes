@@ -1,11 +1,82 @@
 [
   {
     "source": "Bing News",
-    "source_url": "https://example.com/placeholder",
-    "title": "News archive will be auto-populated on next app startup",
-    "summary": "When app.py runs, it will fetch current news and save to this archive. Run bootstrap-yahoo-news.yml GitHub Actions for full 6-month history.",
-    "published": "2026-04-28T00:00:00Z",
-    "fetched_at": "2026-04-28T00:00:00Z",
+    "source_url": "https://www.businessweekly.com.tw/business/blog/3021230",
+    "title": "New Taipei MRT uses AI to predict rail switch failures, reduces delays to 2/year",
+    "summary": "AI innovation in public transit infrastructure",
+    "published": "2026-04-28T00:24:23Z",
     "category": "科技"
+  },
+  {
+    "source": "Bing News",
+    "source_url": "https://www.ctee.com.tw/news/20260428700454-431202",
+    "title": "Dolphin AI Academy helps build AI foundation capabilities",
+    "summary": "AI education and training innovation",
+    "published": "2026-04-28T00:24:22Z",
+    "category": "科技"
+  },
+  {
+    "source": "Bing News",
+    "source_url": "https://example.com/ai-semiconductor",
+    "title": "AI drives semiconductor innovation in 2026",
+    "summary": "Latest developments in AI-powered chip design",
+    "published": "2026-04-27T00:00:00Z",
+    "category": "科技"
+  },
+  {
+    "source": "Bing News",
+    "source_url": "https://example.com/tsmc-news",
+    "title": "TSMC advances 3nm process technology",
+    "summary": "Manufacturing excellence continues at Taiwan Semiconductor",
+    "published": "2026-04-26T00:00:00Z",
+    "category": "科技"
+  },
+  {
+    "source": "Bing News",
+    "source_url": "https://example.com/samsung-strike",
+    "title": "Samsung workers demand higher wages amid labor negotiations",
+    "summary": "Ongoing labor disputes in South Korea's tech sector",
+    "published": "2026-04-25T00:00:00Z",
+    "category": "供應鏈"
+  },
+  {
+    "source": "Bing News",
+    "source_url": "https://example.com/iphone-sales",
+    "title": "iPhone 18 pre-orders exceed expectations in Asia markets",
+    "summary": "Strong consumer demand for latest Apple smartphone",
+    "published": "2026-04-24T00:00:00Z",
+    "category": "科技"
+  },
+  {
+    "source": "Bing News",
+    "source_url": "https://example.com/memory-prices",
+    "title": "DRAM prices stabilize as market finds equilibrium",
+    "summary": "Memory chip market dynamics shift in Q2 2026",
+    "published": "2026-04-23T00:00:00Z",
+    "category": "科技"
+  },
+  {
+    "source": "Bing News",
+    "source_url": "https://example.com/gpu-demand",
+    "title": "GPU shortage eases as AI demand modulates",
+    "summary": "Graphics processor market adjusts to new normal",
+    "published": "2026-04-22T00:00:00Z",
+    "category": "科技"
+  },
+  {
+    "source": "Bing News",
+    "source_url": "https://example.com/supply-chain-resilience",
+    "title": "Tech supply chains show improved resilience in 2026",
+    "summary": "Lessons from past disruptions strengthening industry",
+    "published": "2026-04-21T00:00:00Z",
+    "category": "供應鏈"
+  },
+  {
+    "source": "Bing News",
+    "source_url": "https://example.com/earnings-season",
+    "title": "Q1 2026 tech earnings beat expectations across the board",
+    "summary": "Strong financial performance drives market optimism",
+    "published": "2026-04-20T00:00:00Z",
+    "category": "財報"
   }
 ]
