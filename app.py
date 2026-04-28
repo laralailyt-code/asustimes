@@ -2833,6 +2833,8 @@ def _do_strike_scan():
 @app.route("/api/risk/strikes")
 def api_risk_strikes():
     """Return cached strike events instantly. Background loop refreshes every 3 hours."""
+    from datetime import datetime, timezone, timedelta
+
     # Companies to exclude (non-tech/non-supply-chain only)
     # Taiwan semiconductor companies (TSMC, MediaTek) are included if they have actual strikes
     EXCLUDED_COMPANIES = {
@@ -2848,10 +2850,13 @@ def api_risk_strikes():
     if data is None:
         return jsonify([])
 
-    # Filter out excluded companies only
+    # Only show strikes with recent news (within the past 7 days)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).date()
+
     filtered_data = [
         event for event in data
         if not any(excluded in event.get("title", "") for excluded in EXCLUDED_COMPANIES)
+        and event.get("time", "") >= str(cutoff)  # Only show if latest news is recent (7 days)
     ]
 
     return jsonify(filtered_data)
