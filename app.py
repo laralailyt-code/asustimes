@@ -2266,15 +2266,16 @@ def api_commodity_news():
 
     # Map commodity names to search keywords
     commodity_keywords = {
-        'pc': ['semiconductor', 'chip', 'cpu', 'processor', 'memory', 'dram', 'gpu'],
-        'cobalt': ['cobalt', 'battery', 'metal', 'mining'],
-        'copper': ['copper', 'metal', 'mining', 'conductor'],
-        'aluminum': ['aluminum', 'metal'],
-        'nickel': ['nickel', 'metal', 'battery'],
-        'zinc': ['zinc', 'metal'],
-        'tin': ['tin', 'metal'],
-        '鈷': ['battery', 'metal', 'electric'],
+        'pc': ['polycarbonate', 'plastic', 'polymer', 'resin', 'material'],
+        'cobalt': ['cobalt', 'battery', 'metal', 'mining', 'electric vehicle'],
+        'copper': ['copper', 'metal', 'mining', 'conductor', 'electrical'],
+        'aluminum': ['aluminum', 'metal', 'mining'],
+        'nickel': ['nickel', 'metal', 'battery', 'stainless'],
+        'zinc': ['zinc', 'metal', 'mining'],
+        'tin': ['tin', 'metal', 'mining'],
+        '鈷': ['battery', 'metal', 'electric vehicle', 'mining'],
         '長纖紙漿': ['pulp', 'paper', 'fiber'],
+        '塑膠': ['plastic', 'polymer', 'material', 'resin'],
     }
 
     try:
