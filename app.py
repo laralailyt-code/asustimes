@@ -2747,10 +2747,25 @@ def _scan_one_strike(target, headers, cutoff):
                         dt = parsedate_to_datetime(pub)
                         if dt >= cutoff:
                             title = item.findtext("title", "").lower()
-                            # Verify title contains actual strike keywords (not just "strike" in other context)
-                            has_strike_kw = any(kw.lower() in title for kw in ["罷工", "工潮", "strike threat", "strike action", "strike", "workers strike", "labor strike"])
-                            if not has_strike_kw:
-                                logger.debug(f"[STRIKE] Skipping {target['company']}: no strike keywords in '{title[:50]}'")
+                            desc = item.findtext("description", "").lower()
+                            full_text = f"{title} {desc}"
+
+                            # Strict validation: must be actual labor strike, not other "strike" meanings
+                            has_strike_action = any(kw in full_text for kw in [
+                                "罷工", "工潮", "workers strike", "labor strike",
+                                "strike threat", "strike action", "strike demand",
+                                "strike call", "walk out", "walkout"
+                            ])
+                            has_exclude = any(kw in full_text for kw in [
+                                "not affected", "unaffected", "strike deal", "strike agreement",
+                                "strike price", "strike settlement"
+                            ])
+
+                            if not has_strike_action or has_exclude:
+                                if not has_strike_action:
+                                    logger.debug(f"[STRIKE] Skipping {target['company']}: no strike action keywords")
+                                else:
+                                    logger.debug(f"[STRIKE] Skipping {target['company']}: excluded context (deal/agreement)")
                                 continue
                             # Keep track of latest article across all keywords
                             if latest_date is None or dt > latest_date:
