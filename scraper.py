@@ -779,10 +779,22 @@ def parse_rss(url: str, source_name: str, hint: str = "") -> list[dict]:
 
 
 # ── Feed definitions ──────────────────────────────────────────────────────────
+# Digitimes 官方 RSS（2026 年最新確認）
+DIGITIMES_FEEDS = [
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_40.xml",  # 半導體/零組件 (40 篇)
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_10.xml",  # IT/系統供應鏈 (40 篇)
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_60.xml",  # AI/智慧應用
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_50.xml",  # 物聯科技/智慧製造
+    "https://www.digitimes.com.tw/tech/rss/xml/xmlrss_10_0.xml",   # 全部 (科技/產業)
+]
+
 GN = "https://www.bing.com/news/search?format=rss&q="
 GN_EN = "https://www.bing.com/news/search?format=rss&q="
 
 FEEDS = [
+    # ── Digitimes 官方 RSS（優先級最高）────────────────────────────────────
+    *[{"url": feed, "source": "Digitimes", "hint": "半導體"} for feed in DIGITIMES_FEEDS],
+
     # ── 直接 RSS（有真實文章 URL，可抓摘要）──────────────────────────────
     {"url": "https://technews.tw/feed/",                      "source": "科技新報",    "hint": "AI 產業"},
     {"url": "https://www.ithome.com.tw/rss",                  "source": "iThome",      "hint": "科技"},
@@ -793,10 +805,6 @@ FEEDS = [
     {"url": "https://www.ctee.com.tw/rss.xml",                "source": "工商時報",    "hint": "科技"},
 
     # ── Bing News 搜尋（site: 操作符有效）────────────────────────────────────
-    {"url": GN + "site:digitimes.com",                    "source": "Digitimes",   "hint": "AI 產業"},
-    {"url": GN + "site:digitimes.com+AI+人工智慧",         "source": "Digitimes",   "hint": "AI 產業"},
-    {"url": GN + "site:digitimes.com+半導體+晶片",         "source": "Digitimes",   "hint": "半導體"},
-    {"url": GN + "site:digitimes.com+台積電+TSMC",         "source": "Digitimes",   "hint": "半導體"},
     {"url": GN + "site:digitimes.com+筆電+PC",             "source": "Digitimes",   "hint": "PC / NB"},
     {"url": GN + "site:digitimes.com+伺服器+資料中心",     "source": "Digitimes",   "hint": "伺服器/雲端"},
     {"url": GN + "site:digitimes.com+記憶體+DRAM+HBM",    "source": "Digitimes",   "hint": "記憶體/儲存"},
