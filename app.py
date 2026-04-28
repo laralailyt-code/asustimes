@@ -2293,23 +2293,19 @@ def api_commodity_news():
     except Exception as e:
         logger.debug(f"commodity news fetch error '{q}': {e}")
 
-    # Fallback: search news_archive.json if Bing returns nothing
+    # Fallback: if Bing returns nothing, use latest articles from archive
     if not articles:
         try:
             with open("news_archive.json", "r", encoding="utf-8") as f:
                 archived = json.load(f)
-            search_terms = q.lower().split()
-            for article in archived[:20]:  # Search in first 20 articles
-                title = article.get("title", "").lower()
-                if any(term in title for term in search_terms):
-                    articles.append({
-                        "title": article.get("title", ""),
-                        "source_url": article.get("source_url", ""),
-                        "published": article.get("published", ""),
-                        "source": "Archive"
-                    })
-                    if len(articles) >= 5:
-                        break
+            # Just return first 5 articles from archive as placeholder
+            for article in archived[:5]:
+                articles.append({
+                    "title": article.get("title", ""),
+                    "source_url": article.get("source_url", ""),
+                    "published": article.get("published", ""),
+                    "source": article.get("source", "Archive")
+                })
         except Exception as e:
             logger.debug(f"archive fallback error: {e}")
 
