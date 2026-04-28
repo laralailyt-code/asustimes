@@ -2449,32 +2449,44 @@ def _extract_earthquake_date(text):
     from datetime import datetime
 
     # Common earthquake date patterns in news
-    patterns = [
-        # "April 20", "April 20, 2026", "20 April", "20 April 2026"
-        r'(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})(?:\s*,?\s*(?:2026|2025|2024))?',
-        # "4月20日", "20日4月", "4/20"
-        r'(\d{1,2})\s*[月\/]\s*(\d{1,2})',
-        # "on Monday, April 20" pattern
-        r'(?:on|struck|hit)\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?,?\s+(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})',
-    ]
 
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            try:
-                matched_text = match.group(0)
-                # Try to parse the matched text as a date
-                for fmt in ['%B %d, %Y', '%B %d', '%b %d, %Y', '%b %d', '%d %B %Y', '%d %b %Y']:
-                    try:
-                        dt = datetime.strptime(matched_text, fmt)
-                        # Assume current year if not specified
-                        if dt.year == 1900:
-                            dt = dt.replace(year=2026)
-                        return dt.strftime('%Y-%m-%d')
-                    except ValueError:
-                        continue
-            except:
-                pass
+    # 1. Try MM/DD or M/D format (e.g. "4/20", "04/20")
+    match = re.search(r'\b(\d{1,2})[\/\-](\d{1,2})\b', text)
+    if match:
+        try:
+            month, day = int(match.group(1)), int(match.group(2))
+            if 1 <= month <= 12 and 1 <= day <= 31:
+                return f"2026-{month:02d}-{day:02d}"
+        except:
+            pass
+
+    # 2. Try English month names (e.g. "April 20", "April 20, 2026")
+    match = re.search(r'(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})(?:\s*,?\s*(\d{4}))?', text, re.IGNORECASE)
+    if match:
+        try:
+            month_name, day = match.group(1), int(match.group(2))
+            year = int(match.group(3)) if match.group(3) else 2026
+
+            # Parse month name to number
+            month_map = {'january':1, 'february':2, 'march':3, 'april':4, 'may':5, 'june':6,
+                        'july':7, 'august':8, 'september':9, 'october':10, 'november':11, 'december':12,
+                        'jan':1, 'feb':2, 'mar':3, 'apr':4, 'may':5, 'jun':6, 'jul':7, 'aug':8,
+                        'sep':9, 'oct':10, 'nov':11, 'dec':12}
+            month = month_map.get(month_name.lower())
+            if month:
+                return f"{year}-{month:02d}-{day:02d}"
+        except:
+            pass
+
+    # 3. Try Chinese format "4月20日", "04月20日"
+    match = re.search(r'(\d{1,2})月(\d{1,2})日', text)
+    if match:
+        try:
+            month, day = int(match.group(1)), int(match.group(2))
+            if 1 <= month <= 12 and 1 <= day <= 31:
+                return f"2026-{month:02d}-{day:02d}"
+        except:
+            pass
 
     return None
 
