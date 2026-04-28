@@ -2230,23 +2230,41 @@ function renderSupplyChainImpact() {
   const kw = shortName(_activeItem);
   const impactDiv = document.getElementById('supplyChainImpact');
 
-  // Supply chain impact mapping
+  // Supply chain impact mapping - comprehensive
   const impacts = {
     'PC': '🟡 聚碳酸酯 (Polycarbonate)<br/>影響：3C電子、汽車內飾、光學產品<br/>風險：石油價格波動、化工供應鏈',
-    '鈷': '🔴 鈷 - 關鍵金屬<br/>影響：電池製造、EV產業、新能源<br/>風險：供應集中在剛果，地緣政治風險極高',
+    '金': '🟡 黃金 - 貴金屬<br/>影響：珠寶、投資、電子接點<br/>風險：地緣政治、央行政策',
+    '銀': '🟡 白銀 - 貴金屬<br/>影響：太陽能、電路板、工業應用<br/>風險：工業景氣、投資需求',
+    '石油': '🔴 石油 - 能源<br/>影響：燃料、化工、聚合物<br/>風險：地緣政治、OPEC政策、全球經濟',
     '銅': '🟠 銅 - 重要工業金屬<br/>影響：電子、建築、電力傳輸、再生能源<br/>風險：礦業供應波動、全球經濟景氣敏感',
+    '鈷': '🔴 鈷 - 關鍵金屬<br/>影響：電池製造、EV產業、新能源<br/>風險：供應集中在剛果，地緣政治風險極高',
     '鋁': '🟡 鋁 - 輕金屬<br/>影響：交通運輸、包裝、建築、電力設備<br/>風險：能源密集型，電力成本直接影響價格',
     '鎳': '🟠 鎳 - 電池材料<br/>影響：不鏽鋼、電池正極、高鎳電池<br/>風險：印尼供應波動，EV需求快速增長',
     '錫': '🟡 錫 - 電子焊料<br/>影響：PCB焊接、電子產品組裝、半導體<br/>風險：供應稀少，難以替代',
     '鋅': '🟡 鋅 - 防鏽塗層<br/>影響：鋼鐵鍍鋅、汽車零件、建築<br/>風險：建築景氣、汽車需求波動敏感',
+    '鋰': '🔵 鋰 - 電池金屬<br/>影響：鋰電池、EV、儲能<br/>風險：澳洲智利供應集中，EV需求爆發',
+    '黃磷': '⚪ 黃磷 - 阻燃劑<br/>影響：電子產品阻燃、化工<br/>風險：中國供應、環保限制',
     '長纖紙漿': '🌲 長纖紙漿<br/>影響：高級紙張、包裝材料、特殊用紙<br/>風險：林業供應、運輸成本、環保政策',
+    'ABS': '🟣 ABS聚合物 - 工程塑膠<br/>影響：汽車、電子、日用品<br/>風險：油價、化工供應、製造成本',
+    '瓦楞紙': '🟤 瓦楞芯紙 - 包裝<br/>影響：紙箱、快遞包裝<br/>風險：紙漿供應、運輸成本',
   };
 
   let html = impacts[kw];
+  if (!html) {
+    // Try to find with partial match
+    for (let key in impacts) {
+      if (kw.includes(key) || key.includes(kw)) {
+        html = impacts[key];
+        break;
+      }
+    }
+  }
+
   if (html) {
     impactDiv.innerHTML = html;
   } else {
-    impactDiv.innerHTML = `<div style="color:var(--text-muted)">📊 ${kw} 的供應鏈影響分析準備中...</div>`;
+    // Fallback: show generic message with commodity name
+    impactDiv.innerHTML = `📊 ${kw}<br/>供應鏈影響分析準備中`;
   }
 }
 
