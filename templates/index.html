@@ -1077,9 +1077,17 @@
         <div id="chartHighLow"></div>
         <div class="chart-wrap"><canvas id="marketChart"></canvas></div>
       </div>
-      <!-- Related news -->
-      <div class="market-news-title" id="marketNewsTitle">相關新聞</div>
-      <div class="market-news-list" id="marketNewsList"></div>
+      <!-- Related news - HIDDEN -->
+      <div class="market-news-title" id="marketNewsTitle" style="display:none">相關新聞</div>
+      <div class="market-news-list" id="marketNewsList" style="display:none"></div>
+
+      <!-- Supply Chain Impact Analysis -->
+      <div style="margin-top:1.5rem;padding:1rem;background:var(--bg-secondary);border-radius:0.5rem">
+        <div style="font-weight:600;margin-bottom:0.75rem;color:var(--text-primary)">📊 原料/航運影響分析</div>
+        <div id="supplyChainImpact" style="font-size:0.9rem;color:var(--text-secondary);line-height:1.6">
+          <div style="color:var(--text-muted);font-size:0.85rem">載入影響分析中...</div>
+        </div>
+      </div>
     </div>
   </div>
 </main>
@@ -2195,6 +2203,9 @@ async function renderMarketNews() {
       console.warn('annotation update skipped', annotErr);
     }
 
+    // Render supply chain impact
+    renderSupplyChainImpact();
+
     if (!articles.length) {
       wrap.innerHTML = `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">此區間無相關新聞</div>`;
       return;
@@ -2211,6 +2222,32 @@ async function renderMarketNews() {
     }).join('');
   } catch(e) {
     wrap.innerHTML = `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">無法載入新聞</div>`;
+  }
+}
+
+function renderSupplyChainImpact() {
+  if (!_activeItem) return;
+  const kw = shortName(_activeItem);
+  const impactDiv = document.getElementById('supplyChainImpact');
+
+  // Supply chain impact mapping
+  const impacts = {
+    'PC': '🟡 聚碳酸酯 (Polycarbonate)<br/>影響：3C電子、汽車內飾、光學產品<br/>風險：石油價格波動、化工供應鏈',
+    'Cobalt': '🔴 鈷 - 關鍵金屬<br/>影響：電池製造、EV產業、新能源<br/>風險：供應集中在剛果，地緣政治風險極高',
+    'Copper': '🟠 銅 - 重要工業金屬<br/>影響：電子、建築、電力傳輸<br/>風險：礦業供應波動、全球經濟景氣敏感',
+    'Aluminum': '🟡 鋁 - 輕金屬<br/>影響：交通運輸、包裝、建築<br/>風險：能源密集型，電力成本直接影響價格',
+    'DRAM': '🔵 DRAM 記憶體晶片<br/>影響：PC、手機、伺服器、資料中心<br/>風險：產能集中台灣，地緣政治影響重大',
+    'Nickel': '🟠 鎳 - 電池材料<br/>影響：不鏽鋼、電池陰極<br/>風險：印尼供應波動，EV需求快速增長',
+    'Tin': '🟡 錫 - 電子焊料<br/>影響：PCB焊接、電子產品組裝<br/>風險：供應稀少，難以替代',
+    'Zinc': '🟡 鋅 - 防鏽塗層<br/>影響：鋼鐵鍍鋅、汽車零件<br/>風險：建築景氣、汽車需求波動敏感',
+    'Long Fiber Pulp': '🌲 長纖紙漿<br/>影響：高級紙張、包裝材料<br/>風險：林業供應、運輸成本、環保政策',
+  };
+
+  let html = impacts[kw];
+  if (html) {
+    impactDiv.innerHTML = html;
+  } else {
+    impactDiv.innerHTML = `<div style="color:var(--text-muted)">📊 ${kw} 的供應鏈影響分析準備中...</div>`;
   }
 }
 
