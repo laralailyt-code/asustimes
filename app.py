@@ -2260,17 +2260,20 @@ def _save_articles_to_archive(new_articles: list[dict]):
 
 @app.route("/api/commodity-news")
 def api_commodity_news():
-    """Search Bing News for commodity-related articles."""
+    """Search Bing News for commodity-related articles, fallback to archive."""
     import xml.etree.ElementTree as ET
     from urllib.parse import quote, urlparse, parse_qs, unquote
     q = request.args.get("q", "").strip()
     if not q:
         return jsonify({"articles": []})
+
+    articles = []
+
+    # Try Bing News first
     url = f"https://www.bing.com/news/search?format=rss&q={quote(q)}"
     try:
         resp = req_lib.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
         root = ET.fromstring(resp.content)
-        articles = []
         for item in root.findall(".//item")[:8]:
             title = item.findtext("title") or ""
             link  = item.findtext("link") or ""
@@ -2287,10 +2290,30 @@ def api_commodity_news():
 
             articles.append({"title": title, "source_url": link,
                              "published": pub, "source": "Bing News"})
-        return jsonify({"articles": articles})
     except Exception as e:
-        logger.warning(f"commodity news fetch error '{q}': {e}")
-        return jsonify({"articles": []})
+        logger.debug(f"commodity news fetch error '{q}': {e}")
+
+    # Fallback: search news_archive.json if Bing returns nothing
+    if not articles:
+        try:
+            with open("news_archive.json", "r", encoding="utf-8") as f:
+                archived = json.load(f)
+            search_terms = q.lower().split()
+            for article in archived[:20]:  # Search in first 20 articles
+                title = article.get("title", "").lower()
+                if any(term in title for term in search_terms):
+                    articles.append({
+                        "title": article.get("title", ""),
+                        "source_url": article.get("source_url", ""),
+                        "published": article.get("published", ""),
+                        "source": "Archive"
+                    })
+                    if len(articles) >= 5:
+                        break
+        except Exception as e:
+            logger.debug(f"archive fallback error: {e}")
+
+    return jsonify({"articles": articles})
 
 
 @app.route("/api/commodities/refresh", methods=["POST"])
