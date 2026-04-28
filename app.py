@@ -2260,55 +2260,66 @@ def _save_articles_to_archive(new_articles: list[dict]):
 
 @app.route("/api/commodity-news")
 def api_commodity_news():
-    """Search Bing News for commodity-related articles, fallback to archive."""
-    import xml.etree.ElementTree as ET
-    from urllib.parse import quote, urlparse, parse_qs, unquote
+    """Search local archive for commodity-related articles."""
     q = request.args.get("q", "").strip()
-
     articles = []
 
-    # Try Bing News first (only if q is provided)
-    if q:
-        url = f"https://www.bing.com/news/search?format=rss&q={quote(q)}"
-        try:
-            resp = req_lib.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-            root = ET.fromstring(resp.content)
-            for item in root.findall(".//item")[:8]:
-                title = item.findtext("title") or ""
-                link  = item.findtext("link") or ""
-                pub   = item.findtext("pubDate") or ""
+    # Map commodity names to search keywords
+    commodity_keywords = {
+        'pc': ['semiconductor', 'chip', 'cpu', 'processor', 'memory', 'dram', 'gpu'],
+        'cobalt': ['cobalt', 'battery', 'metal', 'mining'],
+        'copper': ['copper', 'metal', 'mining', 'conductor'],
+        'aluminum': ['aluminum', 'metal'],
+        'nickel': ['nickel', 'metal', 'battery'],
+        'zinc': ['zinc', 'metal'],
+        'tin': ['tin', 'metal'],
+        '鈷': ['battery', 'metal', 'electric'],
+        '長纖紙漿': ['pulp', 'paper', 'fiber'],
+    }
 
-                # Decode Bing apiclick redirect URLs to get actual article URLs
-                if "bing.com/news/apiclick.aspx" in link:
-                    try:
-                        qs = parse_qs(urlparse(link).query)
-                        if "url" in qs:
-                            link = unquote(qs["url"][0])
-                    except Exception:
-                        pass  # If parsing fails, use original link
-
-                articles.append({"title": title, "source_url": link,
-                                 "published": pub, "source": "Bing News"})
-        except Exception as e:
-            logger.debug(f"commodity news fetch error '{q}': {e}")
-
-    # Fallback: always add latest articles from archive
     try:
         with open("news_archive.json", "r", encoding="utf-8") as f:
             archived = json.load(f)
-        if archived:
-            # Add up to 5 archive articles
-            for article in archived[:5]:
-                # Avoid duplicates
-                if not any(a["source_url"] == article.get("source_url") for a in articles):
-                    articles.append({
-                        "title": article.get("title", ""),
-                        "source_url": article.get("source_url", ""),
-                        "published": article.get("published", ""),
-                        "source": article.get("source", "Archive")
-                    })
+
+        if not archived:
+            logger.warning("news_archive.json is empty")
+            return jsonify({"articles": []})
+
+        # Build search terms from q
+        search_terms = q.lower().split() if q else []
+
+        # Add mapped keywords
+        for commodity, keywords in commodity_keywords.items():
+            if commodity.lower() in q.lower():
+                search_terms.extend(keywords)
+                break
+
+        # If no search terms, return nothing
+        if not search_terms:
+            logger.info(f"[COMMODITY-NEWS] q='{q}' no search terms")
+            return jsonify({"articles": []})
+
+        # Search for matching articles
+        for article in archived:
+            title = article.get("title", "").lower()
+            summary = article.get("summary", "").lower()
+            text = f"{title} {summary}"
+
+            # Match if any search term appears in title or summary
+            if any(term in text for term in search_terms):
+                articles.append({
+                    "title": article.get("title", ""),
+                    "source_url": article.get("source_url", ""),
+                    "published": article.get("published", ""),
+                    "source": article.get("source", "Archive")
+                })
+                if len(articles) >= 8:
+                    break
+
+    except FileNotFoundError:
+        logger.warning("news_archive.json not found")
     except Exception as e:
-        logger.debug(f"archive fallback error: {e}")
+        logger.warning(f"commodity news error: {e}")
 
     logger.info(f"[COMMODITY-NEWS] q='{q}' returned {len(articles)} articles")
     return jsonify({"articles": articles})
@@ -2319,6 +2330,8 @@ def api_commodities_refresh():
     t = threading.Thread(target=_refresh_live_prices, daemon=True)
     t.start()
     return jsonify({"status": "refreshing"})
+
+
 
 
 @app.route("/api/risk/suppliers")
