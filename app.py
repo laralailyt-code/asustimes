@@ -188,10 +188,15 @@ def daily_digest_loop():
 # ── Background thread: starts on first request (gunicorn-compatible) ───────────
 _bg_started = False
 _bg_lock = threading.Lock()
+# Critical threads (Telegram bot + disaster persist) may be started early at
+# module-load on Render. These flags ensure we never start them twice in the
+# same worker process — duplicate Telegram polling causes getUpdates Conflict.
+_telegram_bot_started = False
+_disaster_persist_started = False
 
 @app.before_request
 def _ensure_bg_running():
-    global _bg_started
+    global _bg_started, _telegram_bot_started, _disaster_persist_started
     if not _bg_started:
         with _bg_lock:
             if not _bg_started:
@@ -206,13 +211,17 @@ def _ensure_bg_running():
                 tr.start()
                 tdt = threading.Thread(target=_digitimes_refresh_loop, daemon=True)
                 tdt.start()
-                # Telegram bot polling（M3+）
-                tt = threading.Thread(target=_telegram_bot_loop, daemon=True, name="telegram-bot")
-                tt.start()
+                # Telegram bot polling（M3+）— only if not already started by _start_critical_bg_threads
+                if not _telegram_bot_started:
+                    _telegram_bot_started = True
+                    tt = threading.Thread(target=_telegram_bot_loop, daemon=True, name="telegram-bot")
+                    tt.start()
                 # 災害事件即時偵測（USGS/NOAA/GDACS）每 5 分鐘
-                tdis = threading.Thread(target=_disaster_persist_loop, daemon=True, name="disaster-persist")
-                tdis.start()
-                logger.info("Background threads started (incl. Telegram bot polling + disaster persist)")
+                if not _disaster_persist_started:
+                    _disaster_persist_started = True
+                    tdis = threading.Thread(target=_disaster_persist_loop, daemon=True, name="disaster-persist")
+                    tdis.start()
+                logger.info("Background threads started (Telegram bot polling + disaster persist may have been started earlier)")
 
 
 def _telegram_bot_loop():
@@ -3817,15 +3826,18 @@ def ensure_background_threads():
 # 在 module-load 結束時直接啟動（會一次性、不會重複，因為 _bg_started flag）。
 def _start_critical_bg_threads():
     """獨立於 _ensure_bg_running 之外的早期啟動點。
-    目的：確保災害事件偵測 + Telegram bot 在 gunicorn 啟動 worker 後立刻運作。"""
-    global _bg_started
-    if _bg_started:
-        return
+    目的：確保災害事件偵測 + Telegram bot 在 gunicorn 啟動 worker 後立刻運作。
+    用獨立 flag 防止 _ensure_bg_running 在 first-request 時重複啟動同樣的 thread
+    （重複 polling 會觸發 Telegram getUpdates Conflict）。"""
+    global _telegram_bot_started, _disaster_persist_started
     try:
-        # 只啟動最關鍵的兩個 thread；其餘 (news refresh / live price / digest)
-        # 仍由 _ensure_bg_running 在 first-request 時啟動（不影響推播）
-        threading.Thread(target=_disaster_persist_loop, daemon=True, name="disaster-persist-early").start()
-        threading.Thread(target=_telegram_bot_loop, daemon=True, name="telegram-bot-early").start()
+        with _bg_lock:
+            if not _disaster_persist_started:
+                _disaster_persist_started = True
+                threading.Thread(target=_disaster_persist_loop, daemon=True, name="disaster-persist-early").start()
+            if not _telegram_bot_started:
+                _telegram_bot_started = True
+                threading.Thread(target=_telegram_bot_loop, daemon=True, name="telegram-bot-early").start()
         logger.info("[startup] 災害偵測 + Telegram bot 已在 module-load 時啟動")
     except Exception as e:
         logger.error(f"[startup] critical thread start failed: {e}", exc_info=True)
