@@ -337,7 +337,17 @@ def _fetch_usgs_quakes() -> list[dict]:
                     datetime.fromtimestamp(time_ms / 1000, tz=timezone.utc).isoformat()
                     if time_ms else datetime.now(timezone.utc).isoformat()
                 )
-                impact = "CRITICAL" if mag >= 6.5 else ("HIGH" if mag >= 6.0 else "MED")
+                # 沿用網頁原本標準（資訊來源報告）：
+                #   M ≥ 6.5 → CRITICAL；6.0 ≤ M < 6.5 → HIGH
+                #   5.5 ≤ M < 6.0 → MED；5.0 ≤ M < 5.5 → LOW（地圖顯示但不推 medium 訂閱者）
+                if mag >= 6.5:
+                    impact = "CRITICAL"
+                elif mag >= 6.0:
+                    impact = "HIGH"
+                elif mag >= 5.5:
+                    impact = "MED"
+                else:
+                    impact = "LOW"
                 eid = f"usgs-{feat.get('id', '')}"
                 if not eid or eid == "usgs-":
                     continue
@@ -362,7 +372,8 @@ def _fetch_usgs_quakes() -> list[dict]:
 
 
 def _fetch_noaa_storms() -> list[dict]:
-    """NOAA 活躍熱帶氣旋。只推 64kt 以上（颶風級）。"""
+    """NOAA 活躍熱帶氣旋。沿用網頁原本標準：96kt 以上（颱風級才推）。
+    熱帶風暴 (TS, <64kt) 跟一級颶風 (64-95kt) 對 ASUS 供應鏈影響有限。"""
     out = []
     try:
         r = req_lib.get("https://www.nhc.noaa.gov/CurrentStorms.json", timeout=10)
@@ -375,9 +386,9 @@ def _fetch_noaa_storms() -> list[dict]:
                     intensity = int(str(intensity_raw))
                 except (ValueError, TypeError):
                     intensity = 0
-                if intensity < 64:
-                    continue  # Tropical Storm 不推
-                impact = "CRITICAL" if intensity >= 130 else ("HIGH" if intensity >= 96 else "MED")
+                if intensity < 96:
+                    continue  # 沿用網頁原本標準：96kt+ 才算實質影響
+                impact = "CRITICAL" if intensity >= 130 else "HIGH"
                 eid = f"noaa-{storm.get('id', '')}"
                 if not eid or eid == "noaa-":
                     continue
