@@ -2361,7 +2361,12 @@ def _apply_carry_forward(rows: list, header: list, carry_back_days: int = 30) ->
 
 
 def _save_commodity_csv():
-    """Save current _live_commodity_cache back to CSV file in wide-format."""
+    """Save current _live_commodity_cache back to CSV file in wide-format.
+
+    Safeguard: merge cache with EXISTING CSV history before writing, so an
+    empty/partial cache never wipes out previously backfilled data.
+    Cache wins on overlapping dates; older CSV-only dates are preserved.
+    """
     try:
         with _live_cache_lock:
             cache_copy = dict(_live_commodity_cache)
@@ -2369,6 +2374,25 @@ def _save_commodity_csv():
         if not cache_copy:
             logger.warning("Commodity cache is empty, skipping CSV save")
             return
+
+        # Read existing CSV and merge with cache to prevent data loss.
+        existing_data = _parse_commodity_csv()
+        merged: dict[str, list[tuple[str, float]]] = {}
+        all_names = set(cache_copy.keys()) | set(existing_data.keys())
+        for name in all_names:
+            cached = list(cache_copy.get(name, []))
+            cached_dates = {d for d, _ in cached}
+            existing_pts: list[tuple[str, float]] = []
+            if name in existing_data:
+                existing_pts = list(zip(existing_data[name]["dates"], existing_data[name]["values"]))
+            # Cache wins for dates it covers; keep older existing-only dates.
+            kept_existing = [p for p in existing_pts if p[0] not in cached_dates]
+            combined = sorted(kept_existing + cached, key=lambda x: x[0])
+            if combined:
+                merged[name] = combined
+                if len(combined) > len(cached):
+                    logger.info(f"[CSV merge] {name}: kept {len(combined) - len(cached)} dates from existing CSV")
+        cache_copy = merged
 
         # Collect all unique dates from all items
         all_dates = set()
