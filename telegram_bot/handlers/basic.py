@@ -108,7 +108,25 @@ def _format_sub_value(sub: dict) -> str:
     if t == "part":
         return f"📦 料件：{v.get('part_category', '?')}"
     if t == "supplier":
-        return f"🏭 供應商分布 #{v.get('supplier_id', '?')}"
+        sup_id = v.get("supplier_id")
+        if sup_id is None:
+            return "🏭 供應商分布（unknown）"
+        try:
+            sup = db.get_supplier_by_id(int(sup_id))
+        except Exception:
+            sup = None
+        if not sup:
+            return f"🏭 供應商分布 #{sup_id}（已不存在）"
+        region = sup.get("region", "?")
+        cats = sup.get("part_categories") or []
+        # 預覽前 3 個料件類別
+        cats_preview = "/".join(cats[:3])
+        if len(cats) > 3:
+            cats_preview += f"…+{len(cats) - 3}"
+        return (
+            f"🏭 供應商 #{sup_id}：{region}"
+            + (f"\n     料件：{cats_preview}" if cats_preview else "")
+        )
     if t == "radius":
         label = v.get("label") or f"({v.get('lat')}, {v.get('lng')})"
         return f"📍 半徑：{label} {v.get('km', '?')}km"
