@@ -2943,12 +2943,12 @@ async function _loadQuakes() {
     const r = await fetch('/api/risk/quakes');
     const d = await r.json();
     return (d.features||[])
-      .filter(f => f.properties.mag >= 5.0) // 5.0 以下對供應鏈影響有限，不顯示
+      .filter(f => f.properties.mag >= 6.5) // M6.5+ 才顯示（紅燈級以上），避免事件清單氾濫
       .map(f => {
         const mag = f.properties.mag;
-        // 重校分級：CRITICAL M7+, HIGH M6-6.9, MED M5.5-5.9, LOW M5-5.4
-        // 台灣地震紅綠燈標準：規模6.5+或6弱+=紅燈，規模6+或5弱+=橙燈，規模5.5+或4+=黃燈
-        const impact = mag>=6.5?'CRITICAL':mag>=6.0?'HIGH':mag>=5.5?'MED':'LOW';
+        // 顯示門檻 M6.5+；分級：CRITICAL M7+, HIGH M6.5-6.9
+        // 台灣地震紅綠燈標準：規模6.5+或6弱+=紅燈
+        const impact = mag>=7.0?'CRITICAL':'HIGH';
         return { id:f.id, type:'quake', title:_localizeQuake(f.properties.place),
           lat:f.geometry.coordinates[1], lng:f.geometry.coordinates[0],
           mag:mag?.toFixed(1), depth:f.geometry.coordinates[2]?.toFixed(0)+' km',
