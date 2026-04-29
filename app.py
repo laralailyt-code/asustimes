@@ -206,10 +206,157 @@ def _ensure_bg_running():
                 tr.start()
                 tdt = threading.Thread(target=_digitimes_refresh_loop, daemon=True)
                 tdt.start()
-                logger.info("Background threads started in worker (including Digitimes 2-hour refresh)")
+                # Telegram bot polling（M3+）
+                tt = threading.Thread(target=_telegram_bot_loop, daemon=True, name="telegram-bot")
+                tt.start()
+                logger.info("Background threads started (incl. Telegram bot polling)")
+
+
+def _telegram_bot_loop():
+    """在獨立背景執行緒裡跑 PTB Application（polling 模式）。
+
+    啟動規則（避免本地 + Render 同時 polling 同一 bot 造成衝突）：
+    - Render 環境（RENDER=true 由 Render 自動注入）→ 一律跑 polling
+    - 本地環境 → 預設 skip；需要本地測試時在 .env 加
+                 TELEGRAM_FORCE_LOCAL_POLLING=true
+    - 沒設 TOKEN → silently skip
+    """
+    if not os.environ.get("TELEGRAM_BOT_TOKEN"):
+        logger.info("[telegram_bot] TOKEN 未設定，skip polling")
+        return
+
+    is_render = os.environ.get("RENDER") == "true"
+    force_local = os.environ.get("TELEGRAM_FORCE_LOCAL_POLLING", "").lower() in ("true", "1", "yes")
+    if not is_render and not force_local:
+        logger.info(
+            "[telegram_bot] 本地預設不跑 polling（避免與 Render 衝突）。"
+            "要本地測試請在 .env 加 TELEGRAM_FORCE_LOCAL_POLLING=true"
+        )
+        return
+    try:
+        # 嘗試從 .env 載入（本地用，Render 已由環境變數注入）
+        try:
+            from dotenv import load_dotenv as _ld
+            _ld()
+        except ImportError:
+            pass
+
+        import asyncio
+        from telegram_bot import db as _tdb, bot as _tbot
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        _tdb.init_pool()
+        application = _tbot.build_application()
+
+        async def _run():
+            await application.initialize()
+            await application.start()
+            await application.updater.start_polling(drop_pending_updates=True)
+            logger.info("[telegram_bot] Polling started inside Flask process")
+            await asyncio.Event().wait()  # 永遠 block
+
+        loop.run_until_complete(_run())
+    except Exception as e:
+        logger.error(f"[telegram_bot] start failed: {e}", exc_info=True)
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
+# ── Telegram bot 整合：事件落地 helper ────────────────────────────────────────
+# 放在這裡是為了給 _do_geo_scan / _do_strike_scan 用，背景執行不阻塞
+def _persist_events_async(events, source_label: str = "") -> None:
+    """非阻塞地把事件清單寫進 Supabase risk_events 表。
+    若 telegram_bot 套件未啟用（例如本地不跑 bot），會 silently skip。"""
+    if not events:
+        return
+    def _job():
+        try:
+            from telegram_bot import event_persister
+            event_persister.persist_events(events)
+        except Exception as e:
+            logger.debug(f"[telegram_bot] persist {source_label} skipped: {e}")
+    threading.Thread(target=_job, daemon=True).start()
+
+
+# ── Demo helper：本地 Bing News 抓不到時，注入示範事件供畫面展示 ──
+@app.route("/api/_demo/seed", methods=["POST"])
+def api_demo_seed():
+    """注入 demo 風險事件到 cache（純展示，不會推播）。
+    POST /api/_demo/seed → 回傳注入數量"""
+    from datetime import date as _date
+    today = _date.today().isoformat()
+
+    demo_strikes = [
+        {"id":"demo-strike-samsung","type":"strike","title":"三星電子 罷工事件",
+         "lat":37.00,"lng":127.06,"region":"韓國","impact":"HIGH","time":today,
+         "supply":"三星電子勞資衝突，可能影響生產排程與出貨交期，建議評估替代供應",
+         "source":"Bing News自動監測（Demo）","sourceUrl":"https://example.com",
+         "newsTitle":"Samsung workers vote for major strike action"},
+        {"id":"demo-strike-foxconn","type":"strike","title":"富士康 罷工事件",
+         "lat":34.75,"lng":113.62,"region":"中國大陸","impact":"HIGH","time":today,
+         "supply":"富士康勞資衝突，鄭州廠 iPhone 組裝線受影響",
+         "source":"Bing News自動監測（Demo）","sourceUrl":"https://example.com",
+         "newsTitle":"Foxconn Zhengzhou plant workers protest"},
+    ]
+    demo_geo = [
+        {"id":"demo-geo-iran","type":"war","title":"伊朗地區衝突升溫",
+         "lat":32.43,"lng":53.69,"region":"中東/波斯灣","impact":"CRITICAL","time":today,
+         "supply":"波斯灣航運中斷風險升高，原油價格波動，建議評估替代航線",
+         "source":"Bing News自動監測（Demo）","sourceUrl":"https://example.com",
+         "newsTitle":"Iran tensions escalate, Strait of Hormuz at risk"},
+        {"id":"demo-geo-redsea","type":"war","title":"紅海航運危機",
+         "lat":14.5,"lng":42.5,"region":"葉門/紅海","impact":"CRITICAL","time":today,
+         "supply":"紅海航運中斷 10-14 天，運費上漲 200-400%，建議改走南非航線",
+         "source":"BIMCO 海運資訊（Demo）","sourceUrl":"https://example.com",
+         "newsTitle":"Red Sea shipping disruption continues"},
+        {"id":"demo-disaster-typhoon","type":"disaster",
+         "title":"強颱「米克拉」逼近台灣東部",
+         "lat":24.0,"lng":122.5,"region":"台灣","impact":"HIGH","time":today,
+         "supply":"預估登陸時間 3 天內，新竹科學園區可能停工 24 小時",
+         "source":"中央氣象局（Demo）","sourceUrl":"https://example.com",
+         "newsTitle":"Typhoon Mikla approaching Taiwan east coast"},
+    ]
+
+    with _strike_lock:
+        existing_strike = _strike_cache.get("data") or []
+        ids = {e.get("id") for e in existing_strike}
+        new_strikes = [e for e in demo_strikes if e["id"] not in ids]
+        _strike_cache["data"] = existing_strike + new_strikes
+        _strike_cache["ts"] = time.time()
+    with _geo_risk_lock:
+        existing_geo = _geo_risk_cache.get("data") or []
+        ids = {e.get("id") for e in existing_geo}
+        new_geo = [e for e in demo_geo if e["id"] not in ids]
+        _geo_risk_cache["data"] = existing_geo + new_geo
+        _geo_risk_cache["ts"] = time.time()
+
+    return jsonify({
+        "ok": True,
+        "injected_strikes": len(new_strikes),
+        "injected_geo":     len(new_geo),
+        "total_strikes":    len(_strike_cache["data"]),
+        "total_geo":        len(_geo_risk_cache["data"]),
+    })
+
+
+@app.route("/api/_demo/clear", methods=["POST"])
+def api_demo_clear():
+    """清除 demo 注入的事件。"""
+    with _strike_lock:
+        before_s = len(_strike_cache.get("data") or [])
+        _strike_cache["data"] = [e for e in (_strike_cache.get("data") or [])
+                                 if not (e.get("id") or "").startswith("demo-")]
+    with _geo_risk_lock:
+        before_g = len(_geo_risk_cache.get("data") or [])
+        _geo_risk_cache["data"] = [e for e in (_geo_risk_cache.get("data") or [])
+                                   if not (e.get("id") or "").startswith("demo-")]
+    return jsonify({
+        "ok": True,
+        "cleared": (before_s - len(_strike_cache["data"]))
+                 + (before_g - len(_geo_risk_cache["data"])),
+    })
+
+
 @app.route("/")
 def index():
     ensure_background_threads()
@@ -2724,6 +2871,8 @@ def _do_geo_scan():
             _geo_risk_cache["data"] = []
         _geo_risk_cache["ts"] = time.time()
     logger.info(f"Geopolitical + Disaster risks detected: {len(results)}/{len(all_risks)}")
+    # Telegram bot：把 results 落地到 Supabase（背景，不阻塞）
+    _persist_events_async(results, "geo")
     return results
 
 
@@ -2957,6 +3106,8 @@ def _do_strike_scan():
         else:
             _strike_cache["data"] = []
         _strike_cache["ts"] = time.time()
+    # Telegram bot：把 validated 落地到 Supabase（背景，不阻塞）
+    _persist_events_async(validated, "strike")
     logger.info(f"[STRIKE] Stored {len(validated)}/{len(results)} validated results")
     return validated
 

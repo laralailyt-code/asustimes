@@ -5,3 +5,8 @@ lxml>=5.0
 gunicorn>=21.0
 yfinance>=0.2.36
 anthropic>=0.7.0
+
+# Telegram Bot 整合（M1+）
+python-telegram-bot[job-queue]>=21.0
+psycopg2-binary>=2.9
+python-dotenv>=1.0

@@ -1355,6 +1355,22 @@
 
     <!-- Left: Sidebar -->
     <div class="risk-sidebar">
+
+      <!-- Telegram 訂閱推播 CTA -->
+      <div class="tg-subscribe-banner" onclick="openTelegramModal()">
+        <div class="tg-banner-left">
+          <div class="tg-banner-icon">📡</div>
+          <div class="tg-banner-text">
+            <div class="tg-banner-title">
+              訂閱 Telegram 即時推播
+              <span class="tg-beta-badge">BETA</span>
+            </div>
+            <div class="tg-banner-desc">災害、罷工、地緣政治<br>命中你的條件就主動通知</div>
+          </div>
+        </div>
+        <div class="tg-banner-arrow">›</div>
+      </div>
+
       <div class="risk-sidebar-tabs">
         <button class="rst-btn active" id="rst-events"    onclick="switchRiskSideTab('events')">
           <span class="rst-icon">⚠️</span>事件
@@ -3315,6 +3331,249 @@ async function loadRisk() {
   _renderEventList(); _renderSupList(); _renderRiskIndex();
 }
 
+// ─── Telegram 訂閱 Modal ───────────────────────────────────────
+function openTelegramModal() {
+  const m = document.getElementById('tg-modal');
+  if (m) m.style.display = 'flex';
+}
+function closeTelegramModal() {
+  const m = document.getElementById('tg-modal');
+  if (m) m.style.display = 'none';
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeTelegramModal();
+});
 </script>
+
+<!-- ─── Telegram 訂閱 Modal & 樣式 ─────────────────────────── -->
+<style>
+.tg-subscribe-banner {
+  margin: 0 0 0.75rem 0;
+  padding: 0.85rem 1rem;
+  background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+  border-radius: 0.6rem;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+  transition: all 0.2s;
+}
+.tg-subscribe-banner:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+}
+.tg-banner-left { display: flex; align-items: center; gap: 0.7rem; }
+.tg-banner-icon { font-size: 1.6rem; }
+.tg-banner-title { font-weight: 700; font-size: 0.92rem; }
+.tg-banner-desc {
+  font-size: 0.74rem;
+  opacity: 0.92;
+  margin-top: 0.18rem;
+  line-height: 1.3;
+}
+.tg-banner-arrow { font-size: 1.6rem; opacity: 0.7; }
+
+.tg-beta-badge {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 1px 7px;
+  margin-left: 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  vertical-align: middle;
+  text-transform: uppercase;
+}
+.tg-beta-modal {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.5);
+  font-size: 0.65rem;
+}
+
+.tg-modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  backdrop-filter: blur(4px);
+}
+.tg-modal {
+  background: var(--bg-primary, #ffffff);
+  border-radius: 1rem;
+  max-width: 540px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+.tg-modal-header {
+  background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+  color: white;
+  padding: 1.25rem 1.5rem;
+  border-radius: 1rem 1rem 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.tg-modal-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+.tg-modal-close {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tg-modal-close:hover { background: rgba(255, 255, 255, 0.3); }
+.tg-modal-body { padding: 1.5rem; color: var(--text-primary, #0f172a); }
+
+.tg-qr-row {
+  display: flex;
+  gap: 1.25rem;
+  align-items: center;
+  background: var(--bg-secondary, #f8fafc);
+  padding: 1rem;
+  border-radius: 0.6rem;
+  margin-bottom: 1.25rem;
+}
+.tg-qr-row img {
+  width: 140px; height: 140px;
+  border-radius: 0.4rem;
+  background: white;
+  padding: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+.tg-qr-instructions { flex: 1; font-size: 0.86rem; line-height: 1.55; }
+.tg-qr-instructions strong { color: #2563eb; }
+
+.tg-cta-row { display: flex; gap: 0.6rem; margin-bottom: 1.25rem; }
+.tg-cta-btn {
+  flex: 1;
+  padding: 0.7rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-size: 0.88rem;
+  text-decoration: none;
+  text-align: center;
+  display: inline-block;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+}
+.tg-cta-primary {
+  background: #2563eb;
+  color: white;
+}
+.tg-cta-primary:hover { background: #1d4ed8; }
+.tg-cta-secondary {
+  background: var(--bg-card, #f1f5f9);
+  color: var(--text-primary, #0f172a);
+  border-color: var(--border, #cbd5e1);
+}
+
+.tg-steps {
+  background: var(--bg-secondary, #f8fafc);
+  padding: 1rem 1.25rem;
+  border-radius: 0.6rem;
+  font-size: 0.85rem;
+  line-height: 1.7;
+}
+.tg-steps ol { margin: 0; padding-left: 1.2rem; }
+.tg-steps strong { color: #2563eb; }
+
+.tg-features {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.7rem;
+  margin-top: 1.25rem;
+}
+.tg-feature-card {
+  background: var(--bg-secondary, #f8fafc);
+  padding: 0.8rem;
+  border-radius: 0.5rem;
+  font-size: 0.78rem;
+}
+.tg-feature-card strong { color: var(--text-primary, #0f172a); display: block; margin-bottom: 0.25rem; }
+</style>
+
+<div id="tg-modal" class="tg-modal-overlay" onclick="if(event.target===this)closeTelegramModal()">
+  <div class="tg-modal">
+    <div class="tg-modal-header">
+      <h2>📡 訂閱 Telegram 即時推播 <span class="tg-beta-badge tg-beta-modal">BETA</span></h2>
+      <button class="tg-modal-close" onclick="closeTelegramModal()">×</button>
+    </div>
+    <div class="tg-modal-body">
+
+      <div class="tg-qr-row">
+        <img src="/telegram_qr.png" alt="Telegram Bot QR Code">
+        <div class="tg-qr-instructions">
+          <strong>用手機相機掃 QR Code</strong><br>
+          自動跳轉到 Telegram bot，<br>按一下 <strong>START</strong> 即可開始訂閱。
+        </div>
+      </div>
+
+      <div class="tg-cta-row">
+        <a class="tg-cta-btn tg-cta-primary" href="https://t.me/Lalalaralara_bot" target="_blank">
+          📱 在 Telegram 開啟
+        </a>
+        <button class="tg-cta-btn tg-cta-secondary" onclick="navigator.clipboard.writeText('https://t.me/Lalalaralara_bot');this.textContent='✅ 已複製連結'">
+          📋 複製連結
+        </button>
+      </div>
+
+      <div class="tg-steps">
+        <strong style="display:block;margin-bottom:0.5rem;">📋 三步驟開始訂閱</strong>
+        <ol>
+          <li>點上方 <strong>「在 Telegram 開啟」</strong>或掃 QR Code</li>
+          <li>進入 bot 對話 → 點 <strong>START</strong></li>
+          <li>按下方鍵盤的 <strong>「🔔 新增訂閱」</strong>，依精靈 4 步驟完成</li>
+        </ol>
+      </div>
+
+      <div class="tg-features">
+        <div class="tg-feature-card">
+          <strong>🌍 地區訂閱</strong>
+          國家/城市/省份，例：日本、台灣/新竹
+        </div>
+        <div class="tg-feature-card">
+          <strong>📦 料件訂閱</strong>
+          BATTERY / IC / MEMORY 等 20 種類別
+        </div>
+        <div class="tg-feature-card">
+          <strong>🏭 供應商分布</strong>
+          22 個既有供應商分布點任選
+        </div>
+        <div class="tg-feature-card">
+          <strong>📍 半徑訂閱</strong>
+          指定座標 + N 公里圓內
+        </div>
+      </div>
+
+      <div style="margin-top:1.25rem;font-size:0.78rem;color:var(--text-muted,#64748b);text-align:center;">
+        多筆訂閱以 OR 邏輯運作 · 同事件對同人只推一次<br>
+        可隨時用 <code>/list</code> 查看、<code>/unsubscribe</code> 取消
+      </div>
+
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

@@ -9,3 +9,22 @@ ssh_err.txt
 *.bat
 jd_*
 .claude/
+
+# Secrets / local config — 不可進 git
+.env
+.env.local
+.env.*.local
+
+# Local backups
+*.bak
+
+# 編輯來源（程式不讀）
+*.xlsx
+
+# Demo 簡報（個人講稿，不上 production）
+ASUSTIMES_demo_script.html
+ASUSTIMES_demo_script*.pdf
+telegram_bot_qr.png
+
+# VSCode local settings
+settings.local.json

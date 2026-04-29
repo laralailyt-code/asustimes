@@ -435,71 +435,179 @@ if event_date < cutoff_7day:
 
 ## 數據更新
 
-### 自動更新機制
+> 本章節列出 Flask 啟動時拉起的所有背景執行緒、各類資料的來源與抓取方式。
+> 業務面的「資料來源與更新頻率」整合表請見 `資訊來源與更新頻率報告.md`。
+
+### 背景執行緒總覽
+
+Flask 啟動後會在 `_ensure_bg_running()` 拉起 **6 個 daemon thread**：
+
+| Thread 名 | 函式 | 頻率 | 用途 |
+|-----------|------|------|------|
+| `(news)` | `background_refresh_loop` | 30 分鐘 | 新聞主刷新 |
+| `(digitimes)` | `_digitimes_refresh_loop` | 2 小時 | Digitimes 強化（透過 Bing News）|
+| `(commodity)` | `_live_price_loop` | 整點 6 次 (07/09/11/13/15/17 TW) | 商品價格 |
+| `(risk)` | `_risk_cache_preload_loop` | 3 小時 | 罷工 + 地緣政治預熱 |
+| `(digest)` | `daily_digest_loop` | 每日 1 次 | 摘要 email |
+| `telegram-bot` | `_telegram_bot_loop` | 持續 | PTB polling（M4 部署後改 webhook）|
+
+### 商品價格更新邏輯
 
 ```python
-# app.py 主循環
 def _live_price_loop():
-    # 每天在 7、9、11、13、15、17 點（台北時間）更新
-    _REFRESH_HOURS = {7, 9, 11, 13, 15, 17}
-    
+    _load_commodity_csv_to_cache()
+    _refresh_live_prices()                         # 啟動時跑一次
+    _REFRESH_HOURS = {7, 9, 11, 13, 15, 17}       # 台北時間
+    last_run_hour: set = set()
     while True:
-        sleep(60)
+        time.sleep(60)
         now_tw = datetime.now(timezone(timedelta(hours=8)))
+        key = (now_tw.date(), now_tw.hour)
         if now_tw.hour in _REFRESH_HOURS and key not in last_run_hour:
-            _refresh_live_prices()  # 並行更新所有數據
             last_run_hour.add(key)
+            _refresh_live_prices()
 ```
 
-### 原物料價格來源
+### 商品來源 vs 抓取方式（截至 2026-04-29）
 
-| 商品 | 來源 | 方法 | 優先級 |
-|------|------|------|--------|
-| **LME 金屬** | metals.live API | JSON API | ⭐⭐⭐ |
-| **鎢粉** | SMM | Playwright 爬蟲 | ⭐⭐ |
-| **黃磷** | Trading Economics | requests | ⭐⭐ |
-| **PC** | sci99.com | BeautifulSoup | ⭐⭐ |
-| **匯率** | Yahoo Finance | yfinance | ⭐⭐⭐ |
+| 商品 | 來源 | 抓取方式 | 備註 |
+|------|------|---------|------|
+| **鈷/銅/鋁/錫/鎳/鋅** | metals.live `/v1/spot/{slug}` | requests + JSON | TE fallback 已關（bid vs settlement 基準差）|
+| **鋰** | tradingeconomics.com | requests + regex 爬取 | 唯一仍用 TE 的金屬（無更佳來源）|
+| **鎢粉** | SMM (smm.cn) | Playwright headless 爬蟲 | 啟動慢（10–20 秒）|
+| **黃磷** | sci99.com `/priceMonitor/listProductPagePrice?oldId=678` | requests + JSON | 2026-04-29 從 HTML 改 JSON API |
+| **PC 塑料** | sci99.com `/priceMonitor/listProductPagePrice?oldId=68` | requests + JSON | 同上 |
+| **ABS 聚合物 / 瓦楞芯紙** | bot.com.tw BCD API | requests | 720 天日線歷史 |
+| **長纖紙漿** | MoneyDJ + 歷史檔 fallback | requests | SSL 失敗時退到 hardcoded `_LONGFIBER_PULP_HISTORY` |
+| **金/銀/油 WTI/Brent** | Yahoo Finance v8 chart API（直接 HTTP）| requests | 不依賴 yfinance lib |
+| **匯率 TWD/CNY/JPY/KRW/EUR** | 同上（`{ccy}=X` ticker） | requests | 同上 |
+| **歷史回填** | 使用者提供 Excel | `tools/merge_excel_history.py` | 對鈷/錫/鎳/鋅/鋰 等只能取得當日值的金屬必要 |
 
-### 鎢粉爬蟲（性能待優化）
+### sci99.com JSON API 範例
+
+```python
+def _fetch_sci99_price(old_id: int, label: str = "") -> tuple[float | None, str | None]:
+    """sci99.com 改成 JS 渲染後，舊的 BeautifulSoup 表格解析失效。
+    改用網站自己呼叫的 AJAX 端點。"""
+    headers = {
+        "User-Agent": "Mozilla/5.0 ...",
+        "Accept":     "application/json, text/plain, */*",
+        "Referer":    f"https://www.sci99.com/monitor-{old_id}-0.html",
+    }
+    r = req_lib.get(
+        "https://www.sci99.com/priceMonitor/listProductPagePrice",
+        params={"oldId": old_id, "type": 0},
+        headers=headers, timeout=12,
+    )
+    body = r.json()
+    first = body["data"][0]
+    return float(first["mdataValue"].replace(",", "")), first["dateRange"]
+```
+
+oldId 對照：黃磷 = 678，PC 塑料 = 68（即 monitor-{N}-0.html 的數字）。
+
+### Yahoo Finance v8（不依賴 yfinance lib）
+
+```python
+def fetch_yahoo(symbol: str, days: int = 60):
+    end = int(time.time())
+    start = end - days * 86400
+    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+           f"?period1={start}&period2={end}&interval=1d")
+    r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+    body = r.json()
+    result = body["chart"]["result"][0]
+    timestamps = result["timestamp"]
+    closes = result["indicators"]["quote"][0]["close"]
+    return [(date.fromtimestamp(ts), float(c))
+            for ts, c in zip(timestamps, closes) if c is not None]
+```
+
+> 為什麼放棄 yfinance lib：Render pip 安裝失敗（lxml 依賴衝突）。直接 HTTP 反而更穩。
+
+### 鎢粉 Playwright 爬蟲（仍是性能瓶頸）
 
 ```python
 def _fetch_smm_tungsten_powder_price() -> float | None:
-    """從 SMM 爬取鎢粉價格（國產钨粉）"""
-    try:
-        from playwright.sync_api import sync_playwright
-        
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            
-            # 設置超時
-            page.goto(
-                "https://hq.smm.cn/h5/tungsten-powder-price",
-                timeout=15000  # 15 秒
-            )
-            page.wait_for_load_state("networkidle", timeout=10000)
-            
-            # 抽取價格
-            pattern = r'(\d{3,4})\s*-\s*(\d{3,4})'
-            matches = re.findall(pattern, page.content())
-            
-            if matches:
-                low, high = matches[0]
-                avg = (float(low) + float(high)) / 2
-                if 200 < avg < 5000:
-                    return avg
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto("https://hq.smm.cn/h5/tungsten-powder-price", timeout=15000)
+        page.wait_for_load_state("networkidle", timeout=10000)
+        pattern = r'(\d{3,4})\s*-\s*(\d{3,4})'
+        matches = re.findall(pattern, page.content())
+        if matches:
+            low, high = matches[0]
+            avg = (float(low) + float(high)) / 2
+            if 200 < avg < 5000:
+                return avg
 ```
 
-**性能問題**：
-- Playwright 啟動瀏覽器較慢（~5-10 秒）
-- 網絡空閒等待（~3-5 秒）
-- **總計**：每次更新 10-20 秒
+**性能**：每次更新 10–20 秒（瀏覽器啟動 5–10s + networkidle 3–5s）。
+**待優化**：HTTP-only 端點探勘、降低 timeout、結果快取。
 
-**未來優化**：
-- 增加緩存機制
-- 背景線程非阻塞更新
-- 減少超時設置（目前過於保守）
+### Carry-forward 機制
+
+`_save_commodity_csv()` 寫入 CSV 時呼叫 `_apply_carry_forward(rows, header)`：
+
+```python
+def _apply_carry_forward(rows, header, carry_back_days: int = 30) -> None:
+    # Pass 1：carry-forward — 空白格 ← 最近一筆真實值，標 '*'
+    # Pass 2：carry-back   — 第一筆真實點之前的空白 ← 第一筆真實值，
+    #                       但只在過去 carry_back_days 天內套用
+    ...
+```
+
+**規則**：
+- 真實值 → 寫進去不帶 `*`
+- 沿用值 → 寫進去帶 `*`（如 `27000*`）
+- 真實值會自動覆蓋舊的 `*`（cache 是 source of truth）
+- 30 天前的歷史空白保持空白（不污染長期趨勢圖）
+
+`_parse_commodity_csv()` 讀回時用 `clean = v.replace(",", "").rstrip("*")` 剝除 `*` 才解析浮點。
+
+### 新聞抓取（scraper.py）
+
+| 來源類型 | 範例 | 取得方式 |
+|---------|------|---------|
+| 直接 RSS | `technews.tw/feed/`, `ithome.com.tw/rss`, `cool3c-all`, `ctee.com.tw/rss.xml` | `requests` + `feedparser` |
+| Bing News 站內搜尋 | `https://www.bing.com/news/search?format=rss&q=site:digitimes.com+...` | 同上 |
+| AI 摘要 | Claude（`anthropic` package） | `messages.create()` |
+
+**Bing 連結解碼**（從 `bing.com/news/apiclick.aspx?...&url=X` 提取真實 X）：
+
+```python
+if "bing.com/news/apiclick.aspx" in article_url:
+    qs = parse_qs(urlparse(article_url).query)
+    if "url" in qs:
+        article_url = unquote(qs["url"][0])
+```
+
+### Telegram Bot 推播
+
+詳見 `telegram_bot/` 子套件。重點：
+
+| 模組 | 角色 |
+|------|------|
+| `bot.py` | PTB Application 工廠 + polling 入口 |
+| `db.py` | psycopg2 ThreadedConnectionPool + CRUD |
+| `event_persister.py` | 把 scan 結果寫進 `risk_events` 表 |
+| `matcher.py` | 訂閱命中（含 30 分/24 小時新鮮度過濾）|
+| `notifier.py` | 推播 worker（限速 25/s、403 自動停用、429 退避）|
+| `handlers/basic.py` | `/start /help /list /clear` + Reply Keyboard |
+| `handlers/subscribe_wizard.py` | 4 步驟訂閱精靈（ConversationHandler）|
+| `handlers/quick_subscribe.py` | 4 個快速指令（地區/料件/供應商/半徑）|
+
+新事件流：
+```
+_do_geo_scan / _do_strike_scan
+  → results 寫進 _strike_cache / _geo_risk_cache
+  → 同時呼叫 _persist_events_async() 把 results 寫到 Supabase risk_events（INSERT IF NOT EXISTS）
+  → dispatcher（PTB job_queue, 每 60s）撈 notified=false 的事件
+  → matcher.find_hits() 找命中
+  → notifier.push_event_to_users() 推 + 標記 notified=true
+```
 
 ---
 
