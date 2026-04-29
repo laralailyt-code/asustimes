@@ -2848,21 +2848,13 @@ def api_risk_crises():
 _geo_risk_cache: dict = {"data": None, "ts": 0.0}
 _geo_risk_lock  = threading.Lock()
 
-# ── Disaster Risks (Earthquakes, Typhoons, etc.) ────────────────────
-_DISASTER_RISKS = [
-    {"id":"disaster-aomori", "kw":["青森地震 magnitude 7","Aomori earthquake 7","青森 7級地震","Aomori 7.4","青森地震"],
-     "title":"青森地震 5級+","type":"disaster","lat":40.5,"lng":141.0,"region":"日本東北",
-     "impact":"HIGH","supply":"日本北部製造業中斷風險，光學元件/精密製造可能受影響",
-     "affected_materials":["光學元件","精密機械"],"shipping_routes":["日本港口"]},
-    {"id":"disaster-taiwan", "kw":["台灣地震 5級","Taiwan earthquake 5.0","台灣 5級以上","花蓮地震"],
-     "title":"台灣地震 5級+","type":"disaster","lat":24.0,"lng":121.0,"region":"台灣",
-     "impact":"CRITICAL","supply":"台積電等晶圓廠中斷風險（台灣最高供應鏈風險）",
-     "affected_materials":["晶片","半導體"],"shipping_routes":["台灣港口"]},
-    {"id":"disaster-typhoon", "kw":["颱風警報","typhoon warning","typhoon landing"],
-     "title":"颱風預警","type":"disaster","lat":23.0,"lng":120.0,"region":"西太平洋",
-     "impact":"HIGH","supply":"海運中斷、製造業停工風險",
-     "affected_materials":["晶片","電子產品"],"shipping_routes":["東亞航線","太平洋航線"]},
-]
+# ── Disaster Risks ──────────────────────────────────────────────
+# 已全部移除。所有災害事件都由各自的官方 feed 提供：
+#   地震 → USGS  (api_risk_quakes / _fetch_usgs_quakes)
+#   颱風 → NOAA NHC (api_risk_storms / _fetch_noaa_storms)
+#   洪水 / 火山 / 極端天氣 → GDACS (api_risk_disasters / _fetch_gdacs_alerts)
+# 之前用新聞 scrape 重複偵測這些事件，標題/規模/座標都寫死，不準且跟官方 feed 衝突。
+_DISASTER_RISKS: list = []
 
 _GEO_RISKS = [
     {"id":"geo-redsea",  "kw":["Houthi Red Sea ship attack","Red Sea shipping attack"],
@@ -2896,59 +2888,6 @@ _GEO_RISKS = [
      "affected_materials":["紡織品","電子零件"],"shipping_routes":["南亞港口","阿拉伯海"]},
 ]
 
-def _get_earthquake_date_from_usgs(location_keyword):
-    """Query USGS API for recent earthquake date in location (e.g. 'Aomori')."""
-    try:
-        from datetime import datetime, timezone, timedelta
-
-        # Map location keywords to USGS bounding boxes (format: minlatitude,minlongitude,maxlatitude,maxlongitude)
-        location_boxes = {
-            'aomori': '39.5,139.0,41.5,142.0',
-            '青森': '39.5,139.0,41.5,142.0',
-            'tohoku': '36.0,136.0,42.0,144.0',
-            '日本東北': '36.0,136.0,42.0,144.0',    # matches risk['region']
-            '日本北部': '36.0,136.0,42.0,144.0',
-            'japan': '30.0,130.0,45.0,145.0',       # Broader Japan area
-            'taiwan': '21.5,119.5,25.5,122.5',
-            '台灣': '21.5,119.5,25.5,122.5',        # matches risk['region']
-            'western pacific': '5.0,120.0,35.0,160.0',
-            '西太平洋': '5.0,120.0,35.0,160.0',     # matches risk['region']
-        }
-
-        # Find matching location
-        box = None
-        for loc_kw, bbox in location_boxes.items():
-            if loc_kw in location_keyword.lower():
-                box = bbox
-                break
-
-        if not box:
-            return None
-
-        # Query USGS API for earthquakes in past 30 days
-        url = f"https://earthquake.usgs.gov/fdsnws/event/1/query?format=json&starttime={datetime.now(timezone.utc) - timedelta(days=30)}&bbox={box}&minmagnitude=5.0"
-        r = req_lib.get(url, timeout=10)
-
-        if r.status_code != 200:
-            return None
-
-        data = r.json()
-        features = data.get('features', [])
-
-        if features:
-            # Get the most recent earthquake
-            latest = features[0]
-            props = latest.get('properties', {})
-            timestamp = props.get('time', 0) / 1000  # Convert ms to seconds
-            eq_date = datetime.fromtimestamp(timestamp, tz=timezone.utc)
-            return eq_date.strftime('%Y-%m-%d')
-
-    except Exception as e:
-        logger.debug(f"USGS API error: {e}")
-
-    return None
-
-
 def _scan_one_geo_risk(risk, headers, cutoff):
     """Scan Bing News for one geopolitical risk entry. Returns result dict or None."""
     import xml.etree.ElementTree as ET
@@ -2979,53 +2918,11 @@ def _scan_one_geo_risk(risk, headers, cutoff):
                 logger.info(f"[GEO] {risk['title']} + '{kw}': {len(items)} items (status {r.status_code})")
                 for item in items:
                     pub = item.findtext('pubDate', '')
-                    title = item.findtext('title', '')
-                    description = item.findtext('description', '')
                     try:
                         dt = parsedate_to_datetime(pub)
                         if dt >= cutoff:
-                            # For earthquakes: check magnitude >= 5.0
-                            if 'earthquake' in risk['type'].lower() or 'disaster' in risk['type'].lower() or any('地震' in kw for kw in risk['kw']):
-                                text = f"{title} {description}".lower()
-                                # Check for magnitude 5.0 or higher
-                                has_high_magnitude = any([
-                                    mag_pattern in text for mag_pattern in [
-                                        '5.0', '5.1', '5.2', '5.3', '5.4', '5.5', '5.6', '5.7', '5.8', '5.9',
-                                        '6.0', '6.1', '6.2', '6.3', '6.4', '6.5', '6.6', '6.7', '6.8', '6.9',
-                                        '7.0', '7.1', '7.2', '7.3', '7.4', '7.5', '7.6', '7.7', '7.8', '7.9',
-                                        '8.0', '8.1', '8.2', '8.3', '8.4', '8.5', '8.6', '8.7', '8.8', '8.9',
-                                        '5級', '6級', '7級', '8級', '9級',
-                                        'magnitude 5', 'magnitude 6', 'magnitude 7', 'magnitude 8', 'magnitude 9'
-                                    ]
-                                ])
-                                if not has_high_magnitude:
-                                    logger.debug(f"[GEO] Skipping {risk['title']}: no 5.0+ magnitude in article")
-                                    continue
-
-                            # For earthquakes: get actual earthquake date
-                            if 'earthquake' in risk['type'].lower() or 'disaster' in risk['type'].lower() or any('地震' in kw for kw in risk['kw']):
-                                # Hardcoded known earthquakes (temporary solution)
-                                known_earthquakes = {
-                                    'disaster-aomori': '2026-04-20',     # Aomori earthquake on April 20, 2026
-                                    'disaster-taiwan': '2026-04-15',     # Taiwan earthquake on April 15, 2026
-                                }
-
-                                if risk['id'] in known_earthquakes:
-                                    found_date = known_earthquakes[risk['id']]
-                                    logger.info(f"[GEO] ✓ {risk['title']}: earthquake on {found_date} (hardcoded)")
-                                else:
-                                    # Try USGS API
-                                    usgs_date = _get_earthquake_date_from_usgs(risk['region'])
-                                    if usgs_date:
-                                        found_date = usgs_date
-                                        logger.info(f"[GEO] ✓ {risk['title']}: earthquake on {usgs_date} (USGS)")
-                                    else:
-                                        # Fallback to news publication date
-                                        found_date = str(dt.date())
-                                        logger.warning(f"[GEO] {risk['title']}: using publication date {found_date} (USGS unavailable)")
-                            else:
-                                found_date = str(dt.date())
-                                logger.info(f"[GEO] ✓ {risk['title']}: found recent article")
+                            found_date = str(dt.date())
+                            logger.info(f"[GEO] ✓ {risk['title']}: found recent article")
                             # Keep track of latest article across all keywords
                             if latest_date is None or dt > latest_date:
                                 latest_date = dt
