@@ -1099,12 +1099,10 @@ _TE_SLUGS = {
     "tin":        ("錫 (tin) US$/tonne",         1.0),       # TE in USD/tonne ✓
     "nickel":     ("鎳 (nickel)  US$/tonne",     1.0),       # TE in USD/tonne ✓
     "zinc":       ("鋅 (zinc)  US$/tonne",       1.0),       # TE in USD/tonne ✓
+    "cobalt":     ("鈷 (cobalt) US$/tonne",      1.0),       # TE in USD/tonne ✓ (metals.live dead, no Yahoo ticker)
     "lithium":    ("鋰 (Lithium) CNY$/tonne",    1.0),       # TE in CNY/tonne ✓
     "phosphorus": ("黃磷 CNY$/tonne",            29.4274),   # TE in CNY/百kg → CNY/tonne
 }
-
-# Cobalt moved to dedicated fetcher (_fetch_cobalt_price) due to TE data quality issues
-# Using metals.live API as primary source instead
 
 
 def _fetch_bot_bcd_price(code: str) -> float | None:
@@ -1849,7 +1847,14 @@ def _refresh_live_prices():
         for fut in as_completed(futs):
             sym, csv_name, points, url = fut.result()
             if points:
-                fresh[csv_name]   = points
+                # Merge: Yahoo wins for the dates it covers (last 1y), but keep
+                # older history from cache so we don't truncate >1y data.
+                with _live_cache_lock:
+                    prev = list(_live_commodity_cache.get(csv_name, []))
+                yahoo_dates = {d for d, _ in points}
+                merged = [p for p in prev if p[0] not in yahoo_dates] + points
+                merged.sort(key=lambda x: x[0])
+                fresh[csv_name]   = merged
                 sources[csv_name] = {"label": "Yahoo Finance", "url": url}
 
     # 2. bot.com.tw BCD API — full history for all codes
@@ -1886,13 +1891,11 @@ def _refresh_live_prices():
                                  "url":   "https://www.buyplas.com/spot/1003-PP-PE-PVC-ABS-PS.html"}
             logger.info(f"buyplas.com {key}: {csv_name} = {price}")
 
-    logger.info("[REFRESH] Starting TradingEconomics (non-LME metals only)...")
-    # Filter out metals that should come from LME instead
+    logger.info("[REFRESH] Starting TradingEconomics...")
     # 排除走別的來源處理的：
     # - copper, aluminum: 走 Yahoo Finance (HG=F, ALI=F)
     # - phosphorus:       走 sci99 JSON API
-    # - cobalt:           走 _fetch_cobalt_price (metals.live)
-    # tin/nickel/zinc/lithium 改回用 TE（metals.live 已死，至少 TE 有數字）
+    # tin/nickel/zinc/cobalt/lithium 走 TE（metals.live 已死、Yahoo 沒這幾檔期貨）
     excluded_slugs = {"copper", "aluminum", "phosphorus"}
     for slug, (csv_name, mult) in _TE_SLUGS.items():
         if slug in excluded_slugs:
@@ -1950,166 +1953,11 @@ def _refresh_live_prices():
                             "url":   "https://www.sci99.com/monitor-678-0.html"}
         logger.warning(f"Yellow Phosphorus fetch failed, preserved {len(prev)} historical points")
 
-    logger.info("[REFRESH] Starting Copper (LME source)...")
-    copper_name = "銅 (copper) US$/tonne"
-    with _live_cache_lock:
-        prev = list(_live_commodity_cache.get(copper_name, []))
-
-    # Initialize with 1-year yfinance history if cache is empty
-    if not prev:
-        # HG=F is in ¢/lb, convert to USD/tonne: (¢/lb ÷ 100) × 2204.62
-        prev = _fetch_1year_lme_history("HG=F", multiplier=2204.62 / 100)
-        logger.info(f"Initialized copper with {len(prev)} points from yfinance (1-year history)")
-
-    copper_price = _fetch_copper_price()
-    existing_dates = {d for d, _ in prev}
-
-    if copper_price is not None:
-        copper_val = round(copper_price, 2)
-        if today not in existing_dates:
-            prev.append((today, copper_val))
-            logger.info(f"Added new LME price for {today}: {copper_val} USD/tonne")
-        else:
-            prev = [(d if d != today else today, copper_val if d == today else p) for d, p in prev]
-            logger.info(f"Updated LME price for {today}: {copper_val} USD/tonne")
-        fresh[copper_name] = prev
-        sources[copper_name] = {"label": "LME (metals.live)",
-                                "url":   "https://www.lme.com"}
-        logger.info(f"Copper: {len(prev)} historical points (latest: {copper_val} USD/tonne on {today})")
-    else:
-        # API fetch failed: preserve existing data but ensure today is marked (with last known value or placeholder)
-        if today not in existing_dates and prev:
-            last_val = next((v for v in reversed([v for d, v in prev]) if v is not None), None)
-            if last_val:
-                prev.append((today, last_val))  # Keep last known value with today's date
-                logger.warning(f"Copper API failed, recorded today {today} with last price {last_val}")
-        fresh[copper_name] = prev
-        sources[copper_name] = {"label": "LME (metals.live)",
-                                "url":   "https://www.lme.com"}
-        logger.warning(f"Copper: {len(prev)} points, latest from {prev[-1][0] if prev else 'N/A'}")
-        sources[copper_name] = {"label": "LME (verified data only)",
-                                "url":   "https://www.lme.com"}
-        logger.warning(f"Copper fetch failed, preserved verified data only ({len(prev)} points)")
-
-    logger.info("[REFRESH] Starting LME metals (Tin, Nickel, Zinc)...")
-    lme_metals = {
-        "錫 (tin) US$/tonne": ("Tin", "tin", 1.0, _TIN_HISTORY),
-        "鎳 (nickel)  US$/tonne": ("Nickel", "nickel", 1.0, _NICKEL_HISTORY),
-        "鋅 (zinc)  US$/tonne": ("Zinc", "zinc", 1.0, _ZINC_HISTORY),
-    }
-    for csv_name, (display_name, api_slug, mult, history_dict) in lme_metals.items():
-        with _live_cache_lock:
-            prev = list(_live_commodity_cache.get(csv_name, []))
-
-        # Use LME API only (yfinance futures have unreliable units)
-        if not prev:
-            logger.info(f"Initializing {display_name} with LME API only (empty history)")
-
-        price = _fetch_lme_metal_price(display_name, api_slug)
-        if price is not None:
-            val = round(price * mult, 2)
-            existing_dates = {d for d, _ in prev}
-            if today not in existing_dates:
-                prev.append((today, val))
-                logger.info(f"Added new LME price for {today}: {val} USD/tonne")
-            else:
-                prev = [(d if d != today else today, val if d == today else p) for d, p in prev]
-                logger.info(f"Updated LME price for {today}: {val} USD/tonne")
-            fresh[csv_name] = prev
-            sources[csv_name] = {"label": "LME (metals.live)",
-                                "url":   "https://www.lme.com"}
-            logger.info(f"LME: {csv_name} = {val} ({len(prev)} points)")
-        else:
-            # If fetch fails, still update today with last known price
-            existing_dates = {d for d, _ in prev}
-            if today not in existing_dates:
-                last_price = prev[-1][1] if prev else None
-                if last_price is not None:
-                    prev.append((today, last_price))
-                    logger.warning(f"{csv_name} fetch failed, using last known price {last_price} for {today}")
-                else:
-                    logger.error(f"{csv_name} fetch failed and no historical data available for {today}")
-            fresh[csv_name] = prev
-            sources[csv_name] = {"label": "LME (cached)",
-                                "url":   "https://www.lme.com"}
-            logger.warning(f"{csv_name} fetch failed, preserved data ({len(prev)} points)")
-
-    logger.info("[REFRESH] Starting Cobalt (LME only, no CSV)...")
-    cobalt_name = "鈷 (cobalt) US$/tonne"
-    with _live_cache_lock:
-        prev = list(_live_commodity_cache.get(cobalt_name, []))
-
-    # Initialize with 1-year yfinance history if cache is empty
-    if not prev:
-        # ZS=F is in ¢/lb, convert to USD/tonne: (¢/lb ÷ 100) × 2204.62
-        prev = _fetch_1year_lme_history("ZS=F", multiplier=2204.62 / 100)
-        logger.info(f"Initialized cobalt with {len(prev)} points from yfinance (1-year history)")
-
-    # Fetch fresh LME price
-    cobalt_price = _fetch_cobalt_price()
-    existing_dates = {d for d, _ in prev}
-
-    if cobalt_price is not None:
-        cobalt_val = round(cobalt_price, 2)
-        if today not in existing_dates:
-            prev.append((today, cobalt_val))
-            logger.info(f"Added new LME price for {today}: {cobalt_val} USD/tonne")
-        else:
-            prev = [(d if d != today else today, cobalt_val if d == today else p) for d, p in prev]
-            logger.info(f"Updated LME price for {today}: {cobalt_val} USD/tonne")
-        fresh[cobalt_name] = prev
-        sources[cobalt_name] = {"label": "LME (metals.live)",
-                                "url":   "https://www.lme.com"}
-        logger.info(f"Cobalt: {len(prev)} historical points (latest: {cobalt_val} USD/tonne on {today})")
-    else:
-        # API failed: ensure today's date is marked with last known value
-        if today not in existing_dates and prev:
-            last_val = next((v for v in reversed([v for d, v in prev]) if v is not None), None)
-            if last_val:
-                prev.append((today, last_val))
-                logger.warning(f"Cobalt API failed, recorded today {today} with last price {last_val}")
-        fresh[cobalt_name] = prev
-        sources[cobalt_name] = {"label": "LME (metals.live)",
-                                "url":   "https://www.lme.com"}
-        logger.warning(f"Cobalt: {len(prev)} points, latest from {prev[-1][0] if prev else 'N/A'}")
-
-    logger.info("[REFRESH] Starting Aluminum (LME source)...")
-    aluminum_name = "鋁 (aluminum) US$/tonne"
-    with _live_cache_lock:
-        prev = list(_live_commodity_cache.get(aluminum_name, []))
-
-    # Initialize with 1-year yfinance history if cache is empty
-    if not prev:
-        # ALI=F is in ¢/lb, convert to USD/tonne: (¢/lb ÷ 100) × 2204.62
-        prev = _fetch_1year_lme_history("ALI=F", multiplier=2204.62 / 100)
-        logger.info(f"Initialized aluminum with {len(prev)} points from yfinance (1-year history)")
-
-    aluminum_price = _fetch_aluminum_price()
-    existing_dates = {d for d, _ in prev}
-
-    if aluminum_price is not None:
-        aluminum_val = round(aluminum_price, 2)
-        if today not in existing_dates:
-            prev.append((today, aluminum_val))
-            logger.info(f"Added new LME price for {today}: {aluminum_val} USD/tonne")
-        else:
-            prev = [(d if d != today else today, aluminum_val if d == today else p) for d, p in prev]
-            logger.info(f"Updated LME price for {today}: {aluminum_val} USD/tonne")
-        fresh[aluminum_name] = prev
-        sources[aluminum_name] = {"label": "LME (metals.live)",
-                                  "url":   "https://www.lme.com"}
-        logger.info(f"Aluminum: {len(prev)} historical points (latest: {aluminum_val} USD/tonne on {today})")
-    else:
-        # API failed: ensure today's date is marked with last known value
-        if today not in existing_dates and prev:
-            last_val = next((v for v in reversed([v for d, v in prev]) if v is not None), None)
-            if last_val:
-                prev.append((today, last_val))
-                logger.warning(f"Aluminum API failed, recorded today {today} with last price {last_val}")
-        fresh[aluminum_name] = prev
-        sources[aluminum_name] = {"label": "LME (metals.live)",
-                                  "url":   "https://www.lme.com"}
-        logger.warning(f"Aluminum: {len(prev)} points, latest from {prev[-1][0] if prev else 'N/A'}")
+    # NOTE: Copper / Aluminum 走 _LIVE_COMMODITY_SYMBOLS Yahoo 路徑 (HG=F, ALI=F)。
+    # Tin / Nickel / Zinc / Cobalt 走 _TE_SLUGS Trading Economics 路徑。
+    # 之前這裡有 4 個 dedicated block (Copper/Tin-Nickel-Zinc/Cobalt/Aluminum) 用已死的
+    # metals.live API，並會用 stale cache 蓋掉 Yahoo/TE 已寫入的正確值，且 cobalt 還拿
+    # ZS=F (大豆期貨!) × 22.05 當初始化資料。已全部移除以避免汙染 fresh[]。
 
     logger.info("[REFRESH] Starting Tungsten Powder (SMM 国产钨粉 only)...")
     tungsten_name = "鎢"
@@ -2234,13 +2082,7 @@ def _refresh_live_prices():
         _live_commodity_cache.update(fresh)
     with _item_sources_lock:
         _item_sources.update(sources)
-        # Always ensure correct sources: use LME for all traded metals
-        _item_sources["鈷 (cobalt) US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
-        _item_sources["銅 (copper) US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
-        _item_sources["鋁 (aluminum) US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
-        _item_sources["錫 (tin) US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
-        _item_sources["鎳 (nickel)  US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
-        _item_sources["鋅 (zinc)  US$/tonne"] = {"label": "LME (歷史)", "url": "https://www.lme.com"}
+        # 不再硬編 "LME (歷史)" — 由 Yahoo / TE 路徑自己寫入正確的 source label
     # Persist updated prices back to CSV file
     _save_commodity_csv()
     # Invalidate CSV parse cache so next request re-merges fresh live data
@@ -2381,49 +2223,18 @@ def _parse_commodity_csv() -> dict:
                 "values":   [p[1] for p in paired],
             }
 
-            # Set default source for CSV-only items
-            # Keep consistent with _refresh_live_prices() sources to avoid data inconsistency
+            # Set initial (transient) source label from CSV history.
+            # 注意：這些 label 只在第一次 refresh 之前顯示；refresh 完成後會被
+            # Yahoo / TE / sci99 / SMM 寫入真正的 source 蓋掉。
             with _item_sources_lock:
-                # LME metals: all use metals.live API (same source for consistency)
-                if "鈷" in name or "cobalt" in name:
+                if "鎢" in name or "tungsten" in name:
                     _item_sources[name] = {
-                        "label": "LME (歷史)",
-                        "url": "https://www.lme.com"
-                    }
-                elif "銅" in name or "copper" in name:
-                    _item_sources[name] = {
-                        "label": "LME (歷史)",
-                        "url": "https://www.lme.com"
-                    }
-                elif "錫" in name or "tin" in name:
-                    _item_sources[name] = {
-                        "label": "LME (歷史)",
-                        "url": "https://www.lme.com"
-                    }
-                elif "鎳" in name or "nickel" in name:
-                    _item_sources[name] = {
-                        "label": "LME (歷史)",
-                        "url": "https://www.lme.com"
-                    }
-                elif "鋅" in name or "zinc" in name:
-                    _item_sources[name] = {
-                        "label": "LME (歷史)",
-                        "url": "https://www.lme.com"
-                    }
-                elif "鋁" in name or "aluminum" in name:
-                    _item_sources[name] = {
-                        "label": "LME (歷史)",
-                        "url": "https://www.lme.com"
-                    }
-                elif "鎢" in name or "tungsten" in name:
-                    _item_sources[name] = {
-                        "label": "八百易 ebaiyin (1#钨条)",
-                        "url": "https://www.ebaiyin.com/quote/wu.shtml"
+                        "label": "上海有色網 SMM (钨粉)",
+                        "url": "https://hq.smm.cn/h5/tungsten-powder-price"
                     }
                 elif name not in _item_sources:
-                    # Default source for other CSV-only items
                     _item_sources[name] = {
-                        "label": "歷史記錄",
+                        "label": "歷史記錄（待更新）",
                         "url": "file:///csv"
                     }
 
