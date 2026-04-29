@@ -1797,6 +1797,18 @@ def _refresh_live_prices():
     fresh: dict = {}
     sources: dict = {}
 
+    # FIX (2026-04-29): cache 寫入邏輯有 bug — 「if today not in existing_dates: prev.append」
+    # 在 today 已存在時 skip 不更新，導致舊錯值永不被新值覆蓋。最小修正：
+    # 在這裡先清掉所有商品 today 的 cache 條目，後面所有 fetch 函數的「if today not in」
+    # 邏輯就會正確 append 新值。
+    with _live_cache_lock:
+        for name in list(_live_commodity_cache.keys()):
+            points = _live_commodity_cache[name]
+            cleaned = [(d, v) for d, v in points if d != today]
+            if len(cleaned) != len(points):
+                _live_commodity_cache[name] = cleaned
+        logger.info(f"[REFRESH] cleared today({today}) cache entries for re-fetch")
+
     # 1. Yahoo Finance（commodities + FX）— 1-year daily history (parallel)
     # 優先用 yfinance lib（本地環境裝得起來），失敗或不可用時 fallback 到 Yahoo v8 HTTP
     all_yf_syms: dict = {}
