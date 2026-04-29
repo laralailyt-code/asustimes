@@ -734,22 +734,6 @@
     border: 1px solid var(--accent); background: var(--accent);
     color: white; font-size: 0.78rem; cursor: pointer; font-family: inherit;
   }
-  .market-news-title {
-    font-size: 0.8rem; font-weight: 700; color: var(--text-muted);
-    letter-spacing: 0.06em; text-transform: uppercase;
-    margin: 1.2rem 0 0.6rem;
-  }
-  .market-news-list { display: flex; flex-direction: column; gap: 0.5rem; }
-  .market-news-item {
-    background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: 8px; padding: 0.65rem 0.9rem;
-    display: flex; gap: 0.8rem; align-items: flex-start;
-    text-decoration: none; transition: border-color 0.15s;
-  }
-  .market-news-item:hover { border-color: var(--border-hover); }
-  .market-news-item-title { font-size: 0.83rem; color: var(--text-primary); line-height: 1.45; }
-  .market-news-item-meta  { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
-
   /* ── Responsive ── */
   @media (max-width: 640px) {
     .header-inner { padding: 0 0.75rem; gap: 0.5rem; height: 54px; }
@@ -1076,10 +1060,6 @@
         <div id="chartHighLow"></div>
         <div class="chart-wrap"><canvas id="marketChart"></canvas></div>
       </div>
-      <!-- Related news - HIDDEN -->
-      <div class="market-news-title" id="marketNewsTitle" style="display:none">相關新聞</div>
-      <div class="market-news-list" id="marketNewsList" style="display:none"></div>
-
       <!-- Supply Chain Impact Analysis -->
       <div style="margin-top:1.5rem;padding:1rem;background:var(--bg-secondary);border-radius:0.5rem">
         <div style="font-weight:600;margin-bottom:0.75rem;color:var(--text-primary)">📊 原料匯率影響分析</div>
@@ -2348,13 +2328,12 @@ function renderChart() {
 }
 
 async function renderMarketNews() {
+  // 這個 function 名稱保留是因為多處呼叫；其實現在只負責：
+  //   1. 渲染下方「📊 原料匯率影響分析」說明卡
+  //   2. 抓相關新聞 → 用來在圖表上標記新聞點（hover/點擊用），不再渲染新聞列表
   if (!_activeItem) return;
   const kw  = shortName(_activeItem);
   const { start, end } = getCurrentRange();
-  const wrap = document.getElementById('marketNewsList');
-  const rangeLabel = start ? `${start} ～ ${end || '今天'}` : '全部';
-  document.getElementById('marketNewsTitle').textContent = `相關新聞（${rangeLabel}）`;
-  wrap.innerHTML = `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">🔍 搜尋中…</div>`;
 
   // Render supply chain impact IMMEDIATELY (don't wait for news)
   renderSupplyChainImpact();
@@ -2377,7 +2356,7 @@ async function renderMarketNews() {
       })
       .filter(Boolean);
 
-    // Re-render chart with annotations (preserve avgLine) — isolated try so news still shows on error
+    // Re-render chart with annotations (preserve avgLine)
     try {
       if (_chartInst && _newsArticles.length) {
         const existing = _chartInst.options.plugins.annotation.annotations || {};
@@ -2395,23 +2374,8 @@ async function renderMarketNews() {
     } catch(annotErr) {
       console.warn('annotation update skipped', annotErr);
     }
-
-    if (!articles.length) {
-      wrap.innerHTML = `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">此區間無相關新聞</div>`;
-      return;
-    }
-    wrap.innerHTML = articles.map(a => {
-      const dateStr = (() => { try { return new Date(a.published).toISOString().slice(0,10); } catch { return ''; } })();
-      return `
-      <a class="market-news-item" href="${esc(a.source_url)}" target="_blank" rel="noopener">
-        <div>
-          <div class="market-news-item-title">${esc(a.title)}</div>
-          <div class="market-news-item-meta">${esc(a.source)} · ${esc(dateStr)}</div>
-        </div>
-      </a>`;
-    }).join('');
   } catch(e) {
-    wrap.innerHTML = `<div style="color:var(--text-muted);font-size:0.82rem;padding:0.5rem">無法載入新聞</div>`;
+    console.warn('commodity-news fetch failed', e);
   }
 }
 
