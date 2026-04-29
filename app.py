@@ -315,7 +315,8 @@ def _infer_disaster_region(place_or_country: str) -> str:
 
 
 def _fetch_usgs_quakes() -> list[dict]:
-    """USGS 過去 1 天的 M4.5+ 地震。我們只取 M5.0+ 作為推播事件。"""
+    """USGS 地震 — 抓 M5.0+，按規模分級成 LOW/MED/HIGH/CRITICAL，
+    最終是否推給訂閱者由訂閱的 severity 門檻決定。"""
     out = []
     try:
         r = req_lib.get(
@@ -330,7 +331,7 @@ def _fetch_usgs_quakes() -> list[dict]:
                 coords = feat.get("geometry", {}).get("coordinates", []) or []
                 mag = props.get("mag")
                 if mag is None or float(mag) < 5.0:
-                    continue
+                    continue  # M5.0+ 才寫進 DB（沿用網頁原本標準）
                 place = props.get("place", "") or ""
                 time_ms = props.get("time")
                 occurred = (
@@ -1270,6 +1271,37 @@ def _fetch_cobalt_price() -> float | None:
     return None
 
 
+def _fetch_yahoo_chart_history(symbol: str, days: int = 365, multiplier: float = 1.0) -> list[tuple[str, float]]:
+    """Yahoo Finance v8 chart API（直接 HTTP，不依賴 yfinance lib）。
+    用於 Render 環境裝不起 yfinance 時的替代方案。"""
+    try:
+        end = int(time.time())
+        start = end - days * 86400
+        url = (
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+            f"?period1={start}&period2={end}&interval=1d"
+        )
+        r = req_lib.get(url, headers={"User-Agent": "Mozilla/5.0 (compatible; ASUSTIMES)"}, timeout=15)
+        if r.status_code != 200:
+            return []
+        body = r.json()
+        result = (body.get("chart", {}).get("result") or [None])[0]
+        if not result:
+            return []
+        timestamps = result.get("timestamp", []) or []
+        closes = (result.get("indicators", {}).get("quote") or [{}])[0].get("close", []) or []
+        points = []
+        for ts, close in zip(timestamps, closes):
+            if close is None:
+                continue
+            d = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+            points.append((d, round(float(close) * multiplier, 4)))
+        return points
+    except Exception as e:
+        logger.warning(f"Yahoo v8 {symbol} fetch error: {e}")
+        return []
+
+
 def _fetch_1year_lme_history(yf_symbol: str, multiplier: float = 1.0) -> list[tuple[str, float]]:
     """Fetch 1 year of LME metal price history from yfinance for initialization.
     Returns: [(date_str, price), ...] sorted chronologically
@@ -1765,41 +1797,48 @@ def _refresh_live_prices():
     fresh: dict = {}
     sources: dict = {}
 
-    # 1. yfinance: commodities + FX — 1-year daily history (parallel)
-    if _YF_AVAILABLE:
-        all_yf_syms: dict = {}
-        all_yf_syms.update(_LIVE_COMMODITY_SYMBOLS)
-        all_yf_syms.update(_LIVE_FX_YF_SYMBOLS)
+    # 1. Yahoo Finance（commodities + FX）— 1-year daily history (parallel)
+    # 優先用 yfinance lib（本地環境裝得起來），失敗或不可用時 fallback 到 Yahoo v8 HTTP
+    all_yf_syms: dict = {}
+    all_yf_syms.update(_LIVE_COMMODITY_SYMBOLS)
+    all_yf_syms.update(_LIVE_FX_YF_SYMBOLS)
 
-        def _fetch_yf_sym(sym, csv_name, mult):
+    def _fetch_yf_sym(sym, csv_name, mult):
+        # 路徑 1：yfinance lib
+        if _YF_AVAILABLE:
             for attempt in range(2):
                 try:
                     hist   = yf.Ticker(sym).history(period="1y", interval="1d", auto_adjust=True)
                     series = hist["Close"].dropna() if "Close" in hist.columns else hist.dropna()
                     if series.empty:
-                        return sym, csv_name, None, None
+                        break
                     points = [(str(ts.date()), round(float(v) * mult, 4)) for ts, v in series.items()]
                     if points:
                         logger.info(f"yfinance {sym}: {csv_name}, {len(points)} pts, latest={points[-1][1]}")
                         return sym, csv_name, points, f"https://finance.yahoo.com/quote/{sym}"
-                    return sym, csv_name, None, None
+                    break
                 except Exception as e:
                     if attempt == 0 and "RateLimit" in type(e).__name__:
                         logger.warning(f"yfinance {sym} rate limited, retrying 15s")
                         time.sleep(15)
                     else:
                         logger.warning(f"yfinance {sym}: {e}")
-                        return sym, csv_name, None, None
-            return sym, csv_name, None, None
+                        break
+        # 路徑 2：Yahoo v8 直接 HTTP（Render 上 yfinance 裝不起來時的後備）
+        points = _fetch_yahoo_chart_history(sym, days=365, multiplier=mult)
+        if points:
+            logger.info(f"yahoo-v8 {sym}: {csv_name}, {len(points)} pts, latest={points[-1][1]}")
+            return sym, csv_name, points, f"https://finance.yahoo.com/quote/{sym}"
+        return sym, csv_name, None, None
 
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            futs = {pool.submit(_fetch_yf_sym, sym, csv_name, mult): sym
-                    for sym, (csv_name, mult) in all_yf_syms.items()}
-            for fut in as_completed(futs):
-                sym, csv_name, points, url = fut.result()
-                if points:
-                    fresh[csv_name]   = points
-                    sources[csv_name] = {"label": "Yahoo Finance", "url": url}
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futs = {pool.submit(_fetch_yf_sym, sym, csv_name, mult): sym
+                for sym, (csv_name, mult) in all_yf_syms.items()}
+        for fut in as_completed(futs):
+            sym, csv_name, points, url = fut.result()
+            if points:
+                fresh[csv_name]   = points
+                sources[csv_name] = {"label": "Yahoo Finance", "url": url}
 
     # 2. bot.com.tw BCD API — full history for all codes
     for code, (csv_name, mult) in _BOT_BCD_CODES.items():
@@ -1837,9 +1876,12 @@ def _refresh_live_prices():
 
     logger.info("[REFRESH] Starting TradingEconomics (non-LME metals only)...")
     # Filter out metals that should come from LME instead
-    # All LME-traded metals: cobalt, copper, tin, nickel, zinc, aluminum
-    # Also exclude: phosphorus (handled separately with CSV history)
-    excluded_slugs = {"copper", "tin", "nickel", "zinc", "aluminum", "phosphorus"}
+    # 排除走別的來源處理的：
+    # - copper, aluminum: 走 Yahoo Finance (HG=F, ALI=F)
+    # - phosphorus:       走 sci99 JSON API
+    # - cobalt:           走 _fetch_cobalt_price (metals.live)
+    # tin/nickel/zinc/lithium 改回用 TE（metals.live 已死，至少 TE 有數字）
+    excluded_slugs = {"copper", "aluminum", "phosphorus"}
     for slug, (csv_name, mult) in _TE_SLUGS.items():
         if slug in excluded_slugs:
             continue  # Skip LME metals and phosphorus, fetch them separately
