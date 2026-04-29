@@ -1431,18 +1431,6 @@
 
 <div class="toast" id="toast"></div>
 
-<!-- Floating tooltip for chart news-annotation dots -->
-<div id="annotTooltip" style="
-  position:fixed; display:none; z-index:9999;
-  background:var(--bg-card); border:1px solid #f59e0b;
-  border-radius:8px; padding:0.55rem 0.8rem; max-width:290px;
-  box-shadow:0 4px 18px rgba(0,0,0,0.35); pointer-events:none;
-">
-  <div id="annotTooltipDate" style="font-size:0.72rem;color:#f59e0b;margin-bottom:0.25rem;font-weight:600"></div>
-  <div id="annotTooltipTitle" style="font-size:0.82rem;color:var(--text-primary);line-height:1.4"></div>
-  <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.3rem">點擊開啟新聞</div>
-</div>
-
 <script src="chart.umd.min.js"></script>
 <script src="chartjs-plugin-annotation.min.js"></script>
 <script>
@@ -1919,10 +1907,7 @@ let _activeItem      = null;
 let _activeDays      = 30;
 let _customStart     = null;
 let _customEnd       = null;
-let _newsArticles    = [];   // {date, title, url} for chart annotation dots
 let _chartInst       = null;
-let _annotPixels     = [];   // [{x, y, article}] pixel positions of annotation dots
-let _canvasHandlers  = null; // stored so we can remove/re-add on chart rebuild
 
 // Local date string (avoids UTC shift showing yesterday in Taiwan timezone)
 function toLocalDateStr(d) {
@@ -2017,7 +2002,6 @@ let _activeItemHistory = { dates: [], values: [] };
 
 async function selectMarketItem(name) {
   _activeItem = name;
-  _newsArticles = [];
   document.querySelectorAll('.mitem-btn').forEach(b =>
     b.classList.toggle('active', b.textContent.trim() === shortName(name))
   );
@@ -2042,103 +2026,6 @@ function filterByRange(dates, values) {
     if (d >= start && d <= end) { fd.push(d); fv.push(values[i]); }
   });
   return { dates: fd, values: fv };
-}
-
-function buildAnnotations(chartDates, chartValues) {
-  const annotations = {};
-  _newsArticles.forEach((article, i) => {
-    const nd = article.date;
-    let idx = chartDates.indexOf(nd);
-    if (idx < 0) idx = chartDates.findIndex(d => d >= nd);
-    if (idx < 0) return;
-    let yVal = null, yIdx = idx;
-    for (let k = idx; k < chartValues.length; k++) {
-      if (chartValues[k] !== null) { yVal = chartValues[k]; yIdx = k; break; }
-    }
-    if (yVal === null) return;
-    annotations[`news_${i}`] = {
-      type: 'point',
-      xValue: chartDates[yIdx],
-      yValue: yVal,
-      yAdjust: -18,
-      radius: 7,
-      backgroundColor: 'rgba(251,191,36,0.9)',
-      borderColor: '#f59e0b',
-      borderWidth: 2,
-    };
-  });
-  return annotations;
-}
-
-// Calculate canvas pixel positions of all annotation dots (for mouse hit-testing)
-function _updateAnnotPixels() {
-  _annotPixels = [];
-  if (!_chartInst) return;
-  const ann    = _chartInst.options.plugins.annotation.annotations || {};
-  const xScale = _chartInst.scales.x;
-  const yScale = _chartInst.scales.y;
-  const labels = _chartInst.data.labels;
-  Object.entries(ann).forEach(([key, a]) => {
-    const idx     = parseInt(key.replace('news_', ''));
-    const article = _newsArticles[idx];
-    if (!article) return;
-    // category scale requires numeric index
-    const labelIdx = labels.indexOf(a.xValue);
-    if (labelIdx < 0) return;
-    const xPixel = xScale.getPixelForValue(labelIdx);
-    const yPixel = yScale.getPixelForValue(a.yValue) + (a.yAdjust || 0);
-    if (!isFinite(xPixel) || !isFinite(yPixel)) return;
-    _annotPixels.push({ x: xPixel, y: yPixel, article });
-  });
-}
-
-// Attach mousemove / click handlers directly on the canvas for annotation interactivity
-function _setupCanvasAnnotEvents() {
-  const canvas = document.getElementById('marketChart');
-  if (_canvasHandlers) {
-    canvas.removeEventListener('mousemove',  _canvasHandlers.move);
-    canvas.removeEventListener('mouseleave', _canvasHandlers.leave);
-    canvas.removeEventListener('click',      _canvasHandlers.click);
-  }
-  const tt = document.getElementById('annotTooltip');
-
-  const onMove = e => {
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    let found = null;
-    for (const p of _annotPixels) {
-      if ((mx-p.x)**2 + (my-p.y)**2 < 144) { found = p; break; } // 12px radius
-    }
-    if (found) {
-      document.getElementById('annotTooltipDate').textContent  = found.article.date;
-      document.getElementById('annotTooltipTitle').textContent = found.article.title;
-      tt.style.display = 'block';
-      const vw = window.innerWidth, vh = window.innerHeight;
-      let lx = e.clientX + 14, ly = e.clientY + 14;
-      if (lx + 305 > vw) lx = e.clientX - 315;
-      if (ly + 95  > vh) ly = e.clientY - 105;
-      tt.style.left = lx + 'px';
-      tt.style.top  = ly + 'px';
-      canvas.style.cursor = 'pointer';
-    } else {
-      tt.style.display = 'none';
-      canvas.style.cursor = '';
-    }
-  };
-  const onLeave = () => { tt.style.display = 'none'; canvas.style.cursor = ''; };
-  const onClick  = e => {
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    for (const p of _annotPixels) {
-      if ((mx-p.x)**2 + (my-p.y)**2 < 144 && p.article.url) {
-        window.open(p.article.url, '_blank', 'noopener'); break;
-      }
-    }
-  };
-  canvas.addEventListener('mousemove',  onMove);
-  canvas.addEventListener('mouseleave', onLeave);
-  canvas.addEventListener('click',      onClick);
-  _canvasHandlers = { move: onMove, leave: onLeave, click: onClick };
 }
 
 function renderChart() {
@@ -2222,8 +2109,8 @@ function renderChart() {
   const textColor = isDark ? '#8892aa' : '#64748b';
   const ctx       = document.getElementById('marketChart').getContext('2d');
 
-  // Build annotations: news dots + average / high / low lines
-  const annotations = buildAnnotations(dates, values);
+  // Build annotations: average / high / low lines (news dots removed)
+  const annotations = {};
   if (avg !== null) {
     annotations['avgLine'] = {
       type: 'line',
@@ -2323,60 +2210,12 @@ function renderChart() {
       }
     });
   }
-  // Set up canvas mouse-hit detection for annotation dots
-  setTimeout(() => { _updateAnnotPixels(); _setupCanvasAnnotEvents(); }, 60);
 }
 
 async function renderMarketNews() {
-  // 這個 function 名稱保留是因為多處呼叫；其實現在只負責：
-  //   1. 渲染下方「📊 原料匯率影響分析」說明卡
-  //   2. 抓相關新聞 → 用來在圖表上標記新聞點（hover/點擊用），不再渲染新聞列表
-  if (!_activeItem) return;
-  const kw  = shortName(_activeItem);
-  const { start, end } = getCurrentRange();
-
-  // Render supply chain impact IMMEDIATELY (don't wait for news)
+  // 命名是歷史遺留；現在只負責渲染「📊 原料匯率影響分析」說明卡。
+  // 圖表上的新聞事件點已移除，故不再呼叫 /api/commodity-news。
   renderSupplyChainImpact();
-
-  let q = kw + ' 價格';
-  if (start) q += ` after:${start}`;
-  if (end)   q += ` before:${end}`;
-
-  try {
-    const res  = await fetch('/api/commodity-news?q=' + encodeURIComponent(q));
-    const data = await res.json();
-    const articles = data.articles || [];
-
-    // Extract article data for chart annotation dots (hover tooltip + click)
-    _newsArticles = articles
-      .map(a => {
-        try {
-          return { date: new Date(a.published).toISOString().slice(0,10), title: a.title, url: a.source_url };
-        } catch { return null; }
-      })
-      .filter(Boolean);
-
-    // Re-render chart with annotations (preserve avgLine)
-    try {
-      if (_chartInst && _newsArticles.length) {
-        const existing = _chartInst.options.plugins.annotation.annotations || {};
-        const avgLine  = existing['avgLine'];
-        const hiLine   = existing['hiLine'];
-        const loLine   = existing['loLine'];
-        const merged   = buildAnnotations(_chartInst.data.labels, _chartInst.data.datasets[0].data);
-        if (avgLine) merged['avgLine'] = avgLine;
-        if (hiLine)  merged['hiLine']  = hiLine;
-        if (loLine)  merged['loLine']  = loLine;
-        _chartInst.options.plugins.annotation.annotations = merged;
-        _chartInst.update('none');
-        setTimeout(_updateAnnotPixels, 60);
-      }
-    } catch(annotErr) {
-      console.warn('annotation update skipped', annotErr);
-    }
-  } catch(e) {
-    console.warn('commodity-news fetch failed', e);
-  }
 }
 
 function renderSupplyChainImpact() {
@@ -2448,7 +2287,6 @@ function renderSupplyChainImpact() {
 document.querySelectorAll('.mcat-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     _activeCat = btn.dataset.mcat; _activeItem = null;
-    _newsArticles = [];
     renderMarketSidebar(); renderMarketItems();
   });
 });
