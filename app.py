@@ -3915,12 +3915,50 @@ def ensure_background_threads():
 # 在 Render 上 gunicorn 不跑 __main__，且 @app.before_request 的 lazy 啟動有時
 # 因為 worker 重啟時序而沒被觸發。為了讓災害推播跟 Telegram bot 一定會起來，
 # 在 module-load 結束時直接啟動（會一次性、不會重複，因為 _bg_started flag）。
+def _sync_suppliers_from_json() -> None:
+    """At startup, upsert suppliers.json into the Supabase suppliers table.
+
+    Idempotent — uses upsert_supplier so re-running is safe. Runs once per
+    worker process. Failures are logged but don't block startup.
+    """
+    import re as _re
+    try:
+        path = os.path.join(os.path.dirname(__file__), "suppliers.json")
+        if not os.path.exists(path):
+            logger.info("[suppliers] no suppliers.json, skip sync")
+            return
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        from telegram_bot import db as _tdb
+        _tdb.init_pool()
+        for entry in data:
+            region_full = entry.get("region", "").strip()
+            if "/" in region_full:
+                country, city = region_full.split("/", 1)
+                country, city = country.strip(), city.strip()
+            else:
+                country, city = region_full, None
+            cats_raw = entry.get("part_category", "")
+            cats = [p.strip().upper() for p in _re.split(r"[、,;，]", cats_raw) if p.strip()]
+            _tdb.upsert_supplier(
+                name=None, region=region_full, country=country, city=city,
+                lat=entry.get("lat"), lng=entry.get("lng"),
+                part_categories=cats,
+            )
+        logger.info(f"[suppliers] synced {len(data)} entries from suppliers.json → Supabase")
+    except Exception as e:
+        logger.warning(f"[suppliers] startup sync failed (Bot subscriptions may show stale data): {e}")
+
+
 def _start_critical_bg_threads():
     """獨立於 _ensure_bg_running 之外的早期啟動點。
     目的：確保災害事件偵測 + Telegram bot 在 gunicorn 啟動 worker 後立刻運作。
     用獨立 flag 防止 _ensure_bg_running 在 first-request 時重複啟動同樣的 thread
     （重複 polling 會觸發 Telegram getUpdates Conflict）。"""
     global _telegram_bot_started, _disaster_persist_started
+    # 先把 suppliers.json 同步到 DB（給 Telegram bot 訂閱精靈用）— 同步呼叫，
+    # 22 筆 upsert ~1-2 秒，失敗也不擋後面。
+    _sync_suppliers_from_json()
     try:
         with _bg_lock:
             if not _disaster_persist_started:
