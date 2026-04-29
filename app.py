@@ -864,10 +864,16 @@ def _fetch_te_price(slug: str) -> float | None:
 
 
 def _fetch_cobalt_price() -> float | None:
-    """Fetch cobalt price. Primary: metals.live; Fallback: Trading Economics.
-    Returns USD/tonne, or None if both fail.
+    """Fetch cobalt price from metals.live (LME settlement).
+
+    Note: Trading Economics fallback was removed deliberately — TE quotes are
+    LME *bid* prices, not settlement, and differ by ~1000 USD from the user's
+    reference (Excel uses settlement). Mixing the two introduced fake jumps.
+
+    If metals.live fails, return None and let carry-forward handle the gap.
+    The user keeps a separate Excel of authoritative settlement prices and
+    merges it via merge_excel_history.py periodically.
     """
-    # Primary: metals.live LME
     try:
         headers = HEADERS.copy()
         headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -885,18 +891,9 @@ def _fetch_cobalt_price() -> float | None:
                 if 30000 < price < 80000:
                     logger.info(f"Cobalt from metals.live (LME): ${price}/tonne (fresh)")
                     return price
-                logger.warning(f"Cobalt metals.live price {price} out of range, trying TE")
+                logger.warning(f"Cobalt metals.live price {price} out of range")
     except Exception as e:
         logger.debug(f"metals.live cobalt fetch failed: {e}")
-
-    # Fallback: Trading Economics (USD/tonne)
-    try:
-        te_price = _fetch_te_price("cobalt")
-        if te_price and 30000 < te_price < 80000:
-            logger.info(f"Cobalt from Trading Economics (fallback): ${te_price}/tonne")
-            return te_price
-    except Exception as e:
-        logger.debug(f"TE cobalt fallback failed: {e}")
 
     return None
 
@@ -948,23 +945,17 @@ def _fetch_aluminum_price() -> float | None:
             if attempt == 0:
                 time.sleep(2)
 
-    # Fallback: Trading Economics (USD/tonne)
-    try:
-        te_price = _fetch_te_price("aluminum")
-        if te_price and 1500 < te_price < 5000:
-            logger.info(f"Aluminum from Trading Economics (fallback): ${te_price:.2f}/tonne")
-            return te_price
-    except Exception as e:
-        logger.debug(f"TE aluminum fallback failed: {e}")
-
+    # TE fallback removed — basis mismatch (TE bid vs LME settlement).
+    # Use merge_excel_history.py for authoritative values.
     logger.warning("Aluminum fetch failed from all sources")
     return None
 
 
 def _fetch_copper_price() -> float | None:
-    """Fetch copper price. Primary: metals.live LME; Fallback: Trading Economics.
-    Returns USD/tonne, or None if both fail.
-    Note: TE returns copper in USD/lb (e.g. 5.92), convert via *2204.62 to USD/tonne.
+    """Fetch copper price from metals.live (LME settlement).
+
+    Note: TE fallback removed — TE quotes LME bid (not settlement), differing
+    from the user's Excel reference. Use Excel merge for authoritative values.
     """
     for attempt in range(2):
         try:
@@ -984,32 +975,23 @@ def _fetch_copper_price() -> float | None:
             if attempt == 0:
                 time.sleep(2)
 
-    # Fallback: Trading Economics. TE copper is USD/lb → USD/tonne via 2204.62.
-    try:
-        te_price = _fetch_te_price("copper")
-        if te_price and te_price > 0:
-            converted = te_price * 2204.62 if te_price < 100 else te_price  # auto-detect unit
-            if 5000 < converted < 20000:
-                logger.info(f"Copper from Trading Economics (fallback): ${converted:.2f}/tonne (raw {te_price})")
-                return converted
-    except Exception as e:
-        logger.debug(f"TE copper fallback failed: {e}")
-
     logger.warning("Copper fetch failed from all sources")
     return None
 
 
 def _fetch_lme_metal_price(metal_name: str, metals_live_slug: str) -> float | None:
-    """Generic LME metal price fetcher using metals.live API.
-    Args:
-        metal_name: Display name (e.g., "Tin", "Nickel")
-        metals_live_slug: metals.live API slug (e.g., "tin", "nickel")
-    Returns:
-        Price in USD or None if fetch fails
-    Primary: metals.live API
-    Fallback: Trading Economics
+    """Generic LME metal price fetcher using metals.live API only.
+
+    Note: Trading Economics fallback was removed deliberately for
+    tin/nickel/zinc/lithium — TE quotes LME *bid* prices (Trading summary),
+    while the user's Excel reference uses settlement prices. The two differ
+    by enough to introduce visible fake jumps in the chart.
+
+    LME official site (lme.com) is also Akamai-protected (403), so settlement
+    prices aren't fetchable directly. The user maintains an Excel of authoritative
+    settlement values and merges them via merge_excel_history.py periodically.
+    Carry-forward fills daily gaps in the meantime.
     """
-    # Primary: metals.live
     try:
         r = req_lib.get(f"https://api.metals.live/v1/spot/{metals_live_slug}", timeout=10)
         if r.status_code == 200:
@@ -1021,16 +1003,6 @@ def _fetch_lme_metal_price(metal_name: str, metals_live_slug: str) -> float | No
                     return price
     except Exception as e:
         logger.debug(f"metals.live {metal_name} fetch failed: {e}")
-
-    # Fallback: Trading Economics
-    try:
-        te_slug = metals_live_slug.lower()
-        te_price = _fetch_te_price(te_slug)
-        if te_price and te_price > 0:
-            logger.info(f"{metal_name} from Trading Economics (fallback): ${te_price}")
-            return te_price
-    except Exception as e:
-        logger.debug(f"Trading Economics {metal_name} fallback failed: {e}")
 
     return None
 
