@@ -2738,17 +2738,45 @@ def api_risk_suppliers():
     return jsonify(suppliers)
 
 
+_QUAKE_CACHE: dict = {"data": None, "ts": 0.0}
+_QUAKE_CACHE_TTL = 300  # 5 minutes — USGS data refreshes minutely but front-end traffic
+                       # doesn't justify hitting their query API every request.
+_QUAKE_DAYS = 56  # 8 週，對齊全站事件 retention window
+
+
 @app.route("/api/risk/quakes")
 def api_risk_quakes():
-    """Proxy USGS earthquake feed (4.5+ past day)."""
+    """USGS 過去 8 週 (56 天) M4.5+ 地震，5 分鐘 cache。
+
+    之前用 4.5_day.geojson 的 24-hour rolling feed → 24h 後事件就「不見」。
+    改用 USGS query API 拿 56 天視窗，符合全站事件保留期。
+    """
+    now = time.time()
+    cached = _QUAKE_CACHE.get("data")
+    if cached is not None and (now - _QUAKE_CACHE.get("ts", 0)) < _QUAKE_CACHE_TTL:
+        return jsonify(cached)
     try:
-        r = req_lib.get(
+        starttime = (datetime.now(timezone.utc) - timedelta(days=_QUAKE_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
+        url = (
+            "https://earthquake.usgs.gov/fdsnws/event/1/query"
+            f"?format=geojson&starttime={starttime}&minmagnitude=4.5&orderby=time"
+        )
+        r = req_lib.get(url, timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            _QUAKE_CACHE["data"] = data
+            _QUAKE_CACHE["ts"] = now
+            return jsonify(data)
+        # USGS 失敗 → 退回 24h feed（最少還有今天的）
+        r2 = req_lib.get(
             "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson",
             timeout=5,
         )
-        return r.content, r.status_code, {"Content-Type": "application/json"}
+        return r2.content, r2.status_code, {"Content-Type": "application/json"}
     except Exception as e:
-        logger.warning(f"USGS proxy error: {e}")
+        logger.warning(f"USGS quake fetch error: {e}")
+        if cached is not None:
+            return jsonify(cached)  # 拿舊 cache 比空陣列好
         return jsonify({"features": []})
 
 
