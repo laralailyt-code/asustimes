@@ -3988,9 +3988,37 @@ def ensure_background_threads():
     threading.Thread(target=_digitimes_refresh_loop, daemon=True).start()
     logger.info("Background threads started (including Digitimes 2-hour refresh)")
 
+# ── Render production: module-load 時直接啟動災害偵測 + Telegram bot ──────────
+# 在 Render 上 gunicorn 不跑 __main__，且 @app.before_request 的 lazy 啟動有時
+# 因為 worker 重啟時序而沒被觸發。為了讓災害推播跟 Telegram bot 一定會起來，
+# 在 module-load 結束時直接啟動（會一次性、不會重複，因為 _bg_started flag）。
+def _start_critical_bg_threads():
+    """獨立於 _ensure_bg_running 之外的早期啟動點。
+    目的：確保災害事件偵測 + Telegram bot 在 gunicorn 啟動 worker 後立刻運作。"""
+    global _bg_started
+    if _bg_started:
+        return
+    try:
+        # 只啟動最關鍵的兩個 thread；其餘 (news refresh / live price / digest)
+        # 仍由 _ensure_bg_running 在 first-request 時啟動（不影響推播）
+        threading.Thread(target=_disaster_persist_loop, daemon=True, name="disaster-persist-early").start()
+        threading.Thread(target=_telegram_bot_loop, daemon=True, name="telegram-bot-early").start()
+        logger.info("[startup] 災害偵測 + Telegram bot 已在 module-load 時啟動")
+    except Exception as e:
+        logger.error(f"[startup] critical thread start failed: {e}", exc_info=True)
+
+
+# 在 Render（gunicorn worker）載入時自動拉起
+if os.environ.get("RENDER") == "true":
+    _start_critical_bg_threads()
+
+
 if __name__ == "__main__":
     logger.info("Fetching initial live prices...")
     _refresh_live_prices()
     # Pre-warm risk caches in background so first page visit is fast
     threading.Thread(target=_risk_cache_preload_loop, daemon=True).start()
+    # 本地也啟動災害偵測 + Telegram bot（會被 _telegram_bot_loop 內的 RENDER 判斷阻擋本地 polling）
+    threading.Thread(target=_disaster_persist_loop, daemon=True, name="disaster-persist").start()
+    threading.Thread(target=_telegram_bot_loop, daemon=True, name="telegram-bot").start()
     app.run(host="0.0.0.0", debug=False, port=5050, use_reloader=False)
