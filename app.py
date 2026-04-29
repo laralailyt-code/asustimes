@@ -1108,10 +1108,11 @@ _TE_SLUGS = {
     "tin":        ("錫 (tin) US$/tonne",         1.0),       # TE in USD/tonne ✓
     "nickel":     ("鎳 (nickel)  US$/tonne",     1.0),       # TE in USD/tonne ✓
     "zinc":       ("鋅 (zinc)  US$/tonne",       1.0),       # TE in USD/tonne ✓
-    "cobalt":     ("鈷 (cobalt) US$/tonne",      1.0),       # TE in USD/tonne ✓ (metals.live dead, no Yahoo ticker)
     "lithium":    ("鋰 (Lithium) CNY$/tonne",    1.0),       # TE in CNY/tonne ✓
     "phosphorus": ("黃磷 CNY$/tonne",            29.4274),   # TE in CNY/百kg → CNY/tonne
 }
+# Cobalt: 走 cnyes 鉅亨網 (LME cash-settle, 360 天每日歷史) — 較貼近 settlement
+# 比 TE bid 準確（TE 與 settlement 有 ~$1000 basis 差距）。
 
 
 def _fetch_bot_bcd_price(code: str) -> float | None:
@@ -1240,6 +1241,52 @@ def _fetch_te_price(slug: str) -> float | None:
             return float(m.group(1))
     except Exception as e:
         logger.warning(f"TE scrape {slug}: {e}")
+    return None
+
+
+def _fetch_cnyes_cobalt_history() -> list[tuple[str, float]]:
+    """Fetch full daily cobalt LME history from cnyes (鉅亨網).
+
+    Endpoint: /futures/highChart/ChartSource.aspx?type=futures&source=javachart&code=lcocs
+    Returns JSONP `([[epoch_ms, price], ...]);` covering ~360 trading days.
+    Values are LME cobalt cash-settle prices in USD/tonne, daily-updated.
+
+    Returns: [(YYYY-MM-DD, float), ...] sorted chronologically; empty list on failure.
+    """
+    import re as _re
+    try:
+        url = "https://www.cnyes.com/futures/highChart/ChartSource.aspx?type=futures&source=javachart&code=lcocs"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": "https://www.cnyes.com/futures/Javachart/lcocs.html",
+        }
+        r = req_lib.get(url, headers=headers, timeout=15)
+        if r.status_code != 200:
+            return []
+        text = r.text.strip()
+        m = _re.match(r"^\((.*?)\)\s*;?\s*$", text, _re.DOTALL)
+        if not m:
+            return []
+        import json as _json
+        raw = _json.loads(m.group(1))
+        out: list[tuple[str, float]] = []
+        for ts_ms, val in raw:
+            d = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+            v = float(val)
+            if 10000 < v < 200000:  # sanity filter
+                out.append((d, round(v, 2)))
+        out.sort(key=lambda x: x[0])
+        return out
+    except Exception as e:
+        logger.warning(f"cnyes cobalt fetch failed: {e}")
+        return []
+
+
+def _fetch_cnyes_cobalt_price() -> float | None:
+    """Latest cobalt LME price from cnyes — last point of the history series."""
+    history = _fetch_cnyes_cobalt_history()
+    if history:
+        return history[-1][1]
     return None
 
 
@@ -1925,6 +1972,26 @@ def _refresh_live_prices():
             sources[csv_name] = {"label": "Trading Economics",
                                  "url":   f"https://tradingeconomics.com/commodity/{slug}"}
             logger.info(f"TradingEconomics: {csv_name} = {val}")
+
+    # Cobalt — cnyes 鉅亨網 LME cash-settle (360-day daily history merged with cache)
+    logger.info("[REFRESH] Starting Cobalt (cnyes lcocs)...")
+    cobalt_name = "鈷 (cobalt) US$/tonne"
+    cnyes_history = _fetch_cnyes_cobalt_history()
+    if cnyes_history:
+        with _live_cache_lock:
+            prev = list(_live_commodity_cache.get(cobalt_name, []))
+        cnyes_dates = {d for d, _ in cnyes_history}
+        # cnyes wins for dates it covers; keep older cached-only dates
+        merged = [p for p in prev if p[0] not in cnyes_dates] + cnyes_history
+        merged.sort(key=lambda x: x[0])
+        fresh[cobalt_name] = merged
+        sources[cobalt_name] = {
+            "label": "鉅亨網 cnyes (LME cobalt cash-settle)",
+            "url":   "https://www.cnyes.com/futures/Javachart/lcocs.html",
+        }
+        logger.info(f"cnyes cobalt: {cobalt_name} = {cnyes_history[-1][1]} ({len(cnyes_history)} pts, latest {cnyes_history[-1][0]})")
+    else:
+        logger.warning("cnyes cobalt fetch failed; preserving cached cobalt history")
 
     logger.info("[REFRESH] Starting Yellow Phosphorus (SCI99 only)...")
     yp_name = "黃磷 CNY$/tonne"
