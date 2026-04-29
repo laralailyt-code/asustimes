@@ -427,12 +427,17 @@ def _fetch_noaa_storms() -> list[dict]:
 
 
 def _fetch_gdacs_alerts() -> list[dict]:
-    """GDACS Orange/Red 警戒（過去 3 天）。"""
+    """GDACS Orange/Red 警戒（過去 3 天）。
+
+    eventlist=FL;VO  — 只取 Flood + Volcano。
+    Tropical Cyclone (TC) 由 NOAA NHC 專門處理（96kt+ 才推），不從 GDACS 抓
+    避免颱風重複 + GDACS Orange 級門檻太寬鬆造成「氾濫」。
+    """
     out = []
     try:
         r = req_lib.get(
             "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH"
-            "?eventlist=FL;VO;TC&alertlevel=Orange;Red&limit=40",
+            "?eventlist=FL;VO&alertlevel=Orange;Red&limit=40",
             timeout=12,
         )
         if r.status_code != 200:
@@ -2793,11 +2798,15 @@ def api_risk_storms():
 
 @app.route("/api/risk/gdacs")
 def api_risk_gdacs():
-    """Proxy GDACS floods and volcanic events (Orange/Red alerts only), filtered to last 3 days."""
+    """Proxy GDACS floods and volcanic events (Orange/Red alerts only), filtered to last 3 days.
+
+    Cyclones (TC) excluded — handled by /api/risk/storms (NOAA NHC, 96kt+).
+    避免颱風雙重來源 + GDACS 寬鬆門檻造成「氾濫」。
+    """
     try:
         r = req_lib.get(
             "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH"
-            "?eventlist=FL;VO;TC&alertlevel=Orange;Red&limit=40",
+            "?eventlist=FL;VO&alertlevel=Orange;Red&limit=40",
             timeout=8,
         )
         data = r.json()
