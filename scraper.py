@@ -848,7 +848,8 @@ FEEDS = [
     {"url": "https://technews.tw/feed/",                      "source": "科技新報",    "hint": "AI 產業"},
     {"url": "https://www.ithome.com.tw/rss",                  "source": "iThome",      "hint": "科技"},
     {"url": "https://feeds.feedburner.com/cool3c-all",        "source": "電腦王",      "hint": "科技"},
-    {"url": "https://www.ctee.com.tw/rss.xml",                "source": "工商時報",    "hint": "科技"},
+    # 註：工商時報 ctee.com.tw 直接 RSS 被 Cloudflare WAF 擋（HTTP 403），
+    #     全部改走下方 Bing News site:ctee.com.tw 多組關鍵字搜尋。
 
     # ── Bing News 搜尋（site: 操作符有效）────────────────────────────────────
     {"url": GN + "site:digitimes.com+筆電+PC",             "source": "Digitimes",   "hint": "PC / NB"},
@@ -856,7 +857,18 @@ FEEDS = [
     {"url": GN + "site:digitimes.com+記憶體+DRAM+HBM",    "source": "Digitimes",   "hint": "記憶體/儲存"},
     {"url": GN + "site:digitimes.com+面板+OLED+LCD",      "source": "Digitimes",   "hint": "面板/顯示"},
     {"url": GN + "site:digitimes.com+財報+營收+法說",      "source": "Digitimes",   "hint": "財報/法說"},
-    {"url": GN + "site:ctee.com.tw+科技",                    "source": "工商時報",    "hint": "科技"},
+    # 工商時報：直接 RSS 被 Cloudflare WAF 擋（HTTP 403），全靠 Bing News site: 搜尋
+    # 用「單一關鍵字」效果最好（雙詞組合 Bing 結果常為 0）
+    {"url": GN + "site:ctee.com.tw+科技",       "source": "工商時報", "hint": "科技"},
+    {"url": GN + "site:ctee.com.tw+半導體",     "source": "工商時報", "hint": "半導體"},
+    {"url": GN + "site:ctee.com.tw+記憶體+DRAM","source": "工商時報", "hint": "記憶體/儲存"},
+    {"url": GN + "site:ctee.com.tw+伺服器",     "source": "工商時報", "hint": "伺服器/雲端"},
+    {"url": GN + "site:ctee.com.tw+面板+OLED",  "source": "工商時報", "hint": "面板/顯示"},
+    {"url": GN + "site:ctee.com.tw+晶片",       "source": "工商時報", "hint": "半導體"},
+    {"url": GN + "site:ctee.com.tw+電子",       "source": "工商時報", "hint": "供應鏈/關稅"},
+    {"url": GN + "site:ctee.com.tw+出口",       "source": "工商時報", "hint": "供應鏈/關稅"},
+    {"url": GN + "site:ctee.com.tw+蘋果",       "source": "工商時報", "hint": "供應鏈/關稅"},
+    {"url": GN + "site:ctee.com.tw+ASUS",       "source": "工商時報", "hint": "PC / NB"},
     {"url": GN + "AI+伺服器+臺灣",                           "source": "科技新聞",    "hint": "伺服器/雲端"},
     {"url": GN + "HBM+記憶體+AI",                            "source": "科技新聞",    "hint": "記憶體/儲存"},
     {"url": GN + "台積電+先進製程",                          "source": "科技新聞",    "hint": "半導體"},
