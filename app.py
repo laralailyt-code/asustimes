@@ -209,7 +209,10 @@ def _ensure_bg_running():
                 # Telegram bot polling（M3+）
                 tt = threading.Thread(target=_telegram_bot_loop, daemon=True, name="telegram-bot")
                 tt.start()
-                logger.info("Background threads started (incl. Telegram bot polling)")
+                # 災害事件即時偵測（USGS/NOAA/GDACS）每 5 分鐘
+                tdis = threading.Thread(target=_disaster_persist_loop, daemon=True, name="disaster-persist")
+                tdis.start()
+                logger.info("Background threads started (incl. Telegram bot polling + disaster persist)")
 
 
 def _telegram_bot_loop():
@@ -276,6 +279,217 @@ def _persist_events_async(events, source_label: str = "") -> None:
         except Exception as e:
             logger.debug(f"[telegram_bot] persist {source_label} skipped: {e}")
     threading.Thread(target=_job, daemon=True).start()
+
+
+# ── 災害事件即時偵測（USGS / NOAA / GDACS）每 5 分鐘 ─────────────────────────
+# USGS / GDACS 文字 place 字串 → 我們訂閱用的中文區域
+_DISASTER_REGION_KEYWORDS = {
+    "taiwan":      "台灣",
+    "japan":       "日本",
+    "korea":       "韓國", "korean": "韓國",
+    "china":       "中國大陸", "chinese": "中國大陸",
+    "malaysia":    "馬來西亞",
+    "philippines": "菲律賓",
+    "vietnam":     "越南",
+    "indonesia":   "印度尼西亞",
+    "india":       "印度",
+    "thailand":    "泰國",
+    "singapore":   "新加坡",
+    "usa":         "美國", "united states": "美國",
+    "germany":     "德國",
+    "netherlands": "荷蘭",
+    "france":      "法國",
+    "uk":          "英國", "united kingdom": "英國",
+}
+
+
+def _infer_disaster_region(place_or_country: str) -> str:
+    """USGS place / GDACS country → 中文地區（用於訂閱比對）。"""
+    if not place_or_country:
+        return ""
+    s = place_or_country.lower()
+    for kw, region in _DISASTER_REGION_KEYWORDS.items():
+        if kw in s:
+            return region
+    return ""
+
+
+def _fetch_usgs_quakes() -> list[dict]:
+    """USGS 過去 1 天的 M4.5+ 地震。我們只取 M5.0+ 作為推播事件。"""
+    out = []
+    try:
+        r = req_lib.get(
+            "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson",
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return out
+        for feat in r.json().get("features", []):
+            try:
+                props = feat.get("properties", {}) or {}
+                coords = feat.get("geometry", {}).get("coordinates", []) or []
+                mag = props.get("mag")
+                if mag is None or float(mag) < 5.0:
+                    continue
+                place = props.get("place", "") or ""
+                time_ms = props.get("time")
+                occurred = (
+                    datetime.fromtimestamp(time_ms / 1000, tz=timezone.utc).isoformat()
+                    if time_ms else datetime.now(timezone.utc).isoformat()
+                )
+                impact = "CRITICAL" if mag >= 6.5 else ("HIGH" if mag >= 6.0 else "MED")
+                eid = f"usgs-{feat.get('id', '')}"
+                if not eid or eid == "usgs-":
+                    continue
+                out.append({
+                    "id":        eid,
+                    "type":      "disaster",
+                    "title":     f"M{mag} 地震 — {place}",
+                    "lat":       coords[1] if len(coords) > 1 else None,
+                    "lng":       coords[0] if len(coords) > 0 else None,
+                    "impact":    impact,
+                    "region":    _infer_disaster_region(place) or place,
+                    "time":      occurred,
+                    "supply":    f"M{mag} 地震，評估周邊晶圓廠與供應商損害狀況",
+                    "source":    "USGS",
+                    "sourceUrl": props.get("url", ""),
+                })
+            except Exception as e:
+                logger.debug(f"[disaster-persist] USGS feature parse: {e}")
+    except Exception as e:
+        logger.warning(f"[disaster-persist] USGS fetch: {e}")
+    return out
+
+
+def _fetch_noaa_storms() -> list[dict]:
+    """NOAA 活躍熱帶氣旋。只推 64kt 以上（颶風級）。"""
+    out = []
+    try:
+        r = req_lib.get("https://www.nhc.noaa.gov/CurrentStorms.json", timeout=10)
+        if r.status_code != 200:
+            return out
+        for storm in r.json().get("activeStorms", []) or []:
+            try:
+                intensity_raw = storm.get("intensity", 0)
+                try:
+                    intensity = int(str(intensity_raw))
+                except (ValueError, TypeError):
+                    intensity = 0
+                if intensity < 64:
+                    continue  # Tropical Storm 不推
+                impact = "CRITICAL" if intensity >= 130 else ("HIGH" if intensity >= 96 else "MED")
+                eid = f"noaa-{storm.get('id', '')}"
+                if not eid or eid == "noaa-":
+                    continue
+                name = storm.get("name", "Unknown")
+                classification = storm.get("classification", "")
+                lat = storm.get("latitudeNumeric")
+                lng = storm.get("longitudeNumeric")
+                out.append({
+                    "id":        eid,
+                    "type":      "disaster",
+                    "title":     f"{classification} {name}（{intensity}kt）",
+                    "lat":       float(lat) if lat is not None else None,
+                    "lng":       float(lng) if lng is not None else None,
+                    "impact":    impact,
+                    "region":    "",  # NOAA 不一定有國家
+                    "time":      storm.get("lastUpdate", ""),
+                    "supply":    f"颶風 {name} 強度 {intensity} 節，評估航運與沿海工廠影響",
+                    "source":    "NOAA NHC",
+                    "sourceUrl": "https://www.nhc.noaa.gov/",
+                })
+            except Exception as e:
+                logger.debug(f"[disaster-persist] NOAA storm parse: {e}")
+    except Exception as e:
+        logger.warning(f"[disaster-persist] NOAA fetch: {e}")
+    return out
+
+
+def _fetch_gdacs_alerts() -> list[dict]:
+    """GDACS Orange/Red 警戒（過去 3 天）。"""
+    out = []
+    try:
+        r = req_lib.get(
+            "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH"
+            "?eventlist=FL;VO;TC&alertlevel=Orange;Red&limit=40",
+            timeout=12,
+        )
+        if r.status_code != 200:
+            return out
+        now_d = datetime.now(timezone.utc).date()
+        for feat in r.json().get("features", []) or []:
+            try:
+                props = feat.get("properties", {}) or {}
+                coords = feat.get("geometry", {}).get("coordinates", []) or []
+                from_date = props.get("fromdate", "") or ""
+                # 過濾過 3 天的
+                if from_date:
+                    try:
+                        ev_date = datetime.strptime(from_date[:10], "%Y-%m-%d").date()
+                        if (now_d - ev_date).days > 3:
+                            continue
+                    except ValueError:
+                        pass
+                alert = props.get("alertlevel", "")
+                ev_type = props.get("eventtype", "")
+                ev_id = props.get("eventid")
+                ep_id = props.get("episodeid", 0)
+                if not ev_id:
+                    continue
+                eid = f"gdacs-{ev_type}-{ev_id}-{ep_id}"
+                title = props.get("eventname", "") or props.get("name", "") or ev_type
+                country = props.get("country", "") or ""
+                impact = "CRITICAL" if alert == "Red" else "HIGH"
+                # url 欄位可能是 dict
+                url_field = props.get("url", "")
+                if isinstance(url_field, dict):
+                    url_field = url_field.get("details") or url_field.get("report") or ""
+                out.append({
+                    "id":        eid,
+                    "type":      "disaster",
+                    "title":     f"[{ev_type}] {title} — {country}",
+                    "lat":       coords[1] if len(coords) > 1 else None,
+                    "lng":       coords[0] if len(coords) > 0 else None,
+                    "impact":    impact,
+                    "region":    _infer_disaster_region(country) or country,
+                    "time":      from_date,
+                    "supply":    f"GDACS {alert} 級警戒 — 評估區域內供應商受影響程度",
+                    "source":    "GDACS",
+                    "sourceUrl": url_field,
+                })
+            except Exception as e:
+                logger.debug(f"[disaster-persist] GDACS feature parse: {e}")
+    except Exception as e:
+        logger.warning(f"[disaster-persist] GDACS fetch: {e}")
+    return out
+
+
+def _disaster_persist_loop():
+    """每 5 分鐘抓 USGS / NOAA / GDACS，把新災害事件寫進 risk_events 表。
+    Dispatcher（每 60 秒）會掃到並推給有訂閱對應地區的使用者。
+
+    第一輪 30 秒後執行（讓其他 background thread 先啟動完）。
+    """
+    logger.info("[disaster-persist] 啟動災害事件即時偵測 loop（每 5 分鐘）")
+    first_run = True
+    while True:
+        try:
+            time.sleep(30 if first_run else 5 * 60)
+            first_run = False
+
+            quakes = _fetch_usgs_quakes()
+            storms = _fetch_noaa_storms()
+            gdacs  = _fetch_gdacs_alerts()
+            total = len(quakes) + len(storms) + len(gdacs)
+            if total > 0:
+                logger.info(
+                    f"[disaster-persist] 抓到 {total} 筆: "
+                    f"USGS={len(quakes)}, NOAA={len(storms)}, GDACS={len(gdacs)}"
+                )
+                # _persist_events_async 內部已用 ON CONFLICT DO NOTHING 去重
+                _persist_events_async(quakes + storms + gdacs, "disaster")
+        except Exception as e:
+            logger.error(f"[disaster-persist] loop error: {e}", exc_info=True)
 
 
 # ── Demo helper：本地 Bing News 抓不到時，注入示範事件供畫面展示 ──
