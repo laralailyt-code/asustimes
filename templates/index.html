@@ -2483,8 +2483,11 @@ function _weekCutoff() {
   d.setDate(d.getDate() - Math.min(_RS.weekFilter, 8) * 7);
   return d.toISOString().slice(0,10);
 }
-// 地震/颱風是即時資料（不按時間過濾）；地緣政治/危機/罷工按 time 篩選
-function _isRealtimeType(type) { return ['quake','typhoon','flood'].includes(type); }
+// 颱風/洪水：feed 本身只回 active 事件（NOAA active storms / GDACS 3 天）→
+// 不受週數限制（feed 自己就管好 retention）。
+// 地震：改用 USGS 56 天視窗之後，必須跟其他事件一樣按 time 套週數 filter，
+// 不然選「近一週」會看到 5 週前的地震。
+function _isRealtimeType(type) { return ['typhoon','flood'].includes(type); }
 
 // ── Icon builders ────────────────────────────────────────────
 function _makeRiskIcon(ev) {
