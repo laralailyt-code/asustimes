@@ -3105,7 +3105,7 @@ async function _loadStrikeNews() {
 async function loadRisk() {
   // Show loading state
   const evList = document.getElementById('riskEventList');
-  if (evList) evList.innerHTML = '<div class="risk-empty-v2" style="text-align:center;padding:1rem"><div style="font-size:1.5rem;margin-bottom:0.5rem">🌍</div><div style="font-size:0.85rem;color:var(--text-secondary)">抓取 USGS 地震、NOAA 颱風、GDACS 災難</div><div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.5rem">請稍候 5-10 秒…</div></div>';
+  if (evList) evList.innerHTML = '<div class="risk-empty-v2" style="text-align:center;padding:1rem"><div style="font-size:1.5rem;margin-bottom:0.5rem">🌍</div><div style="font-size:0.85rem;color:var(--text-secondary)">載入風險事件中…</div></div>';
 
   try {
     const [quakes, storms, gdacs, crises, geopolitical, strikeEvents, sups, directZones] = await Promise.all([

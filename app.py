@@ -2785,24 +2785,47 @@ def api_risk_quakes():
         return jsonify({"features": []})
 
 
+# 5-minute caches for proxy endpoints — without these every page load hits
+# NOAA + GDACS + ReliefWeb live, adding 5-10s to /api/risk/* fan-out.
+_STORMS_CACHE: dict = {"data": None, "ts": 0.0}
+_GDACS_CACHE:  dict = {"data": None, "ts": 0.0}
+_CRISES_CACHE: dict = {"data": None, "ts": 0.0}
+_RISK_PROXY_TTL = 300  # 5 minutes — these feeds change at most hourly anyway
+
+
 @app.route("/api/risk/storms")
 def api_risk_storms():
-    """Proxy NOAA NHC active storms."""
+    """Proxy NOAA NHC active storms (5-min cache)."""
+    now = time.time()
+    cached = _STORMS_CACHE.get("data")
+    if cached is not None and (now - _STORMS_CACHE.get("ts", 0)) < _RISK_PROXY_TTL:
+        return jsonify(cached)
     try:
         r = req_lib.get("https://www.nhc.noaa.gov/CurrentStorms.json", timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            _STORMS_CACHE["data"] = data
+            _STORMS_CACHE["ts"] = now
+            return jsonify(data)
         return r.content, r.status_code, {"Content-Type": "application/json"}
     except Exception as e:
         logger.warning(f"NHC proxy error: {e}")
+        if cached is not None:
+            return jsonify(cached)
         return jsonify({"activeStorms": []})
 
 
 @app.route("/api/risk/gdacs")
 def api_risk_gdacs():
-    """Proxy GDACS floods and volcanic events (Orange/Red alerts only), filtered to last 3 days.
+    """Proxy GDACS floods + volcanoes (5-min cache, Orange/Red, ≤3 days old).
 
     Cyclones (TC) excluded — handled by /api/risk/storms (NOAA NHC, 96kt+).
     避免颱風雙重來源 + GDACS 寬鬆門檻造成「氾濫」。
     """
+    now = time.time()
+    cached = _GDACS_CACHE.get("data")
+    if cached is not None and (now - _GDACS_CACHE.get("ts", 0)) < _RISK_PROXY_TTL:
+        return jsonify(cached)
     try:
         r = req_lib.get(
             "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH"
@@ -2812,30 +2835,37 @@ def api_risk_gdacs():
         data = r.json()
 
         # Filter to only events from last 3 days (per user requirement)
-        now = datetime.now(timezone(timedelta(hours=8))).date()
+        today = datetime.now(timezone(timedelta(hours=8))).date()
         filtered_features = []
-
         for feature in data.get("features", []):
             try:
                 props = feature.get("properties", {})
                 event_date_str = props.get("fromdate", "")
                 if event_date_str:
                     event_date = datetime.strptime(event_date_str[:10], "%Y-%m-%d").date()
-                    days_old = (now - event_date).days
-                    if days_old <= 3:
+                    if (today - event_date).days <= 3:
                         filtered_features.append(feature)
-            except:
+            except Exception:
                 continue
 
-        return jsonify({"type": data.get("type"), "features": filtered_features}), 200, {"Content-Type": "application/json"}
+        result = {"type": data.get("type"), "features": filtered_features}
+        _GDACS_CACHE["data"] = result
+        _GDACS_CACHE["ts"] = now
+        return jsonify(result)
     except Exception as e:
         logger.warning(f"GDACS proxy error: {e}")
+        if cached is not None:
+            return jsonify(cached)
         return jsonify({"features": []})
 
 
 @app.route("/api/risk/crises")
 def api_risk_crises():
-    """Proxy ReliefWeb ALL ongoing crises (wars, floods, epidemics)."""
+    """Proxy ReliefWeb ALL ongoing crises (wars, floods, epidemics) — 5-min cache."""
+    now = time.time()
+    cached = _CRISES_CACHE.get("data")
+    if cached is not None and (now - _CRISES_CACHE.get("ts", 0)) < _RISK_PROXY_TTL:
+        return jsonify(cached)
     try:
         payload = {
             "appname": "asustimes-risk",
@@ -2847,9 +2877,16 @@ def api_risk_crises():
             "sort": ["date.created:desc"],
         }
         r = req_lib.post("https://api.reliefweb.int/v1/disasters", json=payload, timeout=8)
+        if r.status_code == 200:
+            data = r.json()
+            _CRISES_CACHE["data"] = data
+            _CRISES_CACHE["ts"] = now
+            return jsonify(data)
         return r.content, r.status_code, {"Content-Type": "application/json"}
     except Exception as e:
         logger.warning(f"ReliefWeb proxy error: {e}")
+        if cached is not None:
+            return jsonify(cached)
         return jsonify({"data": []})
 
 
