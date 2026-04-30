@@ -2554,7 +2554,7 @@ function _renderRiskMarkers() {
 
   // Only show events when in events tab
   if (_RS.mapContext === 'events' || !_RS.mapContext) {
-    _RS.events.filter(e => _eventVisible(e) && e.lat && e.lng).forEach(ev => {
+    _RS.events.filter(e => _eventMatchesFilters(e) && e.lat && e.lng).forEach(ev => {
       const m = L.marker([ev.lat, ev.lng], { icon: _makeRiskIcon(ev) }).addTo(_riskMap);
       m.bindPopup(_eventPopup(ev), { maxWidth: 260 });
       m.on('click', () => { _RS.selectedEvent = ev.id; _renderEventList(); });
@@ -2573,7 +2573,7 @@ function _renderRiskMarkers() {
 
   // Risk index view: show both but dimmed
   if (_RS.mapContext === 'riskindex') {
-    _RS.events.filter(e => _eventVisible(e) && e.lat && e.lng).forEach(ev => {
+    _RS.events.filter(e => _eventMatchesFilters(e) && e.lat && e.lng).forEach(ev => {
       const m = L.marker([ev.lat, ev.lng], { icon: _makeRiskIcon(ev) }).addTo(_riskMap);
       m.bindPopup(_eventPopup(ev), { maxWidth: 260 });
       m.on('click', () => { _RS.selectedEvent = ev.id; _renderEventList(); });
@@ -2594,7 +2594,7 @@ function _renderHeatmap() {
   // Only show heatmap for events (not suppliers)
   if (_RS.mapContext !== 'events' && _RS.mapContext !== undefined) return;
   if (typeof L.heatLayer !== 'function') return;
-  const pts = _RS.events.filter(e => _eventVisible(e) && e.lat && e.lng)
+  const pts = _RS.events.filter(e => _eventMatchesFilters(e) && e.lat && e.lng)
     .map(e => [e.lat, e.lng, { CRITICAL:1.0, HIGH:0.7, MED:0.45, LOW:0.2 }[e.impact]||0.3]);
   if (pts.length) _RS.heatLayer = L.heatLayer(pts, { radius:35, blur:25, maxZoom:6,
     gradient:{ 0.2:'#3b82f6', 0.4:'#22c55e', 0.6:'#facc15', 0.8:'#fb923c', 1.0:'#ef4444' } }).addTo(_riskMap);
@@ -2614,23 +2614,26 @@ function _inRegionFilter(ev) {
   return _inRegionForId(_RS.regionFilter, ev);
 }
 
+// 共用：完整 event 過濾（type checkbox + 地區 + 週數）。
+// 地圖、熱力圖、事件清單三處共用，確保「近一週」按鈕 click 後三處同步。
+function _eventMatchesFilters(e) {
+  if (!_eventVisible(e)) return false;
+  if (!_inRegionFilter(e)) return false;
+  // 颱風/洪水：feed 自己管 retention（NOAA active / GDACS 3 天）→ 不套週數
+  if (_isRealtimeType(e.type)) return true;
+  // 地震、罷工、地緣政治、危機：按 time 欄位篩選
+  if (e.time) {
+    const t = (e.time+'').slice(0,10);
+    if (t && t < _weekCutoff()) return false;
+  }
+  return true;
+}
+
 function _renderEventList() {
   const list = document.getElementById('riskEventList');
   if (!list) return;
-  const cutoff = _weekCutoff();
   const filtered = _RS.events
-    .filter(e => {
-      if (!_eventVisible(e)) return false;
-      if (!_inRegionFilter(e)) return false;
-      // 天災類（地震/颱風/洪水）為即時資料，不受週數限制
-      if (_isRealtimeType(e.type)) return true;
-      // 地緣政治、罷工、危機等：按 time 欄位篩選
-      if (e.time) {
-        const t = (e.time+'').slice(0,10);
-        if (t && t < cutoff) return false;
-      }
-      return true;
-    })
+    .filter(_eventMatchesFilters)
     .sort((a,b) => {
       const order = {CRITICAL:0,HIGH:1,MED:2,LOW:3};
       const impactA = order[a.impact] ?? 9;
