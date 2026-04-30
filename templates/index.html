@@ -1162,23 +1162,34 @@
     </div>
     <div class="guide-item-body">
       <div style="margin-bottom: 0.8rem;">
-        <strong style="font-size: 0.92rem;">監控事件類型</strong>
+        <strong style="font-size: 0.92rem;">監控事件類型 / 顯示視窗 / 來源</strong>
         <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.4rem;">
-          🌊 <strong>颱風/洪水</strong>：近 3 天內<br>
-          🔴 <strong>地震</strong>：M≥5.0，持續監控<br>
-          ⚔️ <strong>地緣政治衝突</strong>：過去 8 週新聞<br>
-          ✊ <strong>罷工</strong>：過去 8 週；供應商頁面僅 7 天<br>
+          🔴 <strong>地震</strong>：<strong>M≥6.5</strong>（紅燈級）；地圖保留 8 週 — USGS<br>
+          🌀 <strong>颱風</strong>：96kt+ 強颱以上 — NOAA NHC<br>
+          🌊 <strong>洪水/火山</strong>：近 3 天內 Orange/Red 警戒 — GDACS<br>
+          ⚔️ <strong>地緣政治衝突 / 戰爭</strong>：過去 8 週新聞 — Bing News RSS<br>
+          ✊ <strong>罷工</strong>：過去 8 週新聞；供應商頁僅 7 天<br>
           ⚡ <strong>停電/限電</strong>：即時偵測
         </div>
       </div>
 
       <div style="margin-bottom: 0.8rem;">
-        <strong style="font-size: 0.92rem;">⏱️ 時間篩選（重要！）</strong>
-        <ol class="guide-steps">
-          <li data-n="1.">點擊上方「近一週 / 二週 / 四週 / 八週」</li>
-          <li data-n="2.">基於<strong>新聞發布日期</strong>篩選事件（非事件發生日期）</li>
-          <li data-n="3.">超過 8 週的舊新聞會自動隱藏</li>
-        </ol>
+        <strong style="font-size: 0.92rem;">⏱️ 時間視窗（依類型不同）</strong>
+        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.4rem; line-height: 1.6;">
+          地震、罷工、地緣政治：<strong>過去 8 週（56 天）</strong>都看得到<br>
+          颱風/洪水：<strong>近 3 天</strong>（過後自動下架）<br>
+          上方時間鈕（一週 / 二週 / 四週 / 八週）可進一步縮小視窗
+        </div>
+      </div>
+
+      <div style="margin-bottom: 0.8rem;">
+        <strong style="font-size: 0.92rem;">🚦 供應商紅綠燈判斷（與事件清單分開）</strong>
+        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.4rem; line-height: 1.6;">
+          地震：發生後 <strong>3 天觀察期</strong>內才把附近供應商標紅，過後自動解除<br>
+          颱風：NOAA 標記 active 期間<br>
+          洪水：GDACS 警戒 3 天內<br>
+          ⓘ 即使供應商已恢復綠燈，事件本身仍保留在地圖上供回顧
+        </div>
       </div>
 
       <div style="margin-bottom: 0.8rem;">
@@ -1217,9 +1228,23 @@
       </div>
 
       <div style="margin-bottom: 1rem;">
+        <strong style="font-size: 0.9rem; color: var(--text-primary);">Q: 為什麼小規模地震不顯示？</strong>
+        <div style="font-size: 0.85rem; margin-top: 0.3rem; color: var(--text-secondary);">
+          A: 地圖只顯示 <strong>M6.5+</strong>（台灣紅燈級），全球每年約 80 筆，避免 M5 級雜訊（每年 ~1500 筆）。Telegram 訂閱者可自選門檻，可收到 M5+ 推播。
+        </div>
+      </div>
+
+      <div style="margin-bottom: 1rem;">
+        <strong style="font-size: 0.9rem; color: var(--text-primary);">Q: 4 週前的地震還在地圖上，但日本供應商已綠燈？</strong>
+        <div style="font-size: 0.85rem; margin-top: 0.3rem; color: var(--text-secondary);">
+          A: 故意這樣設計。事件本身保留 <strong>8 週</strong>讓你回顧，但供應商紅綠燈只看 <strong>3 天觀察期</strong>內的地震 — 超過評估期就解除，避免舊地震一直把供應商標紅。
+        </div>
+      </div>
+
+      <div style="margin-bottom: 1rem;">
         <strong style="font-size: 0.9rem; color: var(--text-primary);">Q: 颱風為什麼消失了？</strong>
         <div style="font-size: 0.85rem; margin-top: 0.3rem; color: var(--text-secondary);">
-          A: 颱風/洪水<strong>僅顯示 3 天內</strong>的事件。超過 3 天影響已過，自動隱藏。
+          A: 颱風由 NOAA NHC active storm feed 提供，**只在 96kt+ 強颱期間顯示**，消散後自動下架。洪水則 3 天內 Orange/Red 警戒。
         </div>
       </div>
 
