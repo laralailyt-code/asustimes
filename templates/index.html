@@ -1067,6 +1067,16 @@
           <div style="color:var(--text-muted);font-size:0.85rem">載入影響分析中...</div>
         </div>
       </div>
+
+      <!-- Commodity News (中英雙源 — Bing + GDELT) -->
+      <div style="margin-top:1.2rem;padding:1rem;background:var(--bg-secondary);border-radius:0.5rem">
+        <div style="font-weight:600;margin-bottom:0.6rem;color:var(--text-primary)">
+          📰 相關新聞 <span style="font-size:0.72rem;color:var(--text-muted);font-weight:400">(近 7 天，中文 + English)</span>
+        </div>
+        <div id="commodityNewsList" style="display:flex;flex-direction:column;gap:0.5rem">
+          <div style="color:var(--text-muted);font-size:0.85rem">選擇商品以載入相關新聞</div>
+        </div>
+      </div>
     </div>
   </div>
 </main>
@@ -2238,9 +2248,59 @@ function renderChart() {
 }
 
 async function renderMarketNews() {
-  // 命名是歷史遺留；現在只負責渲染「📊 原料匯率影響分析」說明卡。
-  // 圖表上的新聞事件點已移除，故不再呼叫 /api/commodity-news。
+  // 渲染下方兩個說明卡：
+  //   1. 📊 原料匯率影響分析（靜態知識卡）
+  //   2. 📰 相關新聞（中英雙源 — Bing + GDELT）
   renderSupplyChainImpact();
+  renderCommodityNews();
+}
+
+async function renderCommodityNews() {
+  if (!_activeItem) return;
+  const wrap = document.getElementById('commodityNewsList');
+  if (!wrap) return;
+  const kw = shortName(_activeItem);
+  wrap.innerHTML = `<div style="color:var(--text-muted);font-size:0.82rem">🔍 載入新聞中…</div>`;
+  try {
+    const res  = await fetch('/api/commodity-news?q=' + encodeURIComponent(kw));
+    const data = await res.json();
+    const articles = data.articles || [];
+    if (!articles.length) {
+      wrap.innerHTML = `<div style="color:var(--text-muted);font-size:0.82rem">目前沒有相關新聞</div>`;
+      return;
+    }
+    // 分中英文；同語言內按日期排序（新→舊）
+    const zh = articles.filter(a => a.lang === 'zh').sort((a,b) => (b.published||'').localeCompare(a.published||''));
+    const en = articles.filter(a => a.lang === 'en').sort((a,b) => (b.published||'').localeCompare(a.published||''));
+    const renderOne = a => {
+      // 英文文章：顯示中譯標題（大）+ 原文（小）
+      const isEn = a.lang === 'en';
+      const mainTitle = isEn ? (a.title_zh || a.title) : a.title;
+      const subTitle  = isEn && a.title_zh && a.title_zh !== a.title
+        ? `<div style="font-size:0.7rem;color:var(--text-muted);line-height:1.35;font-style:italic">${esc(a.title)}</div>`
+        : '';
+      return `
+      <a href="${esc(a.source_url)}" target="_blank" rel="noopener"
+         style="display:flex;flex-direction:column;gap:2px;padding:0.5rem 0.65rem;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;text-decoration:none;color:inherit">
+        <div style="font-size:0.85rem;line-height:1.4;color:var(--text-primary)">${esc(mainTitle)}</div>
+        ${subTitle}
+        <div style="font-size:0.7rem;color:var(--text-muted)">${esc(a.source||'')} · ${esc(a.published||'')}</div>
+      </a>`;
+    };
+    let html = '';
+    if (zh.length) {
+      html += `<div style="font-size:0.72rem;color:var(--text-muted);font-weight:600;margin-bottom:2px">🇹🇼 中文</div>`;
+      html += zh.slice(0,5).map(renderOne).join('');
+    }
+    if (en.length) {
+      html += `<div style="font-size:0.72rem;color:var(--text-muted);font-weight:600;margin:0.5rem 0 2px">🌐 English</div>`;
+      html += en.slice(0,5).map(renderOne).join('');
+    }
+    wrap.innerHTML = html;
+  } catch(e) {
+    wrap.innerHTML = `<div style="color:var(--text-muted);font-size:0.82rem">無法載入新聞</div>`;
+    console.warn('commodity-news fetch failed', e);
+  }
 }
 
 function renderSupplyChainImpact() {

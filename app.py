@@ -2632,71 +2632,383 @@ def _save_articles_to_archive(new_articles: list[dict]):
         logger.error(f"News archive save error: {e}", exc_info=True)
 
 
+# ── Commodity news (bilingual: GDELT EN + Bing ZH with 3-layer guard) ────────
+# 中文 → Bing News RSS（搜尋「商品名 價格」）
+# 英文 → GDELT 2.0 doc API（搜尋商品英文名 + price）
+#
+# Bing 3-layer guard 防止觸發 rate-limit / IP ban：
+#   ① 60 分鐘 cache（per commodity name）
+#   ② 每日 200 query 上限（超過自動跳過 Bing，純走 GDELT）
+#   ③ 收到 429 → 觸發 60 分鐘 cooldown，期間 0 Bing query
+
+_commodity_news_cache: dict = {}   # {item_zh: {data, ts, source}}
+_COMMODITY_NEWS_TTL = 3600         # 60 min
+_BING_DAILY_CAP = 200
+_bing_daily_count = 0
+_bing_count_date = None            # YYYY-MM-DD reset
+_bing_cooldown_until = 0.0         # epoch seconds; while now < this, skip Bing
+
+# mining.com pool — 1 fetch / hour 抓全站，所有商品共用
+# 取代「per-commodity 都打 Bing/GDELT」的浪費。
+_mining_cache: dict = {"data": [], "ts": 0.0}
+_MINING_TTL = 3600
+
+# 翻譯 cache — per English title → 中文。永久保留（同 title 只翻一次）。
+_translation_cache: dict = {}      # title_en (lowercased) → title_zh
+
+# 商品 → mining.com 過濾用單字（小寫 substring 比對）
+_COMMODITY_FILTER_TOKENS = {
+    "銅":   ["copper"],
+    "鋁":   ["aluminum", "aluminium", "alumina"],
+    "錫":   ["tin "],   # 'tin' 容易誤命中 (tin can / Martin)，加空格
+    "鎳":   ["nickel"],
+    "鋅":   ["zinc"],
+    "鈷":   ["cobalt"],
+    "鋰":   ["lithium"],
+    "鎢":   ["tungsten"],
+    "金":   ["gold"],
+    "銀":   ["silver"],
+    "石油": ["crude", "oil price", "wti", "brent", "opec"],
+    "PC":   ["polycarbonate"],
+    "ABS":  ["abs resin", "acrylonitrile"],
+    "黃磷": ["phosphorus"],
+    "瓦楞": ["corrugated"],
+    "長纖": ["pulp"],
+    "鎢粉": ["tungsten"],
+}
+
+# Human-pacing throttle: 模仿人點擊的間隔，避免被當機器人。
+# GDELT 規定 1 req / 5 秒；Bing 沒明文但類似節流降低被偵測風險。
+# 每個 host 獨立 lock，這樣 bing 跟 gdelt 可以平行跑（共用 lock 會串行 sleep）。
+_bing_throttle_lock  = threading.Lock()
+_gdelt_throttle_lock = threading.Lock()
+_last_bing_call_ts   = 0.0
+_last_gdelt_call_ts  = 0.0
+_NEWS_MIN_GAP_SEC    = 6  # 6 秒 + 隨機 0-2 秒 jitter ≈ 真人 8 秒間隔
+
+# 商品中文名 → 英文搜尋詞（給 GDELT 用）
+_COMMODITY_EN_KEYWORDS = {
+    "銅":   "copper price LME",
+    "鋁":   "aluminum price LME",
+    "錫":   "tin price LME",
+    "鎳":   "nickel price LME",
+    "鋅":   "zinc price LME",
+    "鈷":   "cobalt price battery",
+    "鋰":   "lithium price battery",
+    "鎢":   "tungsten price china",
+    "金":   "gold price",
+    "銀":   "silver price",
+    "石油": "crude oil price WTI Brent",
+    "PC":   "polycarbonate plastic price",
+    "ABS":  "ABS plastic resin price",
+    "黃磷": "yellow phosphorus price china",
+    "瓦楞": "corrugated paper pulp price",
+    "長纖": "softwood pulp price",
+    "鋰電": "lithium battery materials",
+}
+
+
+def _commodity_en_query(item_zh: str) -> str:
+    """從中文商品名推英文搜尋詞。沒對到就用原名（多半 user 輸入英文）。"""
+    for zh, en in _COMMODITY_EN_KEYWORDS.items():
+        if zh in item_zh:
+            return en
+    return item_zh
+
+
+def _bing_budget_ok() -> bool:
+    """檢查 Bing 是否可用（未超日上限 + 不在 cooldown）。"""
+    global _bing_daily_count, _bing_count_date
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if today != _bing_count_date:
+        _bing_count_date = today
+        _bing_daily_count = 0
+    if _bing_daily_count >= _BING_DAILY_CAP:
+        return False
+    if time.time() < _bing_cooldown_until:
+        return False
+    return True
+
+
+def _throttle_news_call(host: str) -> None:
+    """每個 host 獨立 lock，bing/gdelt 之間可以平行（不互相 block）。
+    強制每個 host 兩次 call 至少間隔 6-8 秒（模仿真人點擊節奏）。"""
+    global _last_bing_call_ts, _last_gdelt_call_ts
+    import random as _r
+    if host == "bing":
+        with _bing_throttle_lock:
+            elapsed = time.time() - _last_bing_call_ts
+            if elapsed < _NEWS_MIN_GAP_SEC:
+                time.sleep(_NEWS_MIN_GAP_SEC - elapsed + _r.uniform(0, 2))
+            _last_bing_call_ts = time.time()
+    elif host == "gdelt":
+        with _gdelt_throttle_lock:
+            elapsed = time.time() - _last_gdelt_call_ts
+            if elapsed < _NEWS_MIN_GAP_SEC:
+                time.sleep(_NEWS_MIN_GAP_SEC - elapsed + _r.uniform(0, 2))
+            _last_gdelt_call_ts = time.time()
+
+
+def _fetch_mining_pool() -> list:
+    """從 mining.com RSS 抓近 7 天文章，1 小時 cache，所有商品共用。"""
+    now = time.time()
+    if _mining_cache["data"] and (now - _mining_cache["ts"]) < _MINING_TTL:
+        return _mining_cache["data"]
+    try:
+        import xml.etree.ElementTree as ET
+        from email.utils import parsedate_to_datetime
+        r = req_lib.get("https://www.mining.com/feed/", timeout=15,
+                        headers={"User-Agent": "Mozilla/5.0 (compatible; ASUSTIMES/1.0)"})
+        if r.status_code != 200:
+            return _mining_cache["data"] or []
+        root = ET.fromstring(r.content)
+        out = []
+        for item in root.iter("item"):
+            try:
+                title = (item.findtext("title") or "").strip()
+                link  = (item.findtext("link")  or "").strip()
+                pub_raw = item.findtext("pubDate", "") or ""
+                try:
+                    pub = parsedate_to_datetime(pub_raw).strftime("%Y-%m-%d")
+                except Exception:
+                    pub = ""
+                if title and link:
+                    out.append({
+                        "title":      title,
+                        "source_url": link,
+                        "published":  pub,
+                        "source":     "mining.com",
+                        "lang":       "en",
+                    })
+            except Exception:
+                continue
+        _mining_cache["data"] = out
+        _mining_cache["ts"]   = now
+        logger.info(f"[mining.com] refreshed pool: {len(out)} articles")
+        return out
+    except Exception as e:
+        logger.warning(f"[mining.com] fetch error: {e}")
+        return _mining_cache["data"] or []
+
+
+def _filter_mining_for(item_short: str, max_records: int = 5) -> list:
+    """從 mining.com pool 撈出與 item_short 相關的文章。"""
+    pool = _fetch_mining_pool()
+    if not pool:
+        return []
+    tokens = _COMMODITY_FILTER_TOKENS.get(item_short, [])
+    if not tokens:
+        # 商品沒在 token 表 → 用 item 本身當 token
+        tokens = [item_short.lower()]
+    out = []
+    for art in pool:
+        text = (art.get("title", "") or "").lower()
+        if any(tok in text for tok in tokens):
+            out.append(art)
+            if len(out) >= max_records:
+                break
+    return out
+
+
+def _translate_to_zh(text_en: str) -> str:
+    """英文 → 繁中。Google Translate 公開 endpoint 為主、MyMemory 備援、cache 永久。"""
+    if not text_en or not text_en.strip():
+        return ""
+    key = text_en.strip().lower()
+    if key in _translation_cache:
+        return _translation_cache[key]
+
+    # Path 1: Google Translate gtx (~1-2s 正常，4s timeout 留 buffer)
+    try:
+        from urllib.parse import quote
+        url = ("https://translate.googleapis.com/translate_a/single"
+               f"?client=gtx&sl=en&tl=zh-TW&dt=t&q={quote(text_en)}")
+        r = req_lib.get(url, timeout=4,
+                        headers={"User-Agent": "Mozilla/5.0 (compatible; ASUSTIMES/1.0)"})
+        if r.status_code == 200:
+            arr = r.json()
+            if arr and arr[0]:
+                zh = "".join(seg[0] for seg in arr[0] if seg and seg[0]).strip()
+                if zh and zh != text_en:
+                    _translation_cache[key] = zh
+                    return zh
+    except Exception as e:
+        logger.debug(f"[translate] Google gtx failed: {e}")
+
+    # Path 2: MyMemory 備援（4s timeout 與 Google 對齊）
+    try:
+        r = req_lib.get("https://api.mymemory.translated.net/get",
+                        params={"q": text_en, "langpair": "en|zh-TW"}, timeout=4)
+        if r.status_code == 200:
+            d = r.json()
+            zh = (d.get("responseData", {}) or {}).get("translatedText", "").strip()
+            if zh and zh != text_en:
+                _translation_cache[key] = zh
+                return zh
+    except Exception as e:
+        logger.debug(f"[translate] MyMemory failed: {e}")
+
+    # 翻譯失敗 → 回傳原文（不快取，下次再試）
+    return text_en
+
+
+def _fetch_gdelt_commodity_news(query: str, max_records: int = 5) -> list:
+    """GDELT 2.0 doc API — 完全免費，但官方規定 1 req / 5 秒，必須 throttle。"""
+    _throttle_news_call("gdelt")
+    try:
+        from urllib.parse import quote
+        url = (
+            "https://api.gdeltproject.org/api/v2/doc/doc"
+            f"?query={quote(query)}&mode=ArtList&format=json"
+            f"&maxrecords={max_records}&timespan=7d&sourcelang=eng&sort=DateDesc"
+        )
+        r = req_lib.get(url, timeout=10)
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        out = []
+        for art in data.get("articles", []) or []:
+            seendate = art.get("seendate", "")  # 20260428T120000Z
+            pub = ""
+            if seendate and len(seendate) >= 8:
+                pub = f"{seendate[0:4]}-{seendate[4:6]}-{seendate[6:8]}"
+            out.append({
+                "title":      art.get("title", "").strip(),
+                "source_url": art.get("url", ""),
+                "published":  pub,
+                "source":     art.get("domain", "GDELT"),
+                "lang":       "en",
+            })
+        return out
+    except Exception as e:
+        logger.warning(f"[GDELT] fetch error: {e}")
+        return []
+
+
+def _fetch_bing_commodity_news(query: str, max_records: int = 5) -> list:
+    """Bing News RSS。caller 必須先呼叫 _bing_budget_ok() 確認額度。
+    內建 6-8 秒 human-pacing throttle 模仿真人點擊節奏。"""
+    _throttle_news_call("bing")
+    global _bing_daily_count, _bing_cooldown_until
+    try:
+        import xml.etree.ElementTree as ET
+        from urllib.parse import quote
+        url = f"https://www.bing.com/news/search?q={quote(query)}&format=rss"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        r = req_lib.get(url, headers=headers, timeout=15)
+        if r.status_code == 429:
+            _bing_cooldown_until = time.time() + 3600
+            logger.warning("[Bing-news] 429 → cooldown 60 min")
+            return []
+        if r.status_code != 200:
+            return []
+        _bing_daily_count += 1
+        root = ET.fromstring(r.content)
+        out = []
+        for item in root.iter("item"):
+            link = item.findtext("link", "")
+            # Bing 重定向解析
+            if "bing.com/news/apiclick.aspx" in link:
+                from urllib.parse import urlparse, parse_qs, unquote
+                qs = parse_qs(urlparse(link).query)
+                if "url" in qs:
+                    link = unquote(qs["url"][0])
+            pub_raw = item.findtext("pubDate", "")
+            pub = ""
+            try:
+                from email.utils import parsedate_to_datetime
+                pub = parsedate_to_datetime(pub_raw).strftime("%Y-%m-%d") if pub_raw else ""
+            except Exception:
+                pass
+            domain = ""
+            try:
+                from urllib.parse import urlparse as _up
+                domain = _up(link).netloc
+            except Exception:
+                pass
+            out.append({
+                "title":      item.findtext("title", "").strip(),
+                "source_url": link,
+                "published":  pub,
+                "source":     domain or "Bing News",
+                "lang":       "zh",
+            })
+            if len(out) >= max_records:
+                break
+        return out
+    except Exception as e:
+        logger.warning(f"[Bing-news] fetch error: {e}")
+        return []
+
+
 @app.route("/api/commodity-news")
 def api_commodity_news():
-    """Search local archive for commodity-related articles."""
-    q = request.args.get("q", "").strip()
-    articles = []
+    """Bilingual commodity news. q = item name (中文 like '鈷' or '銅 (copper) US$/tonne')."""
+    q_raw = (request.args.get("q") or request.args.get("name") or "").strip()
+    if not q_raw:
+        return jsonify({"articles": []})
 
-    # Map commodity names to search keywords
-    commodity_keywords = {
-        'pc': ['polycarbonate', 'plastic', 'polymer', 'resin', 'material'],
-        'cobalt': ['cobalt', 'battery', 'metal', 'mining', 'electric vehicle'],
-        'copper': ['copper', 'metal', 'mining', 'conductor', 'electrical'],
-        'aluminum': ['aluminum', 'metal', 'mining'],
-        'nickel': ['nickel', 'metal', 'battery', 'stainless'],
-        'zinc': ['zinc', 'metal', 'mining'],
-        'tin': ['tin', 'metal', 'mining'],
-        '鈷': ['battery', 'metal', 'electric vehicle', 'mining'],
-        '長纖紙漿': ['pulp', 'paper', 'fiber'],
-        '塑膠': ['plastic', 'polymer', 'material', 'resin'],
-    }
+    # 把長名抓成 short token (e.g., "銅 (copper) US$/tonne" → "銅")
+    item_short = q_raw.split()[0].split("(")[0].strip()
+    if not item_short:
+        item_short = q_raw
 
-    try:
-        with open("news_archive.json", "r", encoding="utf-8") as f:
-            archived = json.load(f)
+    # Cache hit
+    cached = _commodity_news_cache.get(item_short)
+    if cached and (time.time() - cached["ts"]) < _COMMODITY_NEWS_TTL:
+        logger.info(f"[COMMODITY-NEWS] cache hit '{item_short}': {len(cached['data'])} arts")
+        return jsonify({"articles": cached["data"]})
 
-        if not archived:
-            logger.warning("news_archive.json is empty")
-            return jsonify({"articles": []})
+    # 英文：mining.com（hourly cache、共用、最低 Bing 用量）
+    en_news = _filter_mining_for(item_short, max_records=5)
 
-        # Build search terms from q
-        search_terms = q.lower().split() if q else []
+    # 平行 fetch：GDELT 補英文不足 + Bing 抓中文
+    bing_allowed = _bing_budget_ok()
+    if not bing_allowed:
+        logger.info(f"[COMMODITY-NEWS] skip Bing for '{item_short}' (budget/cooldown)")
 
-        # Add mapped keywords
-        for commodity, keywords in commodity_keywords.items():
-            if commodity.lower() in q.lower():
-                search_terms.extend(keywords)
-                break
+    need_gdelt = len(en_news) < 3
+    zh_news = []
+    extra_en = []
+    with ThreadPoolExecutor(max_workers=2) as fpool:
+        f_gdelt = fpool.submit(_fetch_gdelt_commodity_news,
+                               _commodity_en_query(item_short),
+                               5 - len(en_news)) if need_gdelt else None
+        f_bing = fpool.submit(_fetch_bing_commodity_news,
+                              f"{item_short} 價格", 5) if bing_allowed else None
+        if f_gdelt:
+            try:
+                extra_en = f_gdelt.result(timeout=15)
+            except Exception as e:
+                logger.warning(f"[COMMODITY-NEWS] GDELT failed: {e}")
+        if f_bing:
+            try:
+                zh_news = f_bing.result(timeout=15)
+            except Exception as e:
+                logger.warning(f"[COMMODITY-NEWS] Bing failed: {e}")
 
-        # If no search terms, return nothing
-        if not search_terms:
-            logger.info(f"[COMMODITY-NEWS] q='{q}' no search terms")
-            return jsonify({"articles": []})
+    # 合併英文（去重）
+    seen = {a["source_url"] for a in en_news}
+    for a in extra_en:
+        if a["source_url"] not in seen:
+            en_news.append(a)
+            seen.add(a["source_url"])
 
-        # Search for matching articles
-        for article in archived:
-            title = article.get("title", "").lower()
-            summary = article.get("summary", "").lower()
-            text = f"{title} {summary}"
+    # 為英文文章加上中文標題（cache 過 → 0 cost；新文章 → ~2 秒 / 篇 平行翻）
+    # 平行翻譯 max_workers=8 確保 5 篇都能同時跑，總等待 ≈ 單篇翻譯時間 (~2-4s)
+    if en_news:
+        with ThreadPoolExecutor(max_workers=8) as tpool:
+            futs = {tpool.submit(_translate_to_zh, a["title"]): a for a in en_news}
+            for fut in futs:
+                a = futs[fut]
+                try:
+                    a["title_zh"] = fut.result(timeout=5)
+                except Exception:
+                    a["title_zh"] = a["title"]
 
-            # Match if any search term appears in title or summary
-            if any(term in text for term in search_terms):
-                articles.append({
-                    "title": article.get("title", ""),
-                    "source_url": article.get("source_url", ""),
-                    "published": article.get("published", ""),
-                    "source": article.get("source", "Archive")
-                })
-                if len(articles) >= 8:
-                    break
-
-    except FileNotFoundError:
-        logger.warning("news_archive.json not found")
-    except Exception as e:
-        logger.warning(f"commodity news error: {e}")
-
-    logger.info(f"[COMMODITY-NEWS] q='{q}' returned {len(articles)} articles")
+    articles = zh_news + en_news
+    _commodity_news_cache[item_short] = {"data": articles, "ts": time.time()}
+    logger.info(f"[COMMODITY-NEWS] '{item_short}' mining.com={sum(1 for a in en_news if a['source']=='mining.com')} GDELT={sum(1 for a in en_news if a['source']!='mining.com')} Bing={len(zh_news)} Bing-budget={_bing_daily_count}/{_BING_DAILY_CAP}")
     return jsonify({"articles": articles})
 
 
