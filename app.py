@@ -50,7 +50,7 @@ _cache: dict = {
 }
 _cache_lock = threading.Lock()
 
-REFRESH_INTERVAL = 30 * 60  # seconds
+REFRESH_INTERVAL = 60 * 60  # seconds — 1 hour（之前 30 分鐘對 Bing News 太密集）
 
 
 def refresh_news():
@@ -122,29 +122,10 @@ def _risk_cache_preload_loop():
         time.sleep(3 * 3600)  # 每 3 小時更新一次
 
 
-def _digitimes_refresh_loop():
-    """Refresh all news (including Digitimes from Bing RSS) every 2 hours.
-    Note: Digitimes articles are now sourced from Bing News RSS feeds,
-    so this loop refreshes all articles to ensure Digitimes coverage is up-to-date."""
-
-    logger.info("[Digitimes] Background refresh loop starting (2-hour interval)...")
-    first_run = True
-
-    while True:
-        try:
-            if not first_run:
-                logger.debug("[Digitimes] Waiting 2 hours before next refresh...")
-                time.sleep(2 * 3600)  # 2 hours
-            else:
-                time.sleep(30 * 60)  # First refresh at 30 minutes (after main loop starts)
-
-            logger.info("[Digitimes] Starting 2-hour news refresh (Bing News sources)...")
-            refresh_news()
-            logger.info("[Digitimes] Refresh complete - Digitimes articles updated from Bing News")
-        except Exception as e:
-            logger.error(f"[Digitimes] Refresh loop error: {e}")
-
-        first_run = False
+# NOTE: 之前還有一個 _digitimes_refresh_loop 每 2 小時呼叫 refresh_news()，
+# 跟 background_refresh_loop 完全重複（兩個都呼叫 refresh_news → 兩次 Bing 抓取）。
+# Digitimes 文章現已透過 Bing News RSS site:digitimes.com 由主 loop 抓取，
+# 不再需要獨立的 Digitimes loop。已移除以降低 Bing News 用量。
 
 
 def daily_digest_loop():
@@ -209,8 +190,6 @@ def _ensure_bg_running():
                 tl.start()
                 tr = threading.Thread(target=_risk_cache_preload_loop, daemon=True)
                 tr.start()
-                tdt = threading.Thread(target=_digitimes_refresh_loop, daemon=True)
-                tdt.start()
                 # Telegram bot polling（M3+）— only if not already started by _start_critical_bg_threads
                 if not _telegram_bot_started:
                     _telegram_bot_started = True
@@ -3879,8 +3858,7 @@ def ensure_background_threads():
     threading.Thread(target=background_refresh_loop, daemon=True).start()
     threading.Thread(target=_live_price_loop, daemon=True).start()
     threading.Thread(target=_risk_cache_preload_loop, daemon=True).start()
-    threading.Thread(target=_digitimes_refresh_loop, daemon=True).start()
-    logger.info("Background threads started (including Digitimes 2-hour refresh)")
+    logger.info("Background threads started")
 
 # ── Render production: module-load 時直接啟動災害偵測 + Telegram bot ──────────
 # 在 Render 上 gunicorn 不跑 __main__，且 @app.before_request 的 lazy 啟動有時
