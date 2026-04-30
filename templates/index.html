@@ -2846,12 +2846,23 @@ function _evalSupplierRisk() {
   // CRITICAL=🔴danger, HIGH=🟠watch, MED=🟡watch, LOW=safe
   const _impactStatus = { CRITICAL:'danger', HIGH:'watch', MED:'watch', LOW:'safe' };
 
+  // 供應商風險評估時間窗：
+  //   地震 (quake)：發生後 3 天內才視為對供應商有實質風險（觀察期；超過後解除）
+  //   其他事件：依各 feed 自己的 retention 決定（颱風 NOAA 自動下架、洪水 GDACS 3 天、罷工/戰爭依新聞）
+  const _now = Date.now();
+  const THREE_DAYS_MS = 3 * 24 * 3600 * 1000;
+
   _RS.suppliers.forEach(sup => {
     if (!sup.lat||!sup.lng) { sup.riskStatus='safe'; sup.nearbyEvents=[]; return; }
     const alerts = [];
     const nearbyEvts = [];
     _RS.events.forEach(ev => {
       if (!ev.lat||!ev.lng) return;
+      // 地震 3 天觀察期：超過則不再影響供應商燈號（事件本身仍在地圖上、Telegram 推播也正常）
+      if (ev.type === 'quake' && ev.time) {
+        const t = new Date(ev.time).getTime();
+        if (!isNaN(t) && (_now - t) > THREE_DAYS_MS) return;
+      }
       const dist = _haversineKm(sup.lat,sup.lng,ev.lat,ev.lng);
       if (dist <= (_RISK_RADIUS[ev.impact]||250)) {
         const ic={ quake:'🔴', typhoon:'🌀', flood:'🌊', war:'⚔️', power:'⚡', strike:'✊' }[ev.type]||'⚠️';
