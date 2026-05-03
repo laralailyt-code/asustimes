@@ -140,20 +140,42 @@ def list_subscriptions(user_id: int, only_active: bool = True) -> list[dict]:
         return [dict(r) for r in cur.fetchall()]
 
 
+class DuplicateSubscriptionError(Exception):
+    """使用者已訂閱過相同 (type, value) 組合。"""
+    def __init__(self, existing: dict):
+        self.existing = existing
+        super().__init__(f"duplicate subscription #{existing.get('id')}")
+
+
 def add_subscription(user_id: int, sub_type: str, value: dict,
                      min_severity: str = "low") -> dict:
     if sub_type not in {"region", "part", "supplier", "radius"}:
         raise ValueError(f"Invalid subscription type: {sub_type}")
     if min_severity not in {"low", "medium", "high"}:
         raise ValueError(f"Invalid severity: {min_severity}")
+    value_json = json.dumps(value, sort_keys=True)
     with get_cursor() as cur:
+        # 先檢查重複（同 user + 同 type + 同 value JSON）
+        cur.execute(
+            """
+            SELECT * FROM subscriptions
+            WHERE user_id = %s AND type = %s
+              AND value::text = %s::jsonb::text
+            LIMIT 1
+            """,
+            (user_id, sub_type, value_json),
+        )
+        existing = cur.fetchone()
+        if existing:
+            raise DuplicateSubscriptionError(dict(existing))
+        # 不重複才 insert
         cur.execute(
             """
             INSERT INTO subscriptions (user_id, type, value, min_severity)
             VALUES (%s, %s, %s::jsonb, %s)
             RETURNING *
             """,
-            (user_id, sub_type, json.dumps(value), min_severity),
+            (user_id, sub_type, value_json, min_severity),
         )
         return dict(cur.fetchone())
 

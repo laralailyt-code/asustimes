@@ -57,8 +57,10 @@ def build_application() -> Application:
             logger.error(f"[dispatcher] error: {e}", exc_info=True)
 
     if app.job_queue is not None:
-        app.job_queue.run_repeating(_dispatcher_job, interval=60, first=10, name="dispatch_pending")
-        logger.info("Dispatcher job scheduled (interval=60s, first=10s)")
+        # interval=30s → 災害事件最多 30 秒被掃到，配合 disaster-persist 90 秒，
+        # USGS publish 之後總延遲 ~2 分鐘（剩下 1-3 分鐘是 USGS 自己的處理時間）。
+        app.job_queue.run_repeating(_dispatcher_job, interval=30, first=10, name="dispatch_pending")
+        logger.info("Dispatcher job scheduled (interval=30s, first=10s)")
     else:
         logger.warning("No JobQueue available — install python-telegram-bot[job-queue]")
 

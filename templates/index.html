@@ -2982,16 +2982,43 @@ function _evalSupplierRisk() {
     }
     sup.nearbyEvents = alerts;
 
-    // 直接影響覆蓋：新聞報導特定企業停工 → 強制紅燈
+    // 直接影響：新聞報導特定企業停工 → 加進警示但**不強制升級紅燈**。
+    // 之前是強制 danger 紅燈，造成「Samsung 罷工 + Samsung Biologics 停工新聞」
+    // 對同一供應商雙重計算 → 韓國 supplier 紅燈過度警告。
+    // 改成：先檢查同公司事件是否已在 nearbyEvts；若是 → 純文字提示（不再升級燈號）；
+    //       若不是 → 視為一個獨立 nearbyEvt 加進去走原本的加權邏輯。
     if (sup.lat && sup.lng) {
       for (const zone of (_RS.directImpactZones || [])) {
-        if (_haversineKm(sup.lat, sup.lng, zone.lat, zone.lng) <= 300) {
+        if (_haversineKm(sup.lat, sup.lng, zone.lat, zone.lng) > 300) continue;
+        // 判斷是否與已知 nearbyEvts 同企業（用 _COMPANY_CLUSTERS 比對 zone 標題的關鍵字）
+        const zoneText = (zone.reason || '').toLowerCase();
+        let dupCompany = false;
+        for (const c of _COMPANY_CLUSTERS) {
+          if (c.keys.some(k => zoneText.includes(k.toLowerCase()))) {
+            // 是某家已知企業 → 如果 nearbyEvts 已經有同公司事件，就視為重複
+            const sameCompanyExists = nearbyEvts.some(ev => {
+              const evText = (ev.title || '').toLowerCase();
+              return c.keys.some(k => evText.includes(k.toLowerCase()));
+            });
+            if (sameCompanyExists) {
+              dupCompany = true;
+              break;
+            }
+          }
+        }
+        if (dupCompany) {
+          // 同公司事件 → 只在文字提示加註「另有新聞報導」，**不**升級燈號
+          if (!sup.nearbyEvents.includes(zone.reason)) {
+            sup.nearbyEvents.push(`📰 另有相關新聞：${zone.reason.replace('🔴 直接影響：', '')}`);
+          }
+        } else {
+          // 不同公司 → 走原本邏輯：強制紅燈
           sup.riskStatus = 'danger';
           if (!sup.nearbyEvents.includes(zone.reason)) {
             sup.nearbyEvents.unshift(zone.reason);
           }
-          break;
         }
+        break;
       }
     }
   });

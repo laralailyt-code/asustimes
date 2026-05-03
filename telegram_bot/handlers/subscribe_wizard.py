@@ -377,13 +377,26 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await query.edit_message_text("⚠️ 還沒註冊，先用 /start")
         return ConversationHandler.END
 
-    sub = await asyncio.to_thread(
-        db.add_subscription,
-        user_id=user["id"],
-        sub_type=context.user_data["sub_type"],
-        value=context.user_data["sub_value"],
-        min_severity=context.user_data["sub_severity"],
-    )
+    try:
+        sub = await asyncio.to_thread(
+            db.add_subscription,
+            user_id=user["id"],
+            sub_type=context.user_data["sub_type"],
+            value=context.user_data["sub_value"],
+            min_severity=context.user_data["sub_severity"],
+        )
+    except db.DuplicateSubscriptionError as e:
+        existing = e.existing
+        await query.edit_message_text(
+            f"⚠️ 你已經有相同訂閱了（規則編號 `#{existing.get('id')}`）。\n\n"
+            f"{context.user_data.get('sub_label', '')}\n\n"
+            "👉 用 /list 查看現有規則\n"
+            f"👉 `/unsubscribe {existing.get('id')}` 取消舊的後再訂閱",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
     await query.edit_message_text(
         f"🎉 *訂閱成功！* 規則編號 `#{sub['id']}`\n\n"
         f"{context.user_data.get('sub_label', '')}\n\n"

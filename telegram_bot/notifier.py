@@ -52,10 +52,26 @@ def _format_event_message(event: dict, hit: dict) -> str:
     title = event.get("title") or "(無標題)"
     region = event.get("region") or "—"
     occurred = event.get("occurred_at") or event.get("time") or "—"
+    # 統一轉成台灣時間 UTC+8 顯示（資料庫 / API 多是 UTC，使用者看起來會差 8 小時）
+    from datetime import datetime, timezone, timedelta
+    TW_TZ = timezone(timedelta(hours=8))
     if hasattr(occurred, "strftime"):
-        occurred = occurred.strftime("%Y-%m-%d %H:%M UTC")
-    elif isinstance(occurred, str) and len(occurred) > 16:
-        occurred = occurred[:16].replace("T", " ")
+        # tz-aware datetime → 轉成 TW
+        if occurred.tzinfo is None:
+            occurred = occurred.replace(tzinfo=timezone.utc)
+        occurred = occurred.astimezone(TW_TZ).strftime("%Y-%m-%d %H:%M (台灣時間)")
+    elif isinstance(occurred, str) and occurred not in ("—", ""):
+        # 嘗試 parse ISO 字串
+        try:
+            s = occurred.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(s) if "T" in s or "+" in s else datetime.fromisoformat(s + "+00:00")
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            occurred = dt.astimezone(TW_TZ).strftime("%Y-%m-%d %H:%M (台灣時間)")
+        except Exception:
+            # parse 失敗就保留原字串
+            if len(occurred) > 16:
+                occurred = occurred[:16].replace("T", " ")
 
     supply = event.get("supply_note") or event.get("supply") or ""
     source = event.get("source") or ""

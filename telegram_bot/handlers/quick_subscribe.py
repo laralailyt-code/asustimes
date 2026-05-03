@@ -25,6 +25,20 @@ DEFAULT_SEV = "medium"
 VALID_SEV = {"low", "medium", "high"}
 
 
+async def _safe_add_subscription(update: Update, **kwargs) -> dict | None:
+    """包一層 add_subscription：若已重複訂閱，回友善訊息給使用者。"""
+    try:
+        return await asyncio.to_thread(db.add_subscription, **kwargs)
+    except db.DuplicateSubscriptionError as e:
+        existing = e.existing
+        await update.message.reply_text(
+            f"⚠️ 你已經有相同訂閱了（規則編號 `#{existing.get('id')}`）。\n"
+            f"用 /list 查看現有規則，用 /unsubscribe <編號> 刪除舊的。",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return None
+
+
 def _parse_severity(args: list[str]) -> tuple[list[str], str]:
     """如果最後一個 arg 是 low/medium/high，當作 severity 抽出來。"""
     if args and args[-1].lower() in VALID_SEV:
@@ -63,13 +77,15 @@ async def cmd_region(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if not user:
         return
 
-    sub = await asyncio.to_thread(
-        db.add_subscription,
+    sub = await _safe_add_subscription(
+        update,
         user_id=user["id"],
         sub_type="region",
         value={"region": region},
         min_severity=sev,
     )
+    if not sub:
+        return
     sev_label = {"low": "🟡 低", "medium": "🟠 中", "high": "🔴 高"}[sev]
     await update.message.reply_text(
         f"✅ 已訂閱地區 `{region}`\n門檻：{sev_label}（含以上）\n規則編號：`#{sub['id']}`",
@@ -96,13 +112,15 @@ async def cmd_part(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not user:
         return
 
-    sub = await asyncio.to_thread(
-        db.add_subscription,
+    sub = await _safe_add_subscription(
+        update,
         user_id=user["id"],
         sub_type="part",
         value={"part_category": cat},
         min_severity=sev,
     )
+    if not sub:
+        return
     sev_label = {"low": "🟡 低", "medium": "🟠 中", "high": "🔴 高"}[sev]
     await update.message.reply_text(
         f"✅ 已訂閱料件類別 `{cat}`\n門檻：{sev_label}（含以上）\n規則編號：`#{sub['id']}`",
@@ -152,13 +170,15 @@ async def cmd_supplier(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not user:
         return
 
-    sub = await asyncio.to_thread(
-        db.add_subscription,
+    sub = await _safe_add_subscription(
+        update,
         user_id=user["id"],
         sub_type="supplier",
         value={"supplier_id": sup["id"]},
         min_severity=sev,
     )
+    if not sub:
+        return
     sev_label = {"low": "🟡 低", "medium": "🟠 中", "high": "🔴 高"}[sev]
     cats = "/".join((sup.get("part_categories") or [])[:3])
     await update.message.reply_text(
@@ -194,13 +214,15 @@ async def cmd_radius(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if not user:
         return
 
-    sub = await asyncio.to_thread(
-        db.add_subscription,
+    sub = await _safe_add_subscription(
+        update,
         user_id=user["id"],
         sub_type="radius",
         value={"lat": lat, "lng": lng, "km": km},
         min_severity=sev,
     )
+    if not sub:
+        return
     sev_label = {"low": "🟡 低", "medium": "🟠 中", "high": "🔴 高"}[sev]
     await update.message.reply_text(
         f"✅ 已訂閱半徑 ({lat:.3f}, {lng:.3f}) {km:g}km 圓內\n"

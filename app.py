@@ -471,15 +471,16 @@ def _fetch_gdacs_alerts() -> list[dict]:
 
 def _disaster_persist_loop():
     """每 5 分鐘抓 USGS / NOAA / GDACS，把新災害事件寫進 risk_events 表。
-    Dispatcher（每 60 秒）會掃到並推給有訂閱對應地區的使用者。
+    Dispatcher（每 30 秒）會掃到並推給有訂閱對應地區的使用者。
 
     第一輪 30 秒後執行（讓其他 background thread 先啟動完）。
+    間隔 90 秒 — 地震 USGS publish 後越快推越好；NOAA/GDACS 不會比這個窗口快太多。
     """
-    logger.info("[disaster-persist] 啟動災害事件即時偵測 loop（每 5 分鐘）")
+    logger.info("[disaster-persist] 啟動災害事件即時偵測 loop（每 90 秒）")
     first_run = True
     while True:
         try:
-            time.sleep(30 if first_run else 5 * 60)
+            time.sleep(30 if first_run else 90)
             first_run = False
 
             quakes = _fetch_usgs_quakes()
@@ -2660,7 +2661,7 @@ _translation_cache: dict = {}      # title_en (lowercased) → title_zh
 _COMMODITY_FILTER_TOKENS = {
     "銅":   ["copper"],
     "鋁":   ["aluminum", "aluminium", "alumina"],
-    "錫":   ["tin "],   # 'tin' 容易誤命中 (tin can / Martin)，加空格
+    "錫":   ["tin"],     # word-boundary 比對（不會誤命中 Martin / Tinder）
     "鎳":   ["nickel"],
     "鋅":   ["zinc"],
     "鈷":   ["cobalt"],
@@ -2792,18 +2793,31 @@ def _fetch_mining_pool() -> list:
 
 
 def _filter_mining_for(item_short: str, max_records: int = 5) -> list:
-    """從 mining.com pool 撈出與 item_short 相關的文章。"""
+    """從 mining.com pool 撈出與 item_short 相關的文章。
+    用 word boundary 避免「Martin / Tinder / oilcake」等誤命中。"""
+    import re as _re
     pool = _fetch_mining_pool()
     if not pool:
         return []
     tokens = _COMMODITY_FILTER_TOKENS.get(item_short, [])
     if not tokens:
-        # 商品沒在 token 表 → 用 item 本身當 token
         tokens = [item_short.lower()]
+    # 編譯成 word-boundary regex（含中文以 substring 比對）
+    patterns = []
+    for t in tokens:
+        t = t.strip()
+        if not t:
+            continue
+        if _re.search(r"[a-z]", t):
+            # 英文 token → word boundary
+            patterns.append(_re.compile(rf"\b{_re.escape(t)}\b", _re.IGNORECASE))
+        else:
+            # 中文 token → 直接 substring（中文沒空格分詞）
+            patterns.append(_re.compile(_re.escape(t)))
     out = []
     for art in pool:
-        text = (art.get("title", "") or "").lower()
-        if any(tok in text for tok in tokens):
+        text = art.get("title", "") or ""
+        if any(p.search(text) for p in patterns):
             out.append(art)
             if len(out) >= max_records:
                 break
@@ -2852,33 +2866,46 @@ def _translate_to_zh(text_en: str) -> str:
     return text_en
 
 
-def _fetch_gdelt_commodity_news(query: str, max_records: int = 5) -> list:
-    """GDELT 2.0 doc API — 完全免費，但官方規定 1 req / 5 秒，必須 throttle。"""
+def _fetch_gdelt_commodity_news(query: str, max_records: int = 5,
+                                 must_contain: list[str] | None = None) -> list:
+    """GDELT 2.0 doc API — 完全免費，但官方規定 1 req / 5 秒，必須 throttle。
+    must_contain：標題必須包含其中一個關鍵字（小寫 substring 比對），
+    避免 GDELT 用 body match 把不相關的文章撈進來。"""
     _throttle_news_call("gdelt")
     try:
         from urllib.parse import quote
+        # 抓 30 天內，數量多 fetch 點留給 must_contain 過濾後仍有結果
         url = (
             "https://api.gdeltproject.org/api/v2/doc/doc"
             f"?query={quote(query)}&mode=ArtList&format=json"
-            f"&maxrecords={max_records}&timespan=7d&sourcelang=eng&sort=DateDesc"
+            f"&maxrecords=25&timespan=1month&sourcelang=eng&sort=DateDesc"
         )
         r = req_lib.get(url, timeout=10)
         if r.status_code != 200:
             return []
         data = r.json()
+        tokens_lower = [t.lower() for t in (must_contain or [])]
         out = []
         for art in data.get("articles", []) or []:
-            seendate = art.get("seendate", "")  # 20260428T120000Z
+            title = art.get("title", "").strip()
+            if not title:
+                continue
+            # 標題必須含關鍵字才保留（過濾掉只是 body 提到的不相關文章）
+            if tokens_lower and not any(tok in title.lower() for tok in tokens_lower):
+                continue
+            seendate = art.get("seendate", "")
             pub = ""
             if seendate and len(seendate) >= 8:
                 pub = f"{seendate[0:4]}-{seendate[4:6]}-{seendate[6:8]}"
             out.append({
-                "title":      art.get("title", "").strip(),
+                "title":      title,
                 "source_url": art.get("url", ""),
                 "published":  pub,
                 "source":     art.get("domain", "GDELT"),
                 "lang":       "en",
             })
+            if len(out) >= max_records:
+                break
         return out
     except Exception as e:
         logger.warning(f"[GDELT] fetch error: {e}")
@@ -2970,10 +2997,13 @@ def api_commodity_news():
     need_gdelt = len(en_news) < 3
     zh_news = []
     extra_en = []
+    # 給 GDELT 過濾用的關鍵字（標題 must contain）
+    gdelt_tokens = _COMMODITY_FILTER_TOKENS.get(item_short) or [item_short.lower()]
     with ThreadPoolExecutor(max_workers=2) as fpool:
         f_gdelt = fpool.submit(_fetch_gdelt_commodity_news,
                                _commodity_en_query(item_short),
-                               5 - len(en_news)) if need_gdelt else None
+                               5 - len(en_news),
+                               gdelt_tokens) if need_gdelt else None
         f_bing = fpool.submit(_fetch_bing_commodity_news,
                               f"{item_short} 價格", 5) if bing_allowed else None
         if f_gdelt:
@@ -2986,6 +3016,18 @@ def api_commodity_news():
                 zh_news = f_bing.result(timeout=15)
             except Exception as e:
                 logger.warning(f"[COMMODITY-NEWS] Bing failed: {e}")
+
+    # 統一過濾：所有文章必須在過去 30 天內（避免 Bing 排序給太舊的）
+    from datetime import datetime as _dt, timedelta as _td
+    cutoff_date = (_dt.utcnow() - _td(days=30)).strftime("%Y-%m-%d")
+    def _within_30d(art):
+        pub = art.get("published") or ""
+        return (not pub) or pub >= cutoff_date  # 沒日期的也保留（mining.com 通常都有）
+    en_news = [a for a in en_news if _within_30d(a)]
+    extra_en = [a for a in extra_en if _within_30d(a)]
+    zh_news = [a for a in zh_news if _within_30d(a)]
+    # 中文按發布日期由新到舊排序（解決 Bing 排序問題）
+    zh_news.sort(key=lambda a: a.get("published") or "", reverse=True)
 
     # 合併英文（去重）
     seen = {a["source_url"] for a in en_news}
