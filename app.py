@@ -2657,6 +2657,21 @@ _MINING_TTL = 3600
 # 翻譯 cache — per English title → 中文。永久保留（同 title 只翻一次）。
 _translation_cache: dict = {}      # title_en (lowercased) → title_zh
 
+# 商品 → Bing News 中文搜尋關鍵字（比預設 item_short 更精準）
+# 沒設定的會 fallback 用 item_short + " 價格"
+_COMMODITY_BING_QUERY = {
+    "PC":        "聚碳酸酯 價格",   # PC 塑料的中文化學名
+    "PC塑料":    "聚碳酸酯 價格",
+    "ABS":       "ABS塑料 價格",
+    "ABS聚合物": "ABS塑料 價格",
+    "瓦楞":      "紙漿 紙價",        # 瓦楞芯紙跟著紙漿價格走
+    "瓦楞芯紙":  "紙漿 紙價",
+    "長纖":      "長纖紙漿 價格",
+    "長纖紙漿":  "長纖紙漿 價格",
+    "黃磷":      "黃磷 價格",
+    "鈷":        "鈷 價格 LME",      # 加 LME 過濾掉太多 ETF / 投資文
+}
+
 # 商品 → mining.com 過濾用單字（小寫 substring 比對）
 _COMMODITY_FILTER_TOKENS = {
     "銅":   ["copper"],
@@ -2999,13 +3014,15 @@ def api_commodity_news():
     extra_en = []
     # 給 GDELT 過濾用的關鍵字（標題 must contain）
     gdelt_tokens = _COMMODITY_FILTER_TOKENS.get(item_short) or [item_short.lower()]
+    # Bing 搜尋詞：先看是否有特化中文關鍵字（如 PC → 聚碳酸酯），沒有就用預設 item + 價格
+    bing_query = _COMMODITY_BING_QUERY.get(item_short) or f"{item_short} 價格"
     with ThreadPoolExecutor(max_workers=2) as fpool:
         f_gdelt = fpool.submit(_fetch_gdelt_commodity_news,
                                _commodity_en_query(item_short),
                                5 - len(en_news),
                                gdelt_tokens) if need_gdelt else None
         f_bing = fpool.submit(_fetch_bing_commodity_news,
-                              f"{item_short} 價格", 5) if bing_allowed else None
+                              bing_query, 8) if bing_allowed else None  # fetch 8 給 sort 後挑 top 5
         if f_gdelt:
             try:
                 extra_en = f_gdelt.result(timeout=15)
@@ -3017,17 +3034,24 @@ def api_commodity_news():
             except Exception as e:
                 logger.warning(f"[COMMODITY-NEWS] Bing failed: {e}")
 
-    # 統一過濾：所有文章必須在過去 30 天內（避免 Bing 排序給太舊的）
+    # 排序所有文章 by 發布日期（最新優先）
+    en_news.sort(key=lambda a: a.get("published") or "", reverse=True)
+    extra_en.sort(key=lambda a: a.get("published") or "", reverse=True)
+    zh_news.sort(key=lambda a: a.get("published") or "", reverse=True)
+
+    # 智慧 30 天 filter：優先取 30 天內，但若不足 3 篇則放寬到 top 5（保證至少有東西看）
     from datetime import datetime as _dt, timedelta as _td
     cutoff_date = (_dt.utcnow() - _td(days=30)).strftime("%Y-%m-%d")
-    def _within_30d(art):
-        pub = art.get("published") or ""
-        return (not pub) or pub >= cutoff_date  # 沒日期的也保留（mining.com 通常都有）
-    en_news = [a for a in en_news if _within_30d(a)]
-    extra_en = [a for a in extra_en if _within_30d(a)]
-    zh_news = [a for a in zh_news if _within_30d(a)]
-    # 中文按發布日期由新到舊排序（解決 Bing 排序問題）
-    zh_news.sort(key=lambda a: a.get("published") or "", reverse=True)
+    def _filter_or_fallback(arts, target=5, min_recent=3):
+        if not arts:
+            return []
+        recent = [a for a in arts if (a.get("published") or "") >= cutoff_date or not a.get("published")]
+        # 30 天內 ≥ 3 篇 → 全用 30 天 filter
+        # 30 天內 < 3 篇 → 用 top N by date（讓使用者至少看得到東西，反正也不會太舊太多）
+        return recent[:target] if len(recent) >= min_recent else arts[:target]
+    en_news = _filter_or_fallback(en_news, 5)
+    extra_en = _filter_or_fallback(extra_en, 5)
+    zh_news = _filter_or_fallback(zh_news, 5)
 
     # 合併英文（去重）
     seen = {a["source_url"] for a in en_news}
