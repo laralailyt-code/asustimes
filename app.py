@@ -2669,7 +2669,8 @@ _COMMODITY_BING_QUERY = {
     "長纖":      "長纖紙漿 價格",
     "長纖紙漿":  "長纖紙漿 價格",
     "黃磷":      "黃磷 價格",
-    "鈷":        "鈷 價格 LME",      # 加 LME 過濾掉太多 ETF / 投資文
+    # 鈷不加 LME（Bing News 對「鈷 價格 LME」三字組合會回 0 篇，太窄）
+    # 用「鈷 價格」即可，讓 30-day 智慧 fallback 處理排序與相關性
 }
 
 # 商品 → mining.com 過濾用單字（小寫 substring 比對）
