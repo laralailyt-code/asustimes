@@ -44,6 +44,41 @@ EARTHQUAKE_KEYWORDS = (
     "seismic",
 )
 
+# ── 地震訂閱距離過濾 ─────────────────────────────────────────────
+# 之前單純用 region 雙向 substring 配對，會讓宜蘭 M5 推給台南/高雄訂閱者，
+# 即使他們相隔 250+ km 完全不受影響。改用震央座標 + 訂閱地區座標算距離。
+#
+# 半徑大小依 impact 分級（M5 影響 ~80 km，M7+ 全島都受波及）：
+_QUAKE_RADIUS_KM = {
+    "CRITICAL": 500,  # M7+
+    "HIGH":     300,  # M6-6.9
+    "MED":      150,  # M5.5-5.9
+    "LOW":       80,  # M5-5.4
+}
+
+# 常見亞洲城市座標（台/中/日/韓 + 歐美主要供應鏈據點），給 region/supplier 訂閱用
+_CITY_COORDS = {
+    # 台灣
+    "台北": (25.05, 121.53), "新北": (25.01, 121.46), "桃園": (25.00, 121.30),
+    "新竹": (24.80, 120.99), "竹南": (24.70, 120.88), "苗栗": (24.56, 120.82),
+    "台中": (24.14, 120.68), "彰化": (24.08, 120.54), "宜蘭": (24.70, 121.74),
+    "南投": (23.91, 120.68), "嘉義": (23.48, 120.45), "台南": (23.00, 120.21),
+    "高雄": (22.63, 120.30), "屏東": (22.55, 120.55), "花蓮": (23.99, 121.61),
+    "台東": (22.76, 121.14), "澎湖": (23.57, 119.58),
+    # 中國大陸
+    "深圳": (22.54, 114.06), "上海": (31.23, 121.47), "昆山": (31.39, 121.16),
+    "鄭州": (34.75, 113.62), "北京": (39.90, 116.40), "蘇州": (31.30, 120.59),
+    "廣州": (23.13, 113.26),
+    # 日本
+    "東京": (35.68, 139.69), "大阪": (34.69, 135.50), "熊本": (32.80, 130.71),
+    "京都": (35.01, 135.77),
+    # 韓國
+    "首爾": (37.57, 126.98), "平澤": (36.99, 127.11), "利川": (37.27, 127.44),
+    # 美國 / 歐洲
+    "矽谷": (37.34, -121.89), "奧斯汀": (30.27, -97.74),
+    "德勒斯登": (51.05, 13.74), "恩荷芬": (51.44, 5.48),
+}
+
 
 def _is_earthquake(event: dict) -> bool:
     """是不是地震事件。從 type 與 title/keywords 雙重判斷。"""
@@ -124,6 +159,38 @@ def _region_matches(sub_region: str, event_region: str | None) -> bool:
     s = sub_region.strip()
     e = event_region.strip()
     return s in e or e in s
+
+
+def _extract_city(region: str) -> str | None:
+    """從 'XX/YY' 格式抽出 YY 城市名；沒 / 視為國家級訂閱回 None。"""
+    if not region or "/" not in region:
+        return None
+    return region.split("/", 1)[1].strip()
+
+
+def _quake_distance_passes(event: dict, sub_region: str) -> bool:
+    """地震訂閱距離過濾。
+    僅當 (1) 是地震 (2) 事件有 lat/lng (3) 訂閱是城市級 才檢查；
+    其他情況一律放行（不影響非地震事件、國家級訂閱、無座標事件）。
+    """
+    if not _is_earthquake(event):
+        return True
+    lat = event.get("lat"); lng = event.get("lng")
+    if lat is None or lng is None:
+        return True  # 沒座標 → 保守放行避免漏推
+    city = _extract_city(sub_region)
+    if not city:
+        return True  # 國家級（「台灣」）：本來就要全收
+    coords = _CITY_COORDS.get(city)
+    if not coords:
+        return True  # 城市不在表內 → 保守放行
+    impact = (event.get("impact") or "MED").upper()
+    radius = _QUAKE_RADIUS_KM.get(impact, 150)
+    try:
+        dist = _haversine_km(coords[0], coords[1], float(lat), float(lng))
+    except (TypeError, ValueError):
+        return True
+    return dist <= radius
 
 
 def _suppliers_in_region(event_region: str | None) -> list[dict]:
@@ -228,6 +295,10 @@ def find_hits(event: dict) -> list[dict]:
         if sub_type == "region":
             sub_region = v.get("region", "")
             if _region_matches(sub_region, event_region):
+                # 地震 + 城市級訂閱 → 加距離過濾
+                if not _quake_distance_passes(event, sub_region):
+                    logger.debug(f"[matcher] event={event.get('id','?')} skip {sub_region} — 距離過遠")
+                    continue
                 reason = f"地區訂閱：{sub_region}"
 
         elif sub_type == "part":
@@ -235,9 +306,13 @@ def find_hits(event: dict) -> list[dict]:
             if cat:
                 for sup in _get_region_suppliers():
                     sup_cats = sup.get("part_categories") or []
-                    if cat in [c.upper() for c in sup_cats]:
-                        reason = f"料件訂閱：{cat}（事件地區供應商生產此料件）"
-                        break
+                    if cat not in [c.upper() for c in sup_cats]:
+                        continue
+                    # 地震時：供應商要在震央影響半徑內才算命中
+                    if not _quake_distance_passes(event, sup.get("region") or ""):
+                        continue
+                    reason = f"料件訂閱：{cat}（事件地區供應商生產此料件）"
+                    break
 
         elif sub_type == "supplier":
             sup_id = v.get("supplier_id")
@@ -245,6 +320,10 @@ def find_hits(event: dict) -> list[dict]:
                 # 直接撈該供應商，比對其 region 與事件 region
                 sup = db.get_supplier_by_id(int(sup_id))
                 if sup and _region_matches(sup.get("region") or "", event_region):
+                    # 地震：供應商城市必須在震央影響半徑內
+                    if not _quake_distance_passes(event, sup.get("region") or ""):
+                        logger.debug(f"[matcher] event={event.get('id','?')} skip supplier #{sup_id} — 距離過遠")
+                        continue
                     reason = f"供應商訂閱：#{sup_id} {sup.get('region')}"
 
         elif sub_type == "radius":
