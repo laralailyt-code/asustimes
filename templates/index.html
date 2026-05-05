@@ -3075,9 +3075,9 @@ async function _loadQuakes() {
       .filter(f => f.properties.mag >= 6.5) // M6.5+ 才顯示（紅燈級以上），避免事件清單氾濫
       .map(f => {
         const mag = f.properties.mag;
-        // 顯示門檻 M6.5+；分級：CRITICAL M7+, HIGH M6.5-6.9
-        // 台灣地震紅綠燈標準：規模6.5+或6弱+=紅燈
-        const impact = mag>=7.0?'CRITICAL':'HIGH';
+        // 對齊台灣 CWA 紅燈標準：規模 6.5+ 或震度 6 弱+ → 一律紅燈 (CRITICAL)
+        // M6.5+ 都是紅燈，跟 DB / Telegram impact 分級一致
+        const impact = 'CRITICAL';
         return { id:f.id, type:'quake', title:_localizeQuake(f.properties.place),
           lat:f.geometry.coordinates[1], lng:f.geometry.coordinates[0],
           mag:mag?.toFixed(1), depth:f.geometry.coordinates[2]?.toFixed(0)+' km',
