@@ -152,8 +152,20 @@ def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     return 2 * R * math.asin(math.sqrt(a))
 
 
+# 全區域訂閱關鍵字（任一即視為「全部地區」）
+_REGION_ALL = {"全部", "全部地區", "*", "all", "ALL", "全球", "global"}
+
+
+def _is_all_region(sub_region: str) -> bool:
+    """判斷是否為全區域訂閱（任何事件都命中，仍受 severity 過濾）。"""
+    return sub_region.strip() in _REGION_ALL
+
+
 def _region_matches(sub_region: str, event_region: str | None) -> bool:
-    """雙向子字串：訂「台灣」吃到事件「台灣/新竹」；訂「台灣/新竹」也吃到事件「台灣」。"""
+    """雙向子字串：訂「台灣」吃到事件「台灣/新竹」；訂「台灣/新竹」也吃到事件「台灣」。
+    特例：全區域訂閱（「全部」、"*"、"all" 等）→ 任何 region 都命中。"""
+    if _is_all_region(sub_region):
+        return True
     if not event_region:
         return False
     s = sub_region.strip()
@@ -295,11 +307,14 @@ def find_hits(event: dict) -> list[dict]:
         if sub_type == "region":
             sub_region = v.get("region", "")
             if _region_matches(sub_region, event_region):
-                # 地震 + 城市級訂閱 → 加距離過濾
+                # 地震 + 城市級訂閱 → 加距離過濾（全區域不過濾）
                 if not _quake_distance_passes(event, sub_region):
                     logger.debug(f"[matcher] event={event.get('id','?')} skip {sub_region} — 距離過遠")
                     continue
-                reason = f"地區訂閱：{sub_region}"
+                if _is_all_region(sub_region):
+                    reason = f"地區訂閱：🌐 全部地區"
+                else:
+                    reason = f"地區訂閱：{sub_region}"
 
         elif sub_type == "part":
             cat = (v.get("part_category") or "").upper()

@@ -62,17 +62,33 @@ async def _ensure_user(update: Update) -> dict | None:
 
 # ─── /subscribe_region ────────────────────────────────────────────────
 
+# 全區域訂閱關鍵字（任何輸入都會被正規化為 "全部"）
+_ALL_REGION_INPUTS = {"全部", "全部地區", "全球", "*", "all", "ALL", "global"}
+
 async def cmd_region(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args, sev = _parse_severity(context.args or [])
     if not args:
         await update.message.reply_text(
             "用法：`/subscribe_region <國家或城市> [low|medium|high]`\n"
-            "例：`/subscribe_region 日本`、`/subscribe_region 台灣/新竹 high`",
+            "例：\n"
+            "  `/subscribe_region 日本`\n"
+            "  `/subscribe_region 台灣/新竹 high`\n"
+            "  `/subscribe_region 全部 high`  ← 訂全球任何事件",
             parse_mode=ParseMode.MARKDOWN,
         )
         return
 
     region = " ".join(args).strip()
+
+    # 全區域訂閱：強制門檻 ≥ medium，避免訊息洪流
+    is_all = region in _ALL_REGION_INPUTS
+    warn_msg = ""
+    if is_all:
+        region = "全部"  # 統一存「全部」
+        if sev == "low":
+            sev = "medium"
+            warn_msg = "\n⚠️ 全部地區訂閱已自動拉高門檻到 🟠 中（避免每天大量推播）"
+
     user = await _ensure_user(update)
     if not user:
         return
@@ -87,8 +103,9 @@ async def cmd_region(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if not sub:
         return
     sev_label = {"low": "🟡 低", "medium": "🟠 中", "high": "🔴 高"}[sev]
+    region_display = "🌐 全部地區（任何事件）" if is_all else f"`{region}`"
     await update.message.reply_text(
-        f"✅ 已訂閱地區 `{region}`\n門檻：{sev_label}（含以上）\n規則編號：`#{sub['id']}`",
+        f"✅ 已訂閱地區 {region_display}\n門檻：{sev_label}（含以上）\n規則編號：`#{sub['id']}`{warn_msg}",
         parse_mode=ParseMode.MARKDOWN,
     )
 

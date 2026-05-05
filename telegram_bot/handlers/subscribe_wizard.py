@@ -118,16 +118,21 @@ async def select_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 async def _show_countries(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     countries = await asyncio.to_thread(db.list_distinct_countries)
+    # 「全部地區」放在最上面 → 占整列一個按鈕
+    all_btn = InlineKeyboardButton("🌐 全部地區（任何事件都推）", callback_data="wiz:country:__all__")
     btns = [
         InlineKeyboardButton(c, callback_data=f"wiz:country:{c}")
         for c in countries
     ]
     kb = _kb_chunked(btns, cols=2)
-    rows = list(kb.inline_keyboard)
+    rows = [[all_btn]] + list(kb.inline_keyboard)  # 全部地區獨占一列在最頂端
     rows.append(_back_cancel_row(back_cb="wiz:back:type"))
     kb = InlineKeyboardMarkup(rows)
     await update.callback_query.edit_message_text(
-        "🌍 *步驟 2/4 — 選擇國家*\n\n選一個國家：",
+        "🌍 *步驟 2/4 — 選擇國家*\n\n"
+        "選擇地區範圍：\n"
+        "• 🌐 全部地區 → 全球任何事件都推（建議搭配高門檻）\n"
+        "• 單一國家 → 只推該國事件",
         reply_markup=kb,
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -138,6 +143,14 @@ async def select_country(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     query = update.callback_query
     await query.answer()
     country = query.data.split(":", 2)[2]
+
+    # 「全部地區」特例 → 跳過城市選擇直接進嚴重度
+    if country == "__all__":
+        context.user_data["country"] = "全部"
+        context.user_data["sub_value"] = {"region": "全部"}
+        context.user_data["sub_label"] = "🌐 全部地區（任何事件）"
+        return await _ask_severity(update, context)
+
     context.user_data["country"] = country
 
     cities = await asyncio.to_thread(db.list_cities_by_country, country)
@@ -320,16 +333,29 @@ async def receive_radius(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # ─── Step 3: 風險等級 ──────────────────────────────────────────────
 
 async def _ask_severity(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🟡 低（全收）",       callback_data="wiz:sev:low"),
-         InlineKeyboardButton("🟠 中（含以上）",     callback_data="wiz:sev:medium"),
-         InlineKeyboardButton("🔴 高（僅高風險）",   callback_data="wiz:sev:high")],
-        _back_cancel_row(back_cb="wiz:back:type"),
-    ])
+    # 全區域訂閱不允許 low 門檻（避免訊息洪流）
+    is_all_region = context.user_data.get("sub_value", {}).get("region") == "全部"
+
+    if is_all_region:
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🟠 中（含以上）",   callback_data="wiz:sev:medium"),
+             InlineKeyboardButton("🔴 高（僅高風險）", callback_data="wiz:sev:high")],
+            _back_cancel_row(back_cb="wiz:back:type"),
+        ])
+        warn = "\n\n⚠️ 全部地區訂閱不開放「低」門檻（每天上百筆會洗版）"
+    else:
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🟡 低（全收）",       callback_data="wiz:sev:low"),
+             InlineKeyboardButton("🟠 中（含以上）",     callback_data="wiz:sev:medium"),
+             InlineKeyboardButton("🔴 高（僅高風險）",   callback_data="wiz:sev:high")],
+            _back_cancel_row(back_cb="wiz:back:type"),
+        ])
+        warn = ""
+
     text = (
         "🚦 *步驟 3/4 — 風險等級門檻*\n\n"
         f"已選：{context.user_data.get('sub_label', '?')}\n\n"
-        "只在風險達到以下等級才推播："
+        "只在風險達到以下等級才推播：" + warn
     )
     if update.callback_query:
         await update.callback_query.edit_message_text(

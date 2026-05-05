@@ -104,7 +104,10 @@ def _format_sub_value(sub: dict) -> str:
     t = sub["type"]
     v = sub["value"] if isinstance(sub["value"], dict) else json.loads(sub["value"])
     if t == "region":
-        return f"🌍 地區：{v.get('region', '?')}"
+        r = v.get('region', '?')
+        if r in ("全部", "全部地區", "*", "all", "ALL", "全球", "global"):
+            return "🌐 地區：全部地區（任何事件）"
+        return f"🌍 地區：{r}"
     if t == "part":
         return f"📦 料件：{v.get('part_category', '?')}"
     if t == "supplier":
