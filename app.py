@@ -3409,30 +3409,33 @@ def api_risk_geopolitical():
 _STRIKE_TARGETS = [
     # ── 3C/半導體/物流相關罷工（ASUS 供應鏈相關）
     # aliases: 該公司的中英文別名（小寫），用於文章主語驗證
+    # region 用城市級 (國家/城市)，讓城市訂閱者只收自己關心的廠
+    # 例：「中國大陸/鄭州」訂閱者收富士康罷工但不收比亞迪深圳；
+    #     「中國大陸」訂閱者兩個都收（substring 匹配）。
     {"company": "三星電子",  "kw": ["三星 罷工", "Samsung strike", "Samsung workers strike"],
      "aliases": ["三星", "samsung"],
-     "lat": 37.00, "lng": 127.06, "region": "韓國", "industry": "semiconductor"},
+     "lat": 37.00, "lng": 127.06, "region": "韓國/平澤", "industry": "semiconductor"},
     {"company": "富士康",    "kw": ["富士康 罷工", "Foxconn strike", "foxconn workers"],
      "aliases": ["富士康", "鴻海", "foxconn"],
-     "lat": 34.75, "lng": 113.62, "region": "中國", "industry": "electronics"},
+     "lat": 34.75, "lng": 113.62, "region": "中國大陸/鄭州", "industry": "electronics"},
     {"company": "SK海力士",  "kw": ["SK Hynix strike", "SK海力士 罷工"],
      "aliases": ["sk海力士", "海力士", "sk hynix", "hynix"],
-     "lat": 37.27, "lng": 127.44,  "region": "韓國", "industry": "semiconductor"},
+     "lat": 37.27, "lng": 127.44, "region": "韓國/利川", "industry": "semiconductor"},
     {"company": "LG",        "kw": ["LG strike", "LG 罷工"],
      "aliases": ["lg電子", "lg "],  # 加空格避免誤匹配 "lgbt" 等
-     "lat": 37.52, "lng": 126.89,  "region": "韓國", "industry": "electronics"},
+     "lat": 37.52, "lng": 126.89, "region": "韓國/首爾", "industry": "electronics"},
     {"company": "比亞迪",    "kw": ["比亞迪 罷工", "BYD strike", "BYD workers"],
      "aliases": ["比亞迪", "byd"],
-     "lat": 22.58, "lng": 114.09,  "region": "中國", "industry": "battery_ev"},
+     "lat": 22.58, "lng": 114.09, "region": "中國大陸/深圳", "industry": "battery_ev"},
     {"company": "台積電",    "kw": ["台積電 罷工", "TSMC strike", "TSMC workers"],
      "aliases": ["台積電", "tsmc"],
-     "lat": 24.82, "lng": 120.97,  "region": "台灣", "industry": "semiconductor"},
+     "lat": 24.82, "lng": 120.97, "region": "台灣/新竹", "industry": "semiconductor"},
     {"company": "聯發科",    "kw": ["聯發科 罷工", "MediaTek strike", "MediaTek workers"],
      "aliases": ["聯發科", "mediatek"],
-     "lat": 24.96, "lng": 121.19,  "region": "台灣", "industry": "semiconductor"},
+     "lat": 24.96, "lng": 121.19, "region": "台灣/新北", "industry": "semiconductor"},
     {"company": "UPS",       "kw": ["UPS strike", "UPS workers walkout"],
      "aliases": ["ups "],
-     "lat": 33.75, "lng": -84.39,  "region": "美國", "industry": "logistics"},
+     "lat": 33.75, "lng": -84.39, "region": "美國/亞特蘭大", "industry": "logistics"},
 ]
 
 _strike_cache: dict = {"data": [], "ts": 0.0}  # Force empty on startup + immediate refresh
@@ -3496,29 +3499,66 @@ def _scan_one_strike(target, headers, cutoff):
                                 continue
 
                             # === 公司主語驗證（避免新聞只順帶提及目標公司）===
-                            # 對每個「罷工」關鍵字位置，檢查鄰近窗口內是否有目標公司別名。
-                            # 中文窗口較小（12 字），因為中文標題訊息密度高；
-                            # 英文窗口較大（30 字），因為英文「strike」前後常隔著 workers/at/in 等詞。
-                            # 例：「SK海力士Q1利潤增4倍創新高 三星因獎金爭議陷罷工危機」
-                            #     "罷工" 鄰近 12 字內只有「三星」，沒有海力士別名 → 排除。
+                            # 中文：subject 通常在動詞前 → 公司名要在「罷工」前 8 字內
+                            # （後窗只開 2 字，給「罷工的 X 公司」這種少見句型保留）
+                            # 英文：較寬鬆 30 字前後（英文 subject/object 順序更彈性）
+                            #
+                            # 例 A：「三星罷工陰影籠罩 海力士有望坐穩股王」
+                            #   罷工前 8 字 = "...三星" → Samsung match ✓ 正確
+                            #   海力士 in 罷工 後 13 字 → 不在窗口 → SK Hynix not match ✓ 正確排除
+                            # 例 B：「SK海力士Q1利潤增4倍 三星因獎金爭議陷罷工」
+                            #   罷工前 8 字 = "...陷" → 海力士不在窗口 → 排除 ✓
                             strike_kws_short = ["罷工", "工潮", "strike", "walkout", "walk out"]
                             aliases = target.get("aliases", [target["company"].lower()])
 
                             def _is_cn(s):
                                 return any('一' <= c <= '鿿' for c in s)
 
+                            # 主語驗證演算法：
+                            #   1. 找到罷工/strike 的位置 p
+                            #   2. 對每個公司 alias，找到它的位置 a
+                            #   3. 檢查 alias 跟 sk 之間是否有句讀邊界（，。；！？換行）
+                            #      → 有邊界 = 不同子句 = 不算主語
+                            #   4. 檢查距離（alias→sk 不超過 win，sk→alias 不超過 small win）
+                            BOUNDARY_CHARS = '，。；！？\n'
+
                             def _subject_match(text):
                                 for sk in strike_kws_short:
-                                    win = 12 if _is_cn(sk) else 30
-                                    idx = 0
+                                    is_cn = _is_cn(sk)
+                                    # 距離窗口：中文較緊（句法緊湊），英文寬鬆
+                                    if is_cn:
+                                        max_before, max_after = 14, 2
+                                    else:
+                                        max_before, max_after = 50, 30
+
+                                    p_idx = 0
                                     while True:
-                                        p = text.find(sk, idx)
+                                        p = text.find(sk, p_idx)
                                         if p < 0:
                                             break
-                                        window_text = text[max(0, p - win): p + len(sk) + win]
-                                        if any(a in window_text for a in aliases):
-                                            return True
-                                        idx = p + 1
+                                        for alias in aliases:
+                                            a_idx = 0
+                                            while True:
+                                                a_p = text.find(alias, a_idx)
+                                                if a_p < 0:
+                                                    break
+                                                a_end = a_p + len(alias)
+                                                if a_end <= p:
+                                                    # alias 在 sk 之前
+                                                    gap = p - a_end
+                                                    between = text[a_end:p]
+                                                    no_boundary = not any(b in between for b in BOUNDARY_CHARS)
+                                                    if no_boundary and gap <= max_before:
+                                                        return True
+                                                elif a_p >= p + len(sk):
+                                                    # alias 在 sk 之後
+                                                    gap = a_p - (p + len(sk))
+                                                    between = text[p + len(sk):a_p]
+                                                    no_boundary = not any(b in between for b in BOUNDARY_CHARS)
+                                                    if no_boundary and gap <= max_after:
+                                                        return True
+                                                a_idx = a_p + 1
+                                        p_idx = p + 1
                                 return False
 
                             if not _subject_match(full_text):

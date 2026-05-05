@@ -6,6 +6,48 @@
     "lng": 114.3
   },
   {
+    "region": "中國大陸/深圳",
+    "part_category": "BATTERY、COMMUNICATION、CONN、DISPLAY、PCB、SYS MODULE",
+    "lat": 22.54,
+    "lng": 114.06
+  },
+  {
+    "region": "中國大陸/上海",
+    "part_category": "IC、MEMORY、SEMICONDUCTOR、I/O MODULE",
+    "lat": 31.23,
+    "lng": 121.47
+  },
+  {
+    "region": "中國大陸/鄭州",
+    "part_category": "ASSEMBLY、SYS MODULE、CABLE",
+    "lat": 34.75,
+    "lng": 113.62
+  },
+  {
+    "region": "中國大陸/蘇州",
+    "part_category": "PCB、CONN、IC、MECHANICAL",
+    "lat": 31.30,
+    "lng": 120.59
+  },
+  {
+    "region": "中國大陸/昆山",
+    "part_category": "PCB、CONN、SYS MODULE",
+    "lat": 31.39,
+    "lng": 121.16
+  },
+  {
+    "region": "中國大陸/廣州",
+    "part_category": "BATTERY、COMMUNICATION、DISPLAY",
+    "lat": 23.13,
+    "lng": 113.26
+  },
+  {
+    "region": "中國大陸/北京",
+    "part_category": "IC、SEMICONDUCTOR、COMMUNICATION",
+    "lat": 39.90,
+    "lng": 116.40
+  },
+  {
     "region": "印度尼西亞",
     "part_category": "CABLE",
     "lat": -6.21,
