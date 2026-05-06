@@ -3263,15 +3263,25 @@ _DISASTER_RISKS: list = []
 # 升級關鍵字：標題含這些詞才視為「真實升溫」事件 → 拉高到原 impact
 # 否則只是常態緊張 → 降一級成 MED（地圖顯示但不視為急迫事件）
 _GEO_ESCALATION_KW = [
-    # 中文
-    "升級", "升高", "封鎖", "包圍", "圍島", "圍台", "圍困", "實彈",
-    "開火", "開戰", "宣戰", "侵略", "入侵", "侵犯", "犯台",
-    "衝突", "交火", "擦槍走火", "危機升溫", "緊張升溫", "公然挑釁",
-    "飛彈攻擊", "炸彈攻擊", "突襲", "逾越", "突破封鎖",
-    # 英文
-    "blockade", "invade", "invasion", "encroach", "incursion",
-    "clash", "fire ", "fired", "missile", "attack", "strike",
-    "escalat", "war declar", "crisis", "raid",
+    # === 中文：要求具體軍事行動，避免「升級/演習/衝突」等泛詞誤觸 ===
+    "開火", "交火", "開戰", "宣戰", "戰爭爆發", "戰火爆發",
+    "擦槍走火", "公然挑釁",
+    "飛彈攻擊", "炸彈攻擊", "武力攻擊", "空襲",
+    "軍事衝突", "武裝衝突", "邊境衝突", "邊境交火",
+    "犯台", "犯境", "侵略", "入侵",
+    "海上封鎖", "貿易封鎖", "全面封鎖", "突破封鎖",
+    # === 英文：使用多字組合，避免單字（attack/strike/crisis/raid/fire/missile）泛濫 ===
+    "open fire", "opened fire", "opens fire",
+    "exchanged fire", "exchanges fire", "exchange of fire",
+    "fired upon", "shots fired",
+    "missile strike", "missile attack", "missile struck",
+    "air strike", "airstrike", "air raid",
+    "armed clash", "armed conflict", "military clash",
+    "naval blockade", "blockade imposed",
+    "invasion of", "invading forces",
+    "war declared", "declares war",
+    "act of war",
+    "killed in attack", "casualties reported",
 ]
 
 _GEO_RISKS = [
