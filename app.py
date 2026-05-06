@@ -3260,36 +3260,57 @@ _geo_risk_lock  = threading.Lock()
 # 之前用新聞 scrape 重複偵測這些事件，標題/規模/座標都寫死，不準且跟官方 feed 衝突。
 _DISASTER_RISKS: list = []
 
+# 升級關鍵字：標題含這些詞才視為「真實升溫」事件 → 拉高到原 impact
+# 否則只是常態緊張 → 降一級成 MED（地圖顯示但不視為急迫事件）
+_GEO_ESCALATION_KW = [
+    # 中文
+    "升級", "升高", "封鎖", "包圍", "圍島", "圍台", "圍困", "實彈",
+    "開火", "開戰", "宣戰", "侵略", "入侵", "侵犯", "犯台",
+    "衝突", "交火", "擦槍走火", "危機升溫", "緊張升溫", "公然挑釁",
+    "飛彈攻擊", "炸彈攻擊", "突襲", "逾越", "突破封鎖",
+    # 英文
+    "blockade", "invade", "invasion", "encroach", "incursion",
+    "clash", "fire ", "fired", "missile", "attack", "strike",
+    "escalat", "war declar", "crisis", "raid",
+]
+
 _GEO_RISKS = [
     {"id":"geo-redsea",  "kw":["Houthi Red Sea ship attack","Red Sea shipping attack"],
      "title":"紅海航運威脅（胡塞武裝）","type":"war","lat":14.5,"lng":42.5,"region":"葉門/紅海",
      "impact":"CRITICAL","supply":"亞歐航程延長10-14天，運費上漲200-400%，建議改走好望角或提前備貨",
-     "affected_materials":["晶片","電子產品","汽車零件"],"shipping_routes":["蘇伊士運河","紅海","亞歐航線"]},
+     "affected_materials":["晶片","電子產品","汽車零件"],"shipping_routes":["蘇伊士運河","紅海","亞歐航線"],
+     "needs_escalation": True},  # 紅海有持續低度威脅，要升級關鍵字才升 CRITICAL
     {"id":"geo-taiwan",  "kw":["PLA Taiwan Strait military","China Taiwan military exercise"],
      "title":"台灣海峽地緣緊張","type":"war","lat":24.0,"lng":122.0,"region":"東亞",
      "impact":"HIGH","supply":"全球半導體（TSMC等）供應鏈最高風險區",
-     "affected_materials":["晶片","半導體","記憶體"],"shipping_routes":["台灣海峽","東北亞航線"]},
+     "affected_materials":["晶片","半導體","記憶體"],"shipping_routes":["台灣海峽","東北亞航線"],
+     "needs_escalation": True},  # 台海軍事活動是日常新聞，要升級關鍵字才升 HIGH
     {"id":"geo-iran",    "kw":["Iran Israel attack war","Iran US military strike","Iran attack Israel"],
      "title":"伊朗地區衝突","type":"war","lat":32.0,"lng":53.0,"region":"中東/波斯灣",
      "impact":"HIGH","supply":"荷姆茲海峽石油供應威脅，波斯灣航運風險",
-     "affected_materials":["石油","天然氣","化工品"],"shipping_routes":["荷姆茲海峽","波斯灣","中東航線"]},
+     "affected_materials":["石油","天然氣","化工品"],"shipping_routes":["荷姆茲海峽","波斯灣","中東航線"],
+     "needs_escalation": True},
     {"id":"geo-ukraine", "kw":["Ukraine Russia war attack","Russia Ukraine missile"],
      "title":"俄烏戰爭","type":"war","lat":49.0,"lng":32.0,"region":"東歐",
      "impact":"CRITICAL","supply":"穀物、化肥、氖氣供應中斷；黑海航運受限",
-     "affected_materials":["氖氣","鈀","穀物","化肥"],"shipping_routes":["黑海","烏克蘭港口","歐亞航線"]},
+     "affected_materials":["氖氣","鈀","穀物","化肥"],"shipping_routes":["黑海","烏克蘭港口","歐亞航線"],
+     "needs_escalation": False},  # 俄烏戰爭是 active war，所有相關報導都是事件
     {"id":"geo-drc",     "kw":["DRC Congo M23 conflict cobalt","Congo mineral conflict"],
      "title":"剛果衝突（礦產風險）","type":"war","lat":-1.5,"lng":29.0,"region":"中非",
      "impact":"HIGH","supply":"鈷、鋰等電池礦產供應不穩定",
-     "affected_materials":["鈷","鋰","銅礦"],"shipping_routes":["中非港口","非洲航線"]},
+     "affected_materials":["鈷","鋰","銅礦"],"shipping_routes":["中非港口","非洲航線"],
+     "needs_escalation": True},
     {"id":"geo-myanmar", "kw":["Myanmar civil war military","Myanmar junta conflict"],
      "title":"緬甸內戰","type":"war","lat":19.8,"lng":96.2,"region":"東南亞",
      "impact":"HIGH","supply":"稀土、天然氣出口受阻；紡織供應鏈中斷",
-     "affected_materials":["稀土","天然氣","紡織品"],"shipping_routes":["馬六甲海峽","仰光港"]},
+     "affected_materials":["稀土","天然氣","紡織品"],"shipping_routes":["馬六甲海峽","仰光港"],
+     "needs_escalation": True},
     {"id":"geo-india-pak",
      "kw":["India Pakistan military tension border","India Pakistan conflict"],
      "title":"印巴邊境緊張","type":"war","lat":30.0,"lng":71.0,"region":"南亞",
      "impact":"MED","supply":"南亞製造業（電子/紡織）物流中斷風險",
-     "affected_materials":["紡織品","電子零件"],"shipping_routes":["南亞港口","阿拉伯海"]},
+     "affected_materials":["紡織品","電子零件"],"shipping_routes":["南亞港口","阿拉伯海"],
+     "needs_escalation": True},
 ]
 
 def _scan_one_geo_risk(risk, headers, cutoff):
@@ -3301,6 +3322,8 @@ def _scan_one_geo_risk(risk, headers, cutoff):
     from email.utils import parsedate_to_datetime
     latest_article = None
     latest_date = None
+    has_escalation = False  # 是否有任何文章標題含「升級關鍵字」
+    needs_escalation = risk.get("needs_escalation", False)
     for kw in risk["kw"]:
         for attempt in range(3):
             try:
@@ -3322,11 +3345,18 @@ def _scan_one_geo_risk(risk, headers, cutoff):
                 logger.info(f"[GEO] {risk['title']} + '{kw}': {len(items)} items (status {r.status_code})")
                 for item in items:
                     pub = item.findtext('pubDate', '')
+                    title = (item.findtext('title') or '').lower()
                     try:
                         dt = parsedate_to_datetime(pub)
                         if dt >= cutoff:
                             found_date = str(dt.date())
-                            logger.info(f"[GEO] ✓ {risk['title']}: found recent article")
+                            # 檢查標題是否含「升級關鍵字」（真實升溫 vs 日常背景緊張）
+                            this_escalated = any(k.lower() in title for k in _GEO_ESCALATION_KW)
+                            if this_escalated:
+                                has_escalation = True
+                                logger.info(f"[GEO] 🚨 {risk['title']}: ESCALATION article — '{title[:60]}'")
+                            else:
+                                logger.info(f"[GEO] ✓ {risk['title']}: routine article — '{title[:60]}'")
                             # Keep track of latest article across all keywords
                             if latest_date is None or dt > latest_date:
                                 latest_date = dt
@@ -3343,13 +3373,28 @@ def _scan_one_geo_risk(risk, headers, cutoff):
     if not latest_article:
         logger.info(f"[GEO] ✗ {risk['title']}: no matching articles within 8 weeks")
         return None
+
+    # impact 計算：
+    #   needs_escalation=True 的（台海/紅海/伊朗/緬甸/印巴等慢性緊張）：
+    #     沒升級關鍵字 → 降一級到 MED；有升級 → 用原 impact
+    #   needs_escalation=False（俄烏戰爭，所有相關報導都算）：
+    #     永遠用原 impact
+    final_impact = risk["impact"]
+    title_suffix = ""
+    if needs_escalation and not has_escalation:
+        final_impact = "MED"
+        title_suffix = "（持續關注）"
+    elif needs_escalation and has_escalation:
+        title_suffix = "（升級事件）"
+
     from urllib.parse import quote as _q
     return {
         "id": risk["id"], "type": risk["type"],
-        "title": risk["title"], "lat": risk["lat"], "lng": risk["lng"],
-        "region": risk["region"], "impact": risk["impact"],
+        "title": risk["title"] + title_suffix, "lat": risk["lat"], "lng": risk["lng"],
+        "region": risk["region"], "impact": final_impact,
         "supply": risk["supply"],
-        "time": latest_article, "status": "新聞持續報導中",
+        "time": latest_article,
+        "status": "升溫事件" if has_escalation else "新聞持續報導中",
         "source": "Bing News自動監測",
         "sourceUrl": f"https://www.bing.com/news/search?q={_q(risk['kw'][0])}",
     }
