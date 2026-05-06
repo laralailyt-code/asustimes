@@ -203,6 +203,10 @@ def translate_to_chinese(title: str, summary: str = "") -> tuple[str, str]:
 def classify_category(title: str, summary: str = "", hint: str = "") -> str | None:
     """Return matched category, or None if no tech keyword matches at all.
     Supply chain risks (strike, typhoon, earthquake, flood) are NEVER dropped.
+
+    嚴格模式（2026-05-06 起）：標題/摘要必須有任一 CATEGORY_KEYWORDS 命中
+    才會被分類，否則一律 drop。不再用 RSS feed 的 hint 當 fallback —
+    避免「technews.tw 整個 feed hint=AI 產業」造成生物/醫療文被誤分到 AI。
     """
     text = f"{title} {summary}"   # hint excluded from scoring to avoid bias
     text_lower = text.lower()
@@ -217,18 +221,13 @@ def classify_category(title: str, summary: str = "", hint: str = "") -> str | No
     if scores[best] > 0:
         return best
 
-    # Check if this is a supply chain risk (never filter out)
+    # Supply chain risks (颱風/地震/罷工/洪水) 即使沒命中 tech 關鍵字也保留
     for risk_type, risk_kws in _SUPPLY_CHAIN_RISK_KEYWORDS.items():
         if any(rk.lower() in text_lower for rk in risk_kws):
-            return "供應鏈/關稅"  # Classify as supply chain even without tech keywords
+            return "供應鏈/關稅"
 
-    # No tech keyword hit → check blocklist
-    for word in NON_TECH_SIGNALS:
-        if word in text:
-            return None  # drop
-
-    # Ambiguous: use hint as fallback category, or drop
-    return hint if hint else None
+    # 沒命中任何關鍵字 → 一律 drop（不再用 hint fallback，避免 source-bias 誤分類）
+    return None
 
 
 def clean(text: str) -> str:
