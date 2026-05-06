@@ -2934,8 +2934,8 @@ async function _checkDirectImpacts() {
 
 function _evalSupplierRisk() {
   // Impact → single-event risk status (matches event color indicators)
-  // CRITICAL=🔴danger, HIGH=🟠watch, MED=🟡watch, LOW=safe
-  const _impactStatus = { CRITICAL:'danger', HIGH:'watch', MED:'watch', LOW:'safe' };
+  // CRITICAL=🔴danger, HIGH=🟠watch, MED/LOW=safe（持續關注事件不標黃供應商）
+  const _impactStatus = { CRITICAL:'danger', HIGH:'watch', MED:'safe', LOW:'safe' };
 
   // 供應商風險評估時間窗：
   //   地震 (quake)：發生後 3 天內才視為對供應商有實質風險（觀察期；超過後解除）
@@ -2977,7 +2977,7 @@ function _evalSupplierRisk() {
       } else if (hasHigh) {
         sup.riskStatus = 'danger'; // HIGH + 任何其他事件 → 加權升為紅燈
       } else {
-        sup.riskStatus = 'watch';
+        sup.riskStatus = 'safe'; // 全部都是 MED/LOW（持續關注）→ 不標黃
       }
     }
     sup.nearbyEvents = alerts;
