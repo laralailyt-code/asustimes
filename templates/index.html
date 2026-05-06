@@ -497,8 +497,8 @@
   .recard-title { font-size: 0.82rem; font-weight: 500; color: var(--text-primary); flex: 1; line-height: 1.4; }
   .re-badge { font-size: 0.65rem; font-weight: 700; padding: 2px 6px; border-radius: 3px; white-space: nowrap; flex-shrink: 0; }
   .re-CRITICAL { background: rgba(239,68,68,0.2);  color: #ef4444; border: 1px solid rgba(239,68,68,0.4); }
-  .re-HIGH     { background: rgba(251,146,60,0.2);  color: #fb923c; border: 1px solid rgba(251,146,60,0.4); }
-  .re-MED      { background: rgba(250,204,21,0.15); color: #ca8a04; border: 1px solid rgba(250,204,21,0.35); }
+  .re-HIGH     { background: rgba(234,179,8,0.18);  color: #ca8a04; border: 1px solid rgba(234,179,8,0.42); }
+  .re-MED      { background: rgba(34,197,94,0.12);  color: #16a34a; border: 1px solid rgba(34,197,94,0.3); }
   .re-LOW      { background: rgba(34,197,94,0.12);  color: #16a34a; border: 1px solid rgba(34,197,94,0.3); }
   .recard-meta { font-size: 0.72rem; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 5px; }
   /* Supplier cards */
@@ -510,19 +510,19 @@
   .rscore-row-btn:hover { background: var(--bg-card-hover); }
   .sup-stat-val { font-size: 1.05rem; font-weight: 700; color: var(--text-primary); }
   .sup-stat-val.sv-danger { color: #ef4444; }
-  .sup-stat-val.sv-warn   { color: #fb923c; }
+  .sup-stat-val.sv-warn   { color: #ca8a04; }
   .sup-stat-lbl { font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
   .scard-v2 { margin: 3px 8px; padding: 7px 9px 7px 11px; border-radius: 6px; border: 1px solid var(--border); position: relative; overflow: hidden; transition: border-color 0.15s, background 0.15s, transform 0.1s; cursor: pointer; }
   .scard-v2::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
   .scard-v2.sc-safe::before   { background: #22c55e; }
-  .scard-v2.sc-watch::before  { background: #fb923c; }
+  .scard-v2.sc-watch::before  { background: #ca8a04; }
   .scard-v2.sc-danger::before { background: #ef4444; }
   .scard-v2:hover { border-color: var(--border-hover); background: var(--bg-card-hover); transform: translateX(2px); }
   .scard-v2-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
   .scard-v2-name { font-size: 0.82rem; font-weight: 500; color: var(--text-primary); }
   .sc-badge { font-size: 0.65rem; font-weight: 700; padding: 2px 6px; border-radius: 3px; }
   .scb-safe   { background: rgba(34,197,94,0.12);  color: #16a34a; border: 1px solid rgba(34,197,94,0.3); }
-  .scb-watch  { background: rgba(251,146,60,0.2);  color: #fb923c; border: 1px solid rgba(251,146,60,0.4); }
+  .scb-watch  { background: rgba(234,179,8,0.18);  color: #ca8a04; border: 1px solid rgba(234,179,8,0.42); }
   .scb-danger { background: rgba(239,68,68,0.2);   color: #ef4444; border: 1px solid rgba(239,68,68,0.4); }
   .scard-v2-sub { font-size: 0.72rem; color: var(--text-muted); }
   .scard-v2-alerts { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 3px; }
@@ -535,12 +535,12 @@
   .rscore-lbl { color: var(--text-secondary); font-weight: 500; }
   .rscore-val { font-weight: 700; }
   .rscore-val.lv-high { color: #ef4444; }
-  .rscore-val.lv-med  { color: #fb923c; }
+  .rscore-val.lv-med  { color: #ca8a04; }
   .rscore-val.lv-low  { color: #22c55e; }
   .rscore-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
   .rscore-fill { height: 100%; border-radius: 2px; transition: width 0.8s ease; }
   .rscore-fill.lv-high { background: linear-gradient(90deg, #ef4444, #f87171); }
-  .rscore-fill.lv-med  { background: linear-gradient(90deg, #fb923c, #fdba74); }
+  .rscore-fill.lv-med  { background: linear-gradient(90deg, #ca8a04, #facc15); }
   .rscore-fill.lv-low  { background: linear-gradient(90deg, #22c55e, #86efac); }
   /* Map area */
   .risk-map-area { flex: 1; position: relative; overflow: hidden; }
@@ -1193,12 +1193,14 @@
       </div>
 
       <div style="margin-bottom: 0.8rem;">
-        <strong style="font-size: 0.92rem;">🚦 供應商紅綠燈判斷（與事件清單分開）</strong>
+        <strong style="font-size: 0.92rem;">🚦 供應商紅黃綠燈判斷</strong>
         <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.4rem; line-height: 1.6;">
-          地震：發生後 <strong>3 天觀察期</strong>內才把附近供應商標紅，過後自動解除<br>
-          颱風：NOAA 標記 active 期間<br>
-          洪水：GDACS 警戒 3 天內<br>
-          ⓘ 即使供應商已恢復綠燈，事件本身仍保留在地圖上供回顧
+          <span style="color:#ef4444;font-weight:700">🔴 高風險</span>：附近發生 CRITICAL 級事件（戰爭、大地震、嚴重災害）→ 立即影響<br>
+          <span style="color:#ca8a04;font-weight:700">🟡 監控中</span>：位於 HIGH 級事件（罷工、中型地震、地緣升級）400km 內 → 密切觀察<br>
+          <span style="color:#16a34a;font-weight:700">🟢 安全</span>：無事件 / 持續關注（MED）事件不染色<br>
+          <br>
+          時間窗：地震 <strong>3 天觀察期</strong>後自動解除；颱風 NOAA 標記 active 期間；洪水 GDACS 警戒 3 天內<br>
+          ⓘ 即使供應商恢復綠燈，事件仍保留在地圖上 8 週供回顧
         </div>
       </div>
 
@@ -2430,7 +2432,7 @@ const _RISK_COLORS = { quake:'#ef4444', typhoon:'#38bdf8', flood:'#22d3ee', war:
 function _filterKey(type) { return ['quake','typhoon','flood'].includes(type) ? 'disaster' : type; }
 function _eventVisible(e) { return _RS.filters[_filterKey(e.type)] !== false; }
 const _RISK_RADIUS = { CRITICAL:700, HIGH:400, MED:200, LOW:100 };
-const _IMPACT_ZH   = { CRITICAL:'🔴紅', HIGH:'🟠橙', MED:'🟡黃', LOW:'🟢綠' };
+const _IMPACT_ZH   = { CRITICAL:'🔴紅', HIGH:'🟡黃', MED:'🟢綠', LOW:'🟢綠' };
 
 // Region bounds for flyToBounds
 const _REGION_BOUNDS = {
@@ -2566,7 +2568,7 @@ function _makeRiskIcon(ev) {
 }
 
 function _makeSupIcon(s) {
-  const clr = { safe:'#22c55e', watch:'#fb923c', danger:'#ef4444' }[s.riskStatus] || '#888';
+  const clr = { safe:'#22c55e', watch:'#ca8a04', danger:'#ef4444' }[s.riskStatus] || '#888';
   const rip = s.riskStatus!=='safe' ? `<div style="position:absolute;top:50%;left:50%;width:26px;height:26px;border-radius:50%;border:1.5px solid ${clr};animation:riskRipple 2.5s ease-out infinite"></div>` : '';
   return L.divIcon({ className:'',
     html:`<div style="position:relative;width:28px;height:28px;display:flex;align-items:center;justify-content:center">${rip}<div style="background:${clr}28;border:1.5px solid ${clr};border-radius:4px;padding:2px 4px;font-size:11px;line-height:1">🏭</div></div>`,
@@ -2599,8 +2601,8 @@ function _eventPopup(ev) {
 }
 
 function _supPopup(s) {
-  const clr = { safe:'#22c55e', watch:'#fb923c', danger:'#ef4444' }[s.riskStatus];
-  const sl  = { safe:'✅ 安全', watch:'⚠️ 監控中', danger:'🚨 高風險' }[s.riskStatus];
+  const clr = { safe:'#22c55e', watch:'#ca8a04', danger:'#ef4444' }[s.riskStatus];
+  const sl  = { safe:'🟢 安全', watch:'🟡 監控中', danger:'🔴 高風險' }[s.riskStatus];
   const alerts = (s.nearbyEvents||[]).slice(0,3).map(a=>`<div style="font-size:0.63rem;color:#ef4444;margin-top:2px">${a}</div>`).join('');
   return `<div class="rmap-popup"><div class="rmap-popup-type" style="color:${clr}">供應商</div><div class="rmap-popup-title">📍 ${s.region}</div><div class="rmap-popup-rows"><div class="rmap-popup-row"><span class="pk">料件</span><span class="pv">${s.part_category||'—'}</span></div>${s.tier?`<div class="rmap-popup-row"><span class="pk">重要性</span><span class="pv">${s.tier}</span></div>`:''}<div class="rmap-popup-row"><span class="pk">風險</span><span class="pv" style="color:${clr}">${sl}</span></div></div>${alerts}</div>`;
 }
@@ -2782,7 +2784,7 @@ function _renderSupList() {
     <div class="scard-v2 sc-${s.riskStatus}" onclick="${s.lat?`focusSupplierRisk(${s._idx})`:''}">
       <div class="scard-v2-top">
         <div class="scard-v2-name">📍 ${esc(s.region)}</div>
-        <span class="sc-badge ${s.riskStatus==='danger'?'scb-danger':s.riskStatus==='watch'?'scb-watch':'scb-safe'}">${s.riskStatus==='danger'?'🚨 高風險':s.riskStatus==='watch'?'⚠️ 監控中':'✅ 安全'}</span>
+        <span class="sc-badge ${s.riskStatus==='danger'?'scb-danger':s.riskStatus==='watch'?'scb-watch':'scb-safe'}">${s.riskStatus==='danger'?'🔴 高風險':s.riskStatus==='watch'?'🟡 監控中':'🟢 安全'}</span>
       </div>
       <div class="scard-v2-sub">🔩 ${esc(s.part_category||'—')}${s.tier?` · ${esc(s.tier)}`:''}</div>
       ${(s.nearbyEvents||[]).length ? `<div class="scard-v2-alerts" style="border-top:1px solid var(--border);padding-top:4px;margin-top:4px">${(s.riskStatus==='danger'?'<div style="font-size:0.6rem;color:var(--text-muted);margin-bottom:3px">❌ 風險來源：</div>':'')}<div style="display:flex;flex-direction:column;gap:2px">${s.nearbyEvents.slice(0,3).map(a=>`<span class="sc-alert-tag" style="font-size:0.62rem">${esc(a)}</span>`).join('')}</div></div>` : '<div style="font-size:0.6rem;color:var(--text-muted);margin-top:4px">✅ 周邊無近期風險事件</div>'}
@@ -2880,7 +2882,7 @@ function _renderRiskIndex() {
   supB.innerHTML = `
     <div style="display:flex;gap:8px;text-align:center;padding:0.2rem 0">
       <div style="flex:1"><div style="font-size:1.5rem;font-weight:700;color:#ef4444">${danger}</div><div style="font-size:0.6rem;color:var(--text-muted)">高風險</div></div>
-      <div style="flex:1"><div style="font-size:1.5rem;font-weight:700;color:#fb923c">${watch}</div><div style="font-size:0.6rem;color:var(--text-muted)">監控中</div></div>
+      <div style="flex:1"><div style="font-size:1.5rem;font-weight:700;color:#ca8a04">${watch}</div><div style="font-size:0.6rem;color:var(--text-muted)">監控中</div></div>
       <div style="flex:1"><div style="font-size:1.5rem;font-weight:700;color:#22c55e">${safe}</div><div style="font-size:0.6rem;color:var(--text-muted)">安全</div></div>
     </div>
     <div style="font-size:0.62rem;color:var(--text-muted);margin-top:4px;border-top:1px solid var(--border);padding-top:4px">
@@ -2934,7 +2936,7 @@ async function _checkDirectImpacts() {
 
 function _evalSupplierRisk() {
   // Impact → single-event risk status (matches event color indicators)
-  // CRITICAL=🔴danger, HIGH=🟠watch, MED/LOW=safe（持續關注事件不標黃供應商）
+  // 三級紅黃綠：CRITICAL=🔴 高風險，HIGH=🟡 監控中，MED/LOW=🟢 安全（持續關注事件不染色）
   const _impactStatus = { CRITICAL:'danger', HIGH:'watch', MED:'safe', LOW:'safe' };
 
   // 供應商風險評估時間窗：
