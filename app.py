@@ -1229,6 +1229,59 @@ def _fetch_te_price(slug: str) -> float | None:
     return None
 
 
+def _fetch_cnyes_futures_history(
+    code: str,
+    referer: str,
+    min_price: float,
+    max_price: float,
+    label: str,
+) -> list[tuple[str, float]]:
+    """Fetch full daily commodity history from cnyes ChartSource JSONP.
+    Used by 鈀 (PA) and other cnyes futures series."""
+    import re as _re
+    try:
+        url = (
+            "https://www.cnyes.com/futures/highChart/ChartSource.aspx"
+            f"?type=futures&source=javachart&code={code}"
+        )
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": referer,
+        }
+        r = req_lib.get(url, headers=headers, timeout=15)
+        if r.status_code != 200:
+            return []
+        text = r.text.strip()
+        m = _re.match(r"^\((.*?)\)\s*;?\s*$", text, _re.DOTALL)
+        if not m:
+            logger.warning(f"cnyes {label} unexpected response: {text[:120]}")
+            return []
+        import json as _json
+        raw = _json.loads(m.group(1))
+        out: list[tuple[str, float]] = []
+        for ts_ms, val in raw:
+            d = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+            v = float(val)
+            if min_price < v < max_price:
+                out.append((d, round(v, 2)))
+        out.sort(key=lambda x: x[0])
+        return out
+    except Exception as e:
+        logger.warning(f"cnyes {label} fetch failed: {e}")
+        return []
+
+
+def _fetch_cnyes_palladium_history() -> list[tuple[str, float]]:
+    """Fetch full daily palladium spot history from cnyes (鉅亨網 PA)."""
+    return _fetch_cnyes_futures_history(
+        code="PA",
+        referer="https://www.cnyes.com/futures/html5chart/PA.html",
+        min_price=100,
+        max_price=10000,
+        label="palladium",
+    )
+
+
 def _fetch_cnyes_cobalt_history() -> list[tuple[str, float]]:
     """Fetch full daily cobalt LME history from cnyes (鉅亨網).
 
@@ -1979,6 +2032,25 @@ def _refresh_live_prices():
     else:
         logger.warning("cnyes cobalt fetch failed; preserving cached cobalt history")
 
+    # Palladium — cnyes 鉅亨網 PA daily history (USD/oz, merged with cache)
+    logger.info("[REFRESH] Starting Palladium (cnyes PA)...")
+    palladium_name = "鈀 (palladium) US$/盎司"
+    palladium_history = _fetch_cnyes_palladium_history()
+    if palladium_history:
+        with _live_cache_lock:
+            prev = list(_live_commodity_cache.get(palladium_name, []))
+        cnyes_dates = {d for d, _ in palladium_history}
+        merged = [p for p in prev if p[0] not in cnyes_dates] + palladium_history
+        merged.sort(key=lambda x: x[0])
+        fresh[palladium_name] = merged
+        sources[palladium_name] = {
+            "label": "鉅亨網 cnyes (鈀金現貨 PA)",
+            "url":   "https://www.cnyes.com/futures/html5chart/PA.html",
+        }
+        logger.info(f"cnyes palladium: {palladium_name} = {palladium_history[-1][1]} ({len(palladium_history)} pts, latest {palladium_history[-1][0]})")
+    else:
+        logger.warning("cnyes palladium fetch failed; preserving cached palladium history")
+
     logger.info("[REFRESH] Starting Yellow Phosphorus (SCI99 only)...")
     yp_name = "黃磷 CNY$/tonne"
     with _live_cache_lock:
@@ -2180,7 +2252,7 @@ _COMMODITY_CSV = os.path.join(os.path.dirname(__file__), "2026 Raw material tren
 # Category mapping for each item
 _COMMODITY_CATEGORIES = {
     "金屬": ["銅", "錫", "鋁", "鎳", "鋅", "鈷", "鋰", "鎢"],
-    "貴金屬": ["金", "銀"],
+    "貴金屬": ["金", "銀", "鈀"],
     "能源": ["石油 西德州", "石油 北海布蘭特"],
     "原物料": ["黃磷", "ABS聚合物", "PC塑料 (SABIC)", "PC/ABS塑料", "NOREXECO 長纖紙漿  USD/T", "瓦楞芯紙"],
     "匯率": ["美元 / 台幣", "美元 / 人民幣", "美元 / 日圓", "美元 / 歐元",
@@ -2670,6 +2742,7 @@ _COMMODITY_BING_QUERY = {
     "長纖":      "長纖紙漿 價格",
     "長纖紙漿":  "長纖紙漿 價格",
     "黃磷":      "黃磷 價格",
+    "鈀":        "鈀金 價格",
     # 鈷不加 LME（Bing News 對「鈷 價格 LME」三字組合會回 0 篇，太窄）
     # 用「鈷 價格」即可，讓 30-day 智慧 fallback 處理排序與相關性
 }
@@ -2686,6 +2759,7 @@ _COMMODITY_FILTER_TOKENS = {
     "鎢":   ["tungsten"],
     "金":   ["gold"],
     "銀":   ["silver"],
+    "鈀":   ["palladium"],
     "石油": ["crude", "oil price", "wti", "brent", "opec"],
     "PC":   ["polycarbonate"],
     "ABS":  ["abs resin", "acrylonitrile"],
@@ -2716,6 +2790,7 @@ _COMMODITY_EN_KEYWORDS = {
     "鎢":   "tungsten price china",
     "金":   "gold price",
     "銀":   "silver price",
+    "鈀":   "palladium price Russia",
     "石油": "crude oil price WTI Brent",
     "PC":   "polycarbonate plastic price",
     "ABS":  "ABS plastic resin price",
