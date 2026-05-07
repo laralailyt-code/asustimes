@@ -1900,11 +1900,12 @@ def _refresh_live_prices():
 
     # 2. bot.com.tw BCD API — full history for all codes
     for code, (csv_name, mult) in _BOT_BCD_CODES.items():
+        chart_url = f"https://fund.bot.com.tw/z/ze/zeq/zeqa_D0{code}.djhtm"
         history = _fetch_bot_bcd_history(code)
         if history:
             fresh[csv_name]   = [(d, round(v * mult, 2)) for d, v in history]
             sources[csv_name] = {"label": "台灣銀行 fund.bot.com.tw",
-                                 "url":   "https://fund.bot.com.tw/"}
+                                 "url":   chart_url}
             logger.info(f"bot.com.tw BCD {code}: {csv_name}, {len(history)} pts")
         else:
             # Fallback to latest-only if history parse fails
@@ -1912,7 +1913,7 @@ def _refresh_live_prices():
             if price is not None:
                 fresh[csv_name]   = [(today, round(price * mult, 2))]
                 sources[csv_name] = {"label": "台灣銀行 fund.bot.com.tw",
-                                     "url":   "https://fund.bot.com.tw/"}
+                                     "url":   chart_url}
 
     # 3. buyplas.com plastic prices (latest point only — no public history)
     for key, csv_name in _BUYPLAS_ITEMS.items():
