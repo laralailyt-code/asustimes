@@ -2262,10 +2262,15 @@ async function renderCommodityNews() {
   const wrap = document.getElementById('commodityNewsList');
   if (!wrap) return;
   const kw = shortName(_activeItem);
+  // Capture which item this request is for; if user switches before fetch
+  // resolves, we discard the stale response (避免顯示上一個商品的新聞)
+  const expectedItem = _activeItem;
   wrap.innerHTML = `<div style="color:var(--text-muted);font-size:0.82rem">🔍 載入新聞中…</div>`;
   try {
     const res  = await fetch('/api/commodity-news?q=' + encodeURIComponent(kw));
+    if (_activeItem !== expectedItem) return;  // user switched, abandon
     const data = await res.json();
+    if (_activeItem !== expectedItem) return;  // double-check post-parse
     const articles = data.articles || [];
     if (!articles.length) {
       wrap.innerHTML = `<div style="color:var(--text-muted);font-size:0.82rem">目前沒有相關新聞</div>`;
