@@ -79,7 +79,7 @@ CATEGORY_KEYWORDS = {
         "顯卡", "繪圖卡", "RTX", "GeForce", "Radeon", "RX 9",
         "電競筆電", "電競螢幕", "機械鍵盤", "電競滑鼠", "電競耳機",
         "esports", "FPS", "幀率", "高刷",
-        "InfiniGuard", "NAS", "網路儲存",
+        "InfiniGuard", "ASUSTOR", "NAS設備", "NAS 設備", "網路儲存",
     ],
     "供應鏈/關稅": [
         "關稅", "tariff", "供應鏈", "supply chain", "貿易戰", "出口管制",

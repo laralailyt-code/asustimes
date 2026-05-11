@@ -318,8 +318,9 @@ def _fetch_usgs_quakes() -> list[dict]:
                 props = feat.get("properties", {}) or {}
                 coords = feat.get("geometry", {}).get("coordinates", []) or []
                 mag = props.get("mag")
-                if mag is None or float(mag) < 5.0:
-                    continue  # M5.0+ 才寫進 DB（沿用網頁原本標準）
+                if mag is None or float(mag) < 6.5:
+                    continue  # M6.5+ 才寫進 DB — 與網頁地圖門檻一致 (避免 Telegram 出現
+                              # 平台上看不到的 M5-6.4 地震). 之前 M5.0+ 與網頁 M6.5+ 不對齊.
                 place = props.get("place", "") or ""
                 time_ms = props.get("time")
                 occurred = (
@@ -414,9 +415,11 @@ def _fetch_gdacs_alerts() -> list[dict]:
     """
     out = []
     try:
+        # alertlevel=Red — 與網頁 _loadGDACS 一致 (網頁只顯示 RED CRITICAL)
+        # 之前抓 Orange+Red 造成 Telegram 推送 Orange 等級事件平台上看不到
         r = req_lib.get(
             "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH"
-            "?eventlist=FL;VO&alertlevel=Orange;Red&limit=40",
+            "?eventlist=FL;VO&alertlevel=Red&limit=40",
             timeout=12,
         )
         if r.status_code != 200:
@@ -445,10 +448,17 @@ def _fetch_gdacs_alerts() -> list[dict]:
                 title = props.get("eventname", "") or props.get("name", "") or ev_type
                 country = props.get("country", "") or ""
                 impact = "CRITICAL" if alert == "Red" else "HIGH"
-                # url 欄位可能是 dict
+                # url 欄位是 dict: {report: HTML page, details: JSON API, geometry: polygon API}
+                # 優先 report (HTML) — details 會回傳 raw JSON 在瀏覽器看起來像壞掉
                 url_field = props.get("url", "")
                 if isinstance(url_field, dict):
-                    url_field = url_field.get("details") or url_field.get("report") or ""
+                    url_field = url_field.get("report") or url_field.get("details") or ""
+                # Fallback: construct public report URL from eventid + eventtype
+                if not url_field and ev_id:
+                    url_field = (
+                        f"https://www.gdacs.org/report.aspx?eventid={ev_id}"
+                        f"&episodeid={ep_id}&eventtype={ev_type}"
+                    )
                 out.append({
                     "id":        eid,
                     "type":      "disaster",
