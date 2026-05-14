@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, wait as fut_wai
 from datetime import datetime, date as date_cls, timedelta, timezone
 from flask import Flask, jsonify, render_template, request
 from scraper import fetch_all_news, CATEGORY_KEYWORDS
+from digitimes_competitor import build_war_room_payload, run_monthly_refresh
 
 try:
     import yfinance as yf
@@ -597,6 +598,20 @@ def index():
 def api_ping():
     """Lightweight keep-alive endpoint for uptime monitors."""
     return jsonify({"ok": True})
+
+
+@app.route("/api/competitor-warroom")
+def api_competitor_warroom():
+    """DIGITIMES notebook competitor war-room payload."""
+    return jsonify(build_war_room_payload())
+
+
+@app.route("/api/competitor-warroom/refresh", methods=["POST"])
+def api_competitor_warroom_refresh():
+    """Trigger the monthly connector scaffold without deploying anything."""
+    force = request.args.get("force", "1").strip() not in {"0", "false", "False"}
+    payload = run_monthly_refresh(force=force)
+    return jsonify(payload), (200 if payload.get("ok") else 202)
 
 
 

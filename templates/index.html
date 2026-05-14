@@ -453,6 +453,100 @@
   /* ── Market dashboard ── */
   #marketPage { display: none; }
 
+  /* DIGITIMES notebook competitor war room */
+  #warRoomPage { display: none; }
+  .warroom-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 1rem; margin-bottom: 1rem; padding-bottom: 0.9rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .warroom-title { font-size: 1.15rem; font-weight: 800; color: var(--text-primary); margin-bottom: 0.25rem; }
+  .warroom-subtitle { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.55; max-width: 760px; }
+  .warroom-actions { display: flex; gap: 0.45rem; flex-wrap: wrap; justify-content: flex-end; }
+  .warroom-btn {
+    padding: 0.42rem 0.85rem; border-radius: 7px; border: 1px solid var(--border);
+    background: var(--bg-card); color: var(--text-secondary); font-family: inherit;
+    font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: all 0.15s;
+  }
+  .warroom-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+  .warroom-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .warroom-status {
+    display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.2rem 0.6rem;
+    border-radius: 999px; background: rgba(20,100,246,0.12); border: 1px solid rgba(20,100,246,0.25);
+    color: var(--accent-2); font-size: 0.72rem; font-weight: 700; margin-bottom: 0.45rem;
+  }
+  .warroom-status.ready { background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.28); color: #22c55e; }
+  .warroom-status.ready_for_probe { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.3); color: #f59e0b; }
+  .warroom-status.not_configured { background: rgba(148,163,184,0.12); border-color: rgba(148,163,184,0.25); color: var(--text-muted); }
+  .warroom-grid { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 1rem; align-items: start; }
+  .warroom-charts-row { display: grid; grid-template-columns: 1.4fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+  .warroom-chart-panel .warroom-chart-wrap { position: relative; height: 260px; }
+  .warroom-chart-panel .warroom-chart-wrap.warroom-chart-wide { height: 300px; }
+  .warroom-panel-sub { color: var(--text-muted); font-weight: 500; font-size: 0.72rem; }
+  .warroom-footer {
+    margin-top: 1.1rem; padding: 0.85rem 1rem; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--bg-secondary);
+    font-size: 0.74rem; line-height: 1.65; color: var(--text-muted);
+  }
+  .warroom-footer .warroom-footer-title { color: var(--text-secondary); font-weight: 700; margin-bottom: 0.25rem; }
+  .warroom-footer a { color: var(--accent-2); text-decoration: none; }
+  .warroom-footer a:hover { text-decoration: underline; }
+  .warroom-footer strong { color: var(--text-primary); }
+  .warroom-panel {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 1rem; min-width: 0;
+  }
+  .warroom-panel-title {
+    font-size: 0.83rem; font-weight: 800; color: var(--text-primary);
+    margin-bottom: 0.7rem; display: flex; justify-content: space-between; gap: 0.7rem;
+  }
+  .warroom-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.7rem; margin-bottom: 1rem; }
+  .warroom-kpi { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 0.8rem; min-width: 0; }
+  .warroom-kpi-label { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.3rem; }
+  .warroom-kpi-value { font-size: 1.05rem; font-weight: 800; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .warroom-kpi-note { margin-top: 0.25rem; font-size: 0.68rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .warroom-position {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem; margin-bottom: 0.85rem;
+  }
+  .warroom-entity {
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: 8px; padding: 0.75rem; min-width: 0;
+  }
+  .warroom-entity-label { font-size: 0.68rem; color: var(--text-muted); margin-bottom: 0.28rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .warroom-entity-name { font-size: 0.95rem; font-weight: 800; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .warroom-entity-meta { margin-top: 0.25rem; font-size: 0.76rem; color: var(--text-secondary); line-height: 1.45; }
+  .warroom-brief { display: flex; flex-direction: column; gap: 0.45rem; }
+  .warroom-brief-line { font-size: 0.86rem; color: var(--text-secondary); line-height: 1.55; padding-left: 0.7rem; border-left: 3px solid var(--accent); }
+  .warroom-table-wrap { overflow-x: auto; }
+  .warroom-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  .warroom-table th, .warroom-table td { padding: 0.48rem 0.4rem; border-bottom: 1px solid var(--border); text-align: right; }
+  .warroom-table th:first-child, .warroom-table td:first-child { text-align: left; }
+  .warroom-table th { color: var(--text-muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; }
+  .warroom-table td { color: var(--text-secondary); }
+  .warroom-table .brand { color: var(--text-primary); font-weight: 700; }
+  .warroom-delta { font-weight: 700; white-space: nowrap; }
+  .warroom-delta.up { color: #22c55e; }
+  .warroom-delta.down { color: #ef4444; }
+  .warroom-delta.flat { color: var(--text-muted); }
+  .warroom-alerts { display: flex; flex-direction: column; gap: 0.45rem; }
+  .warroom-alert {
+    border: 1px solid var(--border); border-left: 3px solid #f59e0b;
+    border-radius: 7px; padding: 0.55rem 0.65rem; background: var(--bg-secondary);
+    color: var(--text-secondary); font-size: 0.78rem; line-height: 1.45;
+  }
+  .warroom-alert.risk { border-left-color: #ef4444; }
+  .warroom-alert.opportunity { border-left-color: #22c55e; }
+  .warroom-empty { color: var(--text-muted); font-size: 0.84rem; line-height: 1.7; padding: 0.7rem 0; }
+  .warroom-source { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.7rem; }
+  .warroom-source a { color: var(--accent-2); text-decoration: none; }
+  .warroom-source a:hover { text-decoration: underline; }
+  .warroom-connector-list { display: grid; gap: 0.45rem; font-size: 0.78rem; color: var(--text-secondary); line-height: 1.45; }
+  .warroom-connector-list strong { color: var(--text-primary); }
+  .warroom-file-list { word-break: break-all; color: var(--text-muted); }
+  .warroom-checklist { margin-top: 0.55rem; padding-top: 0.55rem; border-top: 1px solid var(--border); }
+  .warroom-check { margin-top: 0.35rem; color: var(--text-secondary); }
+
   /* ── User Guide page ── */
   #guidePage { display: none; max-width: 860px; margin: 0 auto; padding: 1.4rem 1.5rem; }
 
@@ -766,6 +860,17 @@
     .tab { white-space: nowrap; }
     /* Page nav */
     .page-nav-btn { font-size: 0.78rem; padding: 0.45rem 0.75rem; }
+    .page-nav { overflow-x: auto; scrollbar-width: none; }
+    .page-nav::-webkit-scrollbar { display: none; }
+    .warroom-head { flex-direction: column; gap: 0.7rem; }
+    .warroom-actions { justify-content: flex-start; }
+    .warroom-grid { grid-template-columns: 1fr; }
+    .warroom-charts-row { grid-template-columns: 1fr; }
+    .warroom-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .warroom-panel { padding: 0.8rem; }
+    .warroom-chart-panel .warroom-chart-wrap,
+    .warroom-chart-panel .warroom-chart-wrap.warroom-chart-wide { height: 220px; }
+    .warroom-table { font-size: 0.75rem; }
     /* Market page: scrollable, no fixed viewport lock */
     #marketPage { padding: 0.5rem 0.6rem; box-sizing: border-box; overflow-y: auto; }
     .market-layout { flex-direction: column; gap: 0.4rem; }
@@ -915,6 +1020,7 @@
     <button class="page-nav-btn active" id="navNews" onclick="switchPage('news')">📰 新聞</button>
     <button class="page-nav-btn" id="navMarket" onclick="switchPage('market')">📈 原物料匯率行情</button>
     {% if show_risk_page %}<button class="page-nav-btn" id="navRisk" onclick="switchPage('risk')">🌐 供應鏈風險</button>{% endif %}
+    <button class="page-nav-btn" id="navWarRoom" onclick="switchPage('warroom')">📊 NB 競品戰情室</button>
     <button class="page-nav-btn" id="navGuide" onclick="switchPage('guide')">📖 使用指南</button>
   </nav>
 </div>
@@ -1079,6 +1185,110 @@
       </div>
     </div>
   </div>
+</main>
+
+<!-- ── Competitor War Room Page ─────────────────────────── -->
+<main class="main" id="warRoomPage">
+  <div class="warroom-head">
+    <div>
+      <div class="warroom-status" id="warRoomStatus">等待資料</div>
+      <div class="warroom-title">NB 競品戰情室</div>
+      <div class="warroom-subtitle">
+        資料來源參考：DIGITIMES Research。本頁排名、市占、警示、AI 摘要均為 ASUSTIMES 內部團隊之人工彙整與 AI 衍生分析，僅供 ASUS 內部員工參考，不對外公開、不重新散布、不商業使用。
+      </div>
+    </div>
+    <div class="warroom-actions">
+      <button class="warroom-btn primary" onclick="loadWarRoom(true)">重新整理狀態</button>
+      <button class="warroom-btn" onclick="triggerWarRoomRefresh()">測試月更任務</button>
+    </div>
+  </div>
+
+  <div class="warroom-kpis">
+    <div class="warroom-kpi">
+      <div class="warroom-kpi-label">最新期別</div>
+      <div class="warroom-kpi-value" id="wrLatestPeriod">--</div>
+    </div>
+    <div class="warroom-kpi">
+      <div class="warroom-kpi-label">品牌數</div>
+      <div class="warroom-kpi-value" id="wrBrandCount">--</div>
+      <div class="warroom-kpi-note" id="wrRecordCount">--</div>
+    </div>
+    <div class="warroom-kpi">
+      <div class="warroom-kpi-label">ASUS 排名</div>
+      <div class="warroom-kpi-value" id="wrAsusRank">--</div>
+      <div class="warroom-kpi-note" id="wrAsusRankDelta">--</div>
+    </div>
+    <div class="warroom-kpi">
+      <div class="warroom-kpi-label">ASUS 市占</div>
+      <div class="warroom-kpi-value" id="wrAsusShare">--</div>
+      <div class="warroom-kpi-note" id="wrAsusShareDelta">--</div>
+    </div>
+    <div class="warroom-kpi">
+      <div class="warroom-kpi-label">距第一名</div>
+      <div class="warroom-kpi-value" id="wrLeaderGap">--</div>
+      <div class="warroom-kpi-note" id="wrLeaderName">--</div>
+    </div>
+  </div>
+
+  <div class="warroom-charts-row">
+    <div class="warroom-panel warroom-chart-panel">
+      <div class="warroom-panel-title">
+        <span>全球 NB 出貨季度趨勢</span>
+        <span class="warroom-panel-sub" id="wrGlobalNote"></span>
+      </div>
+      <div class="warroom-chart-wrap"><canvas id="wrGlobalChart"></canvas></div>
+    </div>
+    <div class="warroom-panel warroom-chart-panel">
+      <div class="warroom-panel-title">
+        <span>Top 6 市占（最新季度）</span>
+        <span class="warroom-panel-sub" id="wrShareNote"></span>
+      </div>
+      <div class="warroom-chart-wrap"><canvas id="wrShareChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="warroom-panel warroom-chart-panel" style="margin-bottom:1rem">
+    <div class="warroom-panel-title">
+      <span>Top 5 品牌月度出貨走勢</span>
+      <span class="warroom-panel-sub" id="wrMonthlyNote"></span>
+    </div>
+    <div class="warroom-chart-wrap warroom-chart-wide"><canvas id="wrMonthlyChart"></canvas></div>
+  </div>
+
+  <div class="warroom-grid">
+    <div class="warroom-panel">
+      <div class="warroom-panel-title">
+        <span>AI 戰情摘要</span>
+        <span id="wrGeneratedAt" style="color:var(--text-muted);font-weight:500"></span>
+      </div>
+      <div class="warroom-position" id="wrPosition"></div>
+      <div class="warroom-brief" id="wrBrief">
+        <div class="warroom-empty">載入中...</div>
+      </div>
+      <div class="warroom-source" id="wrSource"></div>
+    </div>
+
+    <div class="warroom-panel">
+      <div class="warroom-panel-title">資料狀態</div>
+      <div id="wrConnector" class="warroom-empty">載入中...</div>
+    </div>
+
+    <div class="warroom-panel">
+      <div class="warroom-panel-title"><span>品牌排名</span><span id="wrTablePeriod" style="color:var(--text-muted);font-weight:500"></span></div>
+      <div id="wrLeaders">
+        <div class="warroom-empty">尚無品牌數據。</div>
+      </div>
+    </div>
+
+    <div class="warroom-panel">
+      <div class="warroom-panel-title">競品警示</div>
+      <div class="warroom-alerts" id="wrAlerts">
+        <div class="warroom-empty">尚無警示。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="warroom-footer" id="wrFooter"></div>
 </main>
 
 <!-- ── User Guide Page ─────────────────────────────────── -->
@@ -1874,18 +2084,30 @@ const poller = setInterval(async()=>{
 
 // ── Page switcher ──────────────────────────────────────────
 function switchPage(page) {
+  const validPages = ['news', 'market', 'warroom', 'guide', 'risk'];
+  if (!validPages.includes(page)) page = 'news';
+  const desiredHash = page === 'news' ? '' : `#${page}`;
+  if (window.location.hash !== desiredHash) {
+    const nextUrl = page === 'news'
+      ? `${window.location.pathname}${window.location.search}`
+      : desiredHash;
+    history.replaceState(null, '', nextUrl);
+  }
+
   const newsPage   = document.querySelector('main.main:not(#marketPage)');
   const marketPage = document.getElementById('marketPage');
+  const warRoomPage = document.getElementById('warRoomPage');
   const guidePage  = document.getElementById('guidePage');
   const riskPage   = document.getElementById('riskPage');
   const mobileBar  = document.getElementById('mobileSearchBar');
   // Hide all
   newsPage.style.display   = 'none';
   marketPage.style.display = 'none';
+  warRoomPage.style.display = 'none';
   guidePage.style.display  = 'none';
   riskPage.style.display   = 'none';
   mobileBar.classList.remove('open');
-  ['navNews','navMarket','navGuide','navRisk'].forEach(id => {
+  ['navNews','navMarket','navWarRoom','navGuide','navRisk'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.classList.remove('active');
   });
@@ -1907,6 +2129,13 @@ function switchPage(page) {
         renderAnnotationDots();
       }, 100);
     }
+  } else if (page === 'warroom') {
+    warRoomPage.style.display = 'block';
+    document.getElementById('navWarRoom').classList.add('active');
+    if (!window._warRoomLoaded) {
+      loadWarRoom();
+      window._warRoomLoaded = true;
+    }
   } else if (page === 'guide') {
     guidePage.style.display = 'block';
     document.getElementById('navGuide').classList.add('active');
@@ -1924,6 +2153,19 @@ function switchPage(page) {
   }
 }
 
+function pageFromHash() {
+  const page = (window.location.hash || '').replace('#', '').trim();
+  return ['market', 'warroom', 'guide', 'risk'].includes(page) ? page : null;
+}
+
+window.addEventListener('hashchange', () => {
+  const page = pageFromHash();
+  if (page) switchPage(page);
+});
+
+const initialHashPage = pageFromHash();
+if (initialHashPage) switchPage(initialHashPage);
+
 function toggleGuide(id) {
   const el = document.getElementById(id);
   if (el) el.classList.toggle('open');
@@ -1938,6 +2180,279 @@ function copyText(text, el) {
 }
 
 // ── Market dashboard ───────────────────────────────────────
+// DIGITIMES notebook competitor war room
+function wrValue(v, suffix='') {
+  if (v === null || v === undefined || v === '') return '--';
+  if (typeof v === 'number') return `${Number.isInteger(v) ? v : v.toFixed(1)}${suffix}`;
+  return `${v}${suffix}`;
+}
+
+function wrPercent(v) {
+  if (v === null || v === undefined || v === '') return '--';
+  const n = Number(v);
+  return Number.isFinite(n) ? `${n.toFixed(1)}%` : '--';
+}
+
+function wrSigned(v, suffix='%') {
+  if (v === null || v === undefined || v === '') return '<span class="warroom-delta flat">--</span>';
+  const n = Number(v);
+  if (!Number.isFinite(n) || Math.abs(n) < 0.01) return '<span class="warroom-delta flat">0.0</span>';
+  const cls = n > 0 ? 'up' : 'down';
+  const sign = n > 0 ? '+' : '';
+  return `<span class="warroom-delta ${cls}">${sign}${n.toFixed(1)}${suffix}</span>`;
+}
+
+function wrRankDelta(v) {
+  if (v === null || v === undefined || v === '') return '<span class="warroom-delta flat">--</span>';
+  const n = Number(v);
+  if (!Number.isFinite(n) || n === 0) return '<span class="warroom-delta flat">持平</span>';
+  return `<span class="warroom-delta ${n > 0 ? 'up' : 'down'}">${n > 0 ? '↑' : '↓'}${Math.abs(n)}</span>`;
+}
+
+function wrStatusLabel(status) {
+  return {
+    ready: '已接入資料',
+    ready_for_probe: '可進行登入 probe',
+    not_configured: '等待帳號設定'
+  }[status] || status || '未知狀態';
+}
+
+function wrStatusClass(status) {
+  return ['ready', 'ready_for_probe', 'not_configured'].includes(status) ? status : 'not_configured';
+}
+
+function wrDataSource(source) {
+  return {
+    file: '本機匯入檔',
+    state: 'Connector state',
+    none: '尚無資料'
+  }[source] || source || '尚無資料';
+}
+
+function wrYesNo(v) {
+  return v ? '已設定' : '未設定';
+}
+
+async function loadWarRoom(force=false) {
+  const brief = document.getElementById('wrBrief');
+  if (brief && force) brief.innerHTML = '<div class="warroom-empty">重新讀取中...</div>';
+  try {
+    const data = await (await fetch('/api/competitor-warroom')).json();
+    renderWarRoom(data);
+  } catch (e) {
+    console.error('war room load error', e);
+    if (brief) brief.innerHTML = '<div class="warroom-empty">無法載入競品戰情室資料。</div>';
+  }
+}
+
+async function triggerWarRoomRefresh() {
+  showToast('正在測試 DIGITIMES 月更 connector...');
+  try {
+    const data = await (await fetch('/api/competitor-warroom/refresh?force=1', { method: 'POST' })).json();
+    renderWarRoom(await (await fetch('/api/competitor-warroom')).json());
+    showToast(data.message || '月更任務狀態已更新');
+  } catch (e) {
+    console.error('war room refresh error', e);
+    showToast('月更任務測試失敗');
+  }
+}
+
+function renderWarRoom(data) {
+  const summary = data.summary || {};
+  const connector = data.connector || {};
+  const status = connector.status || 'not_configured';
+  const statusEl = document.getElementById('warRoomStatus');
+  statusEl.textContent = wrStatusLabel(status);
+  statusEl.className = `warroom-status ${wrStatusClass(status)}`;
+  document.getElementById('wrLatestPeriod').textContent = summary.latest_period || '--';
+  document.getElementById('wrBrandCount').textContent = wrValue(summary.brand_count);
+  document.getElementById('wrRecordCount').textContent = `${wrValue(summary.record_count)} 筆資料`;
+  document.getElementById('wrAsusRank').textContent = summary.asus_rank ? `#${summary.asus_rank}` : '--';
+  document.getElementById('wrAsusRankDelta').innerHTML = `排名 ${wrRankDelta(summary.asus_rank_delta)}`;
+  document.getElementById('wrAsusShare').textContent = wrPercent(summary.asus_market_share);
+  document.getElementById('wrAsusShareDelta').innerHTML = `市占 ${wrSigned(summary.asus_share_delta)}`;
+  document.getElementById('wrLeaderGap').textContent = summary.asus_share_gap === null || summary.asus_share_gap === undefined ? '--' : `${Number(summary.asus_share_gap).toFixed(1)}pt`;
+  document.getElementById('wrLeaderName').textContent = summary.leader_brand ? `Leader: ${summary.leader_brand}` : '--';
+  document.getElementById('wrGeneratedAt').textContent = data.generated_at ? data.generated_at.slice(0, 16).replace('T', ' ') : '';
+  document.getElementById('wrTablePeriod').textContent = summary.latest_period || '';
+
+  const asus = data.asus || {};
+  const position = document.getElementById('wrPosition');
+  if (summary.leader_brand || asus.brand) {
+    position.style.display = 'grid';
+    position.innerHTML = `
+      <div class="warroom-entity">
+        <div class="warroom-entity-label">Leader</div>
+        <div class="warroom-entity-name">${esc(summary.leader_brand || '--')}</div>
+        <div class="warroom-entity-meta">市占 ${wrPercent(summary.leader_market_share)} · Top 3 ${wrPercent(summary.top3_share)}</div>
+      </div>
+      <div class="warroom-entity">
+        <div class="warroom-entity-label">ASUS</div>
+        <div class="warroom-entity-name">${esc(asus.brand || 'ASUS')}</div>
+        <div class="warroom-entity-meta">排名 ${summary.asus_rank ? `#${summary.asus_rank}` : '--'} · 市占 ${wrPercent(summary.asus_market_share)} · ${wrSigned(summary.asus_share_delta)}</div>
+      </div>`;
+  } else {
+    position.style.display = 'none';
+    position.innerHTML = '';
+  }
+
+  const brief = document.getElementById('wrBrief');
+  const lines = data.ai_brief || [];
+  brief.innerHTML = lines.length
+    ? lines.map(line => `<div class="warroom-brief-line">${esc(line)}</div>`).join('')
+    : '<div class="warroom-empty">尚無 AI 摘要。</div>';
+
+  document.getElementById('wrSource').innerHTML = '';
+  const footerEl = document.getElementById('wrFooter');
+  if (footerEl) {
+    const source = data.source || {};
+    footerEl.innerHTML = source.url
+      ? `<div class="warroom-footer-title">資料引用：<a href="${esc(source.url)}" target="_blank" rel="noopener">${esc(source.name || 'DIGITIMES Research')}</a></div>
+         <div>本頁所有排名、市占、競品警示與 AI 戰情摘要均為 ASUSTIMES 內部團隊對 DIGITIMES 月報之 <strong>人工彙整 + AI 衍生分析</strong>，非 DIGITIMES 原始發布內容。僅供 ASUS 內部員工參考；不對外公開、不重新散布、不商業使用。</div>`
+      : '';
+  }
+
+  const charts = data.charts || {};
+  const periodLabel = charts.period_label || (summary.latest_period ? `最新期別 ${summary.latest_period}` : '--');
+  const generatedRaw = charts.generated_at || data.generated_at || '';
+  const generatedDate = generatedRaw ? generatedRaw.slice(0, 10) : '--';
+  document.getElementById('wrConnector').innerHTML = `
+    <div class="warroom-connector-list">
+      <div>資料區間：<strong>${esc(periodLabel)}</strong></div>
+      <div>最後更新：<strong>${esc(generatedDate)}</strong></div>
+      <div>下次更新：${esc(connector.next_scheduled_date || '--')}</div>
+      ${connector.last_error ? `<div style="color:#f59e0b">最後訊息：${esc(connector.last_error)}</div>` : ''}
+    </div>`;
+
+  const leaders = data.latest_rows || data.leaders || [];
+  document.getElementById('wrLeaders').innerHTML = leaders.length ? `
+    <div class="warroom-table-wrap">
+      <table class="warroom-table">
+        <thead><tr><th>Brand</th><th>Rank</th><th>Rank Δ</th><th>Share</th><th>Share Δ</th><th>YoY</th><th>QoQ</th><th>Shipments</th></tr></thead>
+        <tbody>${leaders.map(row => `
+          <tr>
+            <td class="brand">${esc(row.brand || '--')}</td>
+            <td>#${esc(row.rank || '--')}</td>
+            <td>${wrRankDelta(row.rank_delta)}</td>
+            <td>${wrPercent(row.market_share)}</td>
+            <td>${wrSigned(row.share_delta)}</td>
+            <td>${wrSigned(row.yoy)}</td>
+            <td>${wrSigned(row.qoq)}</td>
+            <td>${wrValue(row.shipments)}</td>
+          </tr>`).join('')}</tbody>
+      </table>
+    </div>` : '<div class="warroom-empty">尚無品牌數據。</div>';
+
+  const alerts = data.alerts || [];
+  const levelText = { risk: '風險', watch: '觀察', opportunity: '機會' };
+  document.getElementById('wrAlerts').innerHTML = alerts.length
+    ? alerts.map(a => `<div class="warroom-alert ${esc(a.level || '')}"><strong>${esc(levelText[a.level] || a.level || '')}</strong> · ${esc(a.message || '')}</div>`).join('')
+    : '<div class="warroom-empty">目前無超過門檻的競品異動。</div>';
+
+  _renderWarRoomCharts(data.charts || {}, data.latest_rows || []);
+}
+
+const _wrChartInst = { global: null, share: null, monthly: null };
+const _WR_BRAND_COLORS = {
+  Lenovo: '#5b7fa3',  // slate blue
+  HP:     '#c47b7b',  // dusty rose
+  Dell:   '#7fa9b8',  // muted teal
+  Apple:  '#9b8ec4',  // soft lavender
+  Asus:   '#c4a06b',  // warm sand (ASUS-tone)
+  acer:   '#7fa88a'   // sage green
+};
+function _wrColor(brand, fallback='#a8b3c2') {
+  return _WR_BRAND_COLORS[brand] || _WR_BRAND_COLORS[brand && brand[0].toUpperCase()+brand.slice(1).toLowerCase()] || fallback;
+}
+
+function _renderWarRoomCharts(charts, leaders) {
+  if (typeof Chart === 'undefined') { setTimeout(() => _renderWarRoomCharts(charts, leaders), 400); return; }
+
+  // 1) Global NB shipments line + YoY bars
+  const gctx = document.getElementById('wrGlobalChart');
+  const gnb  = charts.global_nb_shipments || [];
+  if (gctx && gnb.length) {
+    const periods = gnb.map(x => x.period || '');
+    const ship    = gnb.map(x => x.worldwide || null);
+    const yoy     = gnb.map(x => x.yoy || null);
+    if (_wrChartInst.global) _wrChartInst.global.destroy();
+    _wrChartInst.global = new Chart(gctx, {
+      data: {
+        labels: periods,
+        datasets: [
+          { type:'line', label:'全球出貨（千台）', data: ship, yAxisID:'y',
+            borderColor:'#5b7fa3', backgroundColor:'rgba(91,127,163,0.12)', fill:true,
+            tension:0.32, pointRadius:4, pointHoverRadius:6, borderWidth:2.2 },
+          { type:'bar', label:'YoY %', data: yoy, yAxisID:'y2',
+            backgroundColor: yoy.map(v => v == null ? '#cbd5e1' : (v>=0 ? 'rgba(127,168,138,0.55)' : 'rgba(196,123,123,0.55)')),
+            borderRadius:3, barThickness:14 }
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+        plugins:{ legend:{ position:'bottom', labels:{ font:{size:11}, boxWidth:14 } } },
+        scales:{
+          y:  { position:'left',  ticks:{ font:{size:10} }, grid:{color:'rgba(148,163,184,0.15)'} },
+          y2: { position:'right', ticks:{ font:{size:10}, callback:v=>v+'%' }, grid:{display:false} }
+        }
+      }
+    });
+    document.getElementById('wrGlobalNote').textContent = `${periods[0]} – ${periods[periods.length-1]}`;
+  }
+
+  // 2) Top6 share donut (latest period)
+  const sctx = document.getElementById('wrShareChart');
+  if (sctx && leaders.length) {
+    const labels = leaders.map(r => r.brand);
+    const values = leaders.map(r => r.market_share || 0);
+    const colors = labels.map(b => _wrColor(b));
+    if (_wrChartInst.share) _wrChartInst.share.destroy();
+    _wrChartInst.share = new Chart(sctx, {
+      type:'doughnut',
+      data:{ labels, datasets:[{ data:values, backgroundColor:colors, borderColor:'rgba(255,255,255,0.85)', borderWidth:1.5 }] },
+      options:{
+        responsive:true, maintainAspectRatio:false, cutout:'62%',
+        plugins:{
+          legend:{ position:'right', labels:{ font:{size:11}, boxWidth:12, padding:8 } },
+          tooltip:{ callbacks:{ label:c => `${c.label}：${c.parsed.toFixed(1)}%` } }
+        }
+      }
+    });
+    document.getElementById('wrShareNote').textContent = 'Top6 內佔比';
+  }
+
+  // 3) Monthly Top5 multi-line (14 months)
+  const mctx = document.getElementById('wrMonthlyChart');
+  const mline = charts.monthly_top5_line || {};
+  const cats = mline.categories || [];
+  const brands = mline.brands || [];
+  const matrix = mline.values || [];   // [period][brand_idx] = value
+  if (mctx && cats.length && brands.length && matrix.length) {
+    const datasets = brands.map((b, bi) => ({
+      label: b,
+      data: cats.map((_, pi) => (matrix[pi] && matrix[pi][bi] != null) ? matrix[pi][bi] : null),
+      borderColor: _wrColor(b),
+      backgroundColor: _wrColor(b),
+      tension: 0.3, pointRadius: 2.5, pointHoverRadius: 4.5, borderWidth: 2,
+      fill: false
+    }));
+    if (_wrChartInst.monthly) _wrChartInst.monthly.destroy();
+    _wrChartInst.monthly = new Chart(mctx, {
+      type:'line',
+      data:{ labels: cats, datasets },
+      options:{
+        responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+        plugins:{ legend:{ position:'bottom', labels:{ font:{size:11}, boxWidth:14, padding:6 } } },
+        scales:{
+          x:{ ticks:{ font:{size:10}, maxRotation:0, autoSkip:true } },
+          y:{ ticks:{ font:{size:10} }, grid:{color:'rgba(148,163,184,0.15)'} }
+        }
+      }
+    });
+    document.getElementById('wrMonthlyNote').textContent = `${cats[0]} – ${cats[cats.length-1]}（千台）`;
+  }
+}
+
 let _marketData      = [];
 let _activeCat       = '金屬';
 let _activeItem      = null;
