@@ -80,18 +80,22 @@ def _run(cmd: list[str], cwd: Path) -> tuple[int, str]:
 
 def git_commit_and_push(source_name: str, repo_root: Path) -> bool:
     """Stage data files, commit only if changed, push to origin/master.
-    Safety guards: refuse to push if latest.json is gitignored, and bail if
-    there are uncommitted changes elsewhere that we'd accidentally bundle."""
-    # 1. Refuse if latest.json is still gitignored
-    rc, out = _run(["git", "check-ignore", "-v", str(LATEST)], repo_root)
-    if rc == 0:
-        print(f"[push-refuse] {LATEST.relative_to(repo_root)} is gitignored — "
-              f"remove the 'data/digitimes_competitor/' line from .gitignore "
-              f"first (and confirm legal allows public exposure).")
-        return False
+    Safety guard: refuse to push if latest.json is gitignored AND not yet
+    tracked. Once the file is in the index (as of master 22b78d6), .gitignore
+    rules are advisory and don't block tracked-file commits."""
+    # 1. Refuse only if latest.json is BOTH gitignored AND not yet tracked.
+    rc_ignored, _ = _run(["git", "check-ignore", "-q", str(LATEST)], repo_root)
+    if rc_ignored == 0:
+        rc_tracked, _ = _run(["git", "ls-files", "--error-unmatch", str(LATEST)], repo_root)
+        if rc_tracked != 0:
+            print(f"[push-refuse] {LATEST.relative_to(repo_root)} is gitignored "
+                  f"AND untracked — remove 'data/digitimes_competitor/' from "
+                  f".gitignore first (and confirm legal allows public exposure).")
+            return False
 
-    # 2. Stage only the two data files (don't bundle other WIP)
-    rc, out = _run(["git", "add", str(LATEST), str(STATE)], repo_root)
+    # 2. Stage only the two data files (don't bundle other WIP).
+    # -f overrides any local .gitignore rule (files are already tracked on master).
+    rc, out = _run(["git", "add", "-f", str(LATEST), str(STATE)], repo_root)
     if rc != 0:
         print(f"[push-fail] git add: {out}")
         return False
