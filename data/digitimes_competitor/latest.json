@@ -1,6 +1,6 @@
 {
   "period_label": "2025Q2 ~ 2026Q2(e)",
-  "generated_at": "2026-05-06T07:37:19.477784+08:00",
+  "generated_at": "2026-05-15T09:34:49+08:00",
   "source_url": "https://www.digitimes.com.tw/research/datacharts/notebooks/",
   "global_nb_shipments": [
     {
@@ -344,5 +344,6 @@
         ]
       ]
     }
-  }
+  },
+  "_freshness_note": "Checked DIGITIMES on 2026-05-15 — source unchanged since 2026-05-06. Manual timestamp refresh; figures intact."
 }

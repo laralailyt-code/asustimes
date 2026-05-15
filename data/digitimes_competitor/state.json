@@ -10,8 +10,8 @@
     "status": "ready",
     "refresh_day": 5,
     "next_scheduled_date": "2026-06-05",
-    "last_attempted_at": "2026-05-06T16:38:58+08:00",
-    "last_success_at": "2026-05-06T16:38:58+08:00",
+    "last_attempted_at": "2026-05-15T09:34:49+08:00",
+    "last_success_at": "2026-05-15T09:34:49+08:00",
     "last_error": null,
     "env": {
       "username": "DIGITIMES_USERNAME",
@@ -21,7 +21,7 @@
       "refresh_day": "DIGITIMES_COMPETITOR_REFRESH_DAY"
     },
     "loaded_files": [
-      "data\\digitimes_competitor\\latest.json"
+      "data/digitimes_competitor/latest.json (manual 5/15 freshness check)"
     ]
   },
   "records": [],
