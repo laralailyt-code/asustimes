@@ -133,9 +133,10 @@ def _refresh_day() -> int:
         return 5
 
 
-# Multi-day refresh schedule: 5/10/15/20/25/月底 (6 runs per month).
-# This matches the agreed Windows Scheduled Task plan for desktop pipeline.
-_REFRESH_DAYS = (5, 10, 15, 20, 25)  # plus dynamically-computed month-end
+# Multi-day refresh schedule: 5/15/30 (3 runs per month) — matches the
+# Windows Scheduled Task entries ASUSTIMES_DigitimesPipeline + ASUSTIMES_SyncWarRoom.
+# Day 30 is capped to month_last_day for Feb (28/29) inside _next_monthly_run.
+_REFRESH_DAYS = (5, 15, 30)
 
 
 def _next_monthly_run(today: date | None = None, day: int | None = None) -> str:
@@ -155,17 +156,20 @@ def _next_monthly_run(today: date | None = None, day: int | None = None) -> str:
             candidate = date(year, month, min(day, month_last_day))
         return candidate.isoformat()
 
-    # Multi-day schedule: pick the smallest day >= today's day-of-month
+    # Multi-day schedule: smallest day STRICTLY AFTER today (so a refresh day
+    # that has already happened today doesn't appear as "next update").
+    # Days exceeding the month's last day are capped (e.g. day 30 → Feb 28/29).
     _, month_last_day = calendar.monthrange(today.year, today.month)
-    candidates = sorted(set(list(_REFRESH_DAYS) + [month_last_day]))
+    candidates = sorted({min(d, month_last_day) for d in _REFRESH_DAYS})
     for d in candidates:
-        if d >= today.day:
+        if d > today.day:
             return date(today.year, today.month, d).isoformat()
 
-    # All candidates this month already passed → first run next month (day 5)
+    # All candidates this month already passed (or today) → first refresh day next month
     year = today.year + (1 if today.month == 12 else 0)
     month = 1 if today.month == 12 else today.month + 1
-    return date(year, month, _REFRESH_DAYS[0]).isoformat()
+    _, next_last_day = calendar.monthrange(year, month)
+    return date(year, month, min(_REFRESH_DAYS[0], next_last_day)).isoformat()
 
 
 def _read_state() -> dict[str, Any]:
