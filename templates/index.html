@@ -1383,7 +1383,7 @@
       <div style="margin-bottom: 0.8rem;">
         <strong style="font-size: 0.92rem;">監控事件類型 / 顯示視窗 / 來源</strong>
         <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.4rem;">
-          🔴 <strong>地震</strong>：<strong>M≥6.5</strong>（紅燈級）；地圖保留 8 週 — USGS<br>
+          🔴 <strong>地震</strong>：<strong>M≥6.5 或最大震度6弱+</strong>（紅燈級）；地圖保留 8 週 — JMA/CWA/BMKG/USGS fallback<br>
           🌀 <strong>颱風</strong>：96kt+ 強颱以上 — NOAA NHC<br>
           🌊 <strong>洪水/火山</strong>：近 3 天內 Orange/Red 警戒 — GDACS<br>
           ⚔️ <strong>地緣政治衝突 / 戰爭</strong>：過去 8 週新聞 — Bing News RSS<br>
@@ -1451,7 +1451,7 @@
       <div style="margin-bottom: 1rem;">
         <strong style="font-size: 0.9rem; color: var(--text-primary);">Q: 為什麼小規模地震不顯示？</strong>
         <div style="font-size: 0.85rem; margin-top: 0.3rem; color: var(--text-secondary);">
-          A: 地圖只顯示 <strong>M6.5+</strong>（台灣紅燈級），全球每年約 80 筆，避免 M5 級雜訊（每年 ~1500 筆）。Telegram 訂閱者可自選門檻，可收到 M5+ 推播。
+          A: 地圖只顯示紅燈級地震：<strong>M6.5+</strong> 或當地最大震度 <strong>6弱+</strong>。日本、台灣、印尼優先用 JMA/CWA/BMKG 官方資料，其他地區保留 USGS fallback，避免 M5 級雜訊。
         </div>
       </div>
 
@@ -3067,7 +3067,7 @@ function _weekCutoff() {
 }
 // 颱風/洪水：feed 本身只回 active 事件（NOAA active storms / GDACS 3 天）→
 // 不受週數限制（feed 自己就管好 retention）。
-// 地震：改用 USGS 56 天視窗之後，必須跟其他事件一樣按 time 套週數 filter，
+// 地震：改用官方來源 + USGS fallback 56 天視窗之後，必須跟其他事件一樣按 time 套週數 filter，
 // 不然選「近一週」會看到 5 週前的地震。
 function _isRealtimeType(type) { return ['typhoon','flood'].includes(type); }
 
@@ -3101,6 +3101,7 @@ function _eventPopup(ev) {
   const lbl = { quake:'地震', typhoon:'颱風', flood:'洪水', war:'衝突', power:'停電', strike:'罷工' }[ev.type] || ev.type;
   const rows = [
     ev.mag   ? ['規模', `M ${ev.mag}`] : null,
+    ev.intensity ? ['震度', ev.intensity] : null,
     ev.depth ? ['深度', ev.depth] : null,
     ev.wind  ? ['風速', ev.wind] : null,
     ev.region? ['地區', ev.region] : null,
@@ -3270,6 +3271,7 @@ function _renderEventList() {
       </div>
       <div class="recard-meta">
         ${ev.mag    ? `<span>規模 M${ev.mag}</span>` : ''}
+        ${ev.intensity ? `<span>震度 ${esc(ev.intensity)}</span>` : ''}
         ${ev.wind   ? `<span>💨${ev.wind}</span>` : ''}
         ${ev.region ? `<span>📍${esc(ev.region)}</span>` : ''}
         ${ev.time   ? `<span>🕐${(ev.time+'').slice(0,10)}</span>` : ''}
@@ -3594,18 +3596,37 @@ async function _loadQuakes() {
     const r = await fetch('/api/risk/quakes');
     const d = await r.json();
     return (d.features||[])
-      .filter(f => f.properties.mag >= 6.5) // M6.5+ 才顯示（紅燈級以上），避免事件清單氾濫
+      .filter(f => {
+        const p = f.properties || {};
+        const magRaw = p.mag;
+        const mag = (magRaw === null || magRaw === undefined || magRaw === '') ? NaN : Number(magRaw);
+        const intensityValue = Number(p.maxIntensityValue || 0);
+        return p.impact === 'CRITICAL' || mag >= 6.5 || intensityValue >= 60;
+      }) // M6.5+ 或當地最大震度 6弱+ 才顯示（紅燈級以上），避免事件清單氾濫
       .map(f => {
-        const mag = f.properties.mag;
+        const p = f.properties || {};
+        const coords = f.geometry?.coordinates || [];
+        const magRaw = p.mag;
+        const mag = (magRaw === null || magRaw === undefined || magRaw === '') ? NaN : Number(magRaw);
+        const intensityValue = Number(p.maxIntensityValue || 0);
+        const depthRaw = p.depth ?? coords[2];
+        const depth = (depthRaw !== undefined && depthRaw !== null && depthRaw !== '' && Number.isFinite(Number(depthRaw)))
+          ? `${Number(depthRaw).toFixed(0)} km`
+          : '';
+        const timeMs = Number(p.time);
+        const isCritical = mag >= 6.5 || intensityValue >= 60 || p.impact === 'CRITICAL';
         // 對齊台灣 CWA 紅燈標準：規模 6.5+ 或震度 6 弱+ → 一律紅燈 (CRITICAL)
-        // M6.5+ 都是紅燈，跟 DB / Telegram impact 分級一致
-        const impact = 'CRITICAL';
-        return { id:f.id, type:'quake', title:_localizeQuake(f.properties.place),
-          lat:f.geometry.coordinates[1], lng:f.geometry.coordinates[0],
-          mag:mag?.toFixed(1), depth:f.geometry.coordinates[2]?.toFixed(0)+' km',
-          time:new Date(f.properties.time).toISOString().slice(0,16).replace('T',' '),
-          impact, supply: mag>=6.0?'可能影響港口作業、製造設施及陸路運輸':'持續監測，評估對當地供應商影響',
-        source:'USGS地震中心', sourceUrl:'https://earthquake.usgs.gov' };
+        // 規模或震度任一達標都必須是紅燈，跟 DB / Telegram impact 分級一致。
+        const impact = isCritical ? 'CRITICAL' : (p.impact || 'LOW');
+        return { id:f.id, type:'quake', title:_localizeQuake(p.title || p.place || ''),
+          lat:coords[1], lng:coords[0],
+          mag:Number.isFinite(mag) ? mag.toFixed(1) : '',
+          intensity:p.maxIntensity || '',
+          depth,
+          region:p.region || '',
+          time:Number.isFinite(timeMs) ? new Date(timeMs).toISOString().slice(0,16).replace('T',' ') : '',
+          impact, supply: impact==='CRITICAL'?'可能影響港口作業、製造設施及陸路運輸':'持續監測，評估對當地供應商影響',
+        source:p.source || '地震官方資料', sourceUrl:p.sourceUrl || p.url || '' };
       });
   } catch(e) { return []; }
 }

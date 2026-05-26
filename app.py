@@ -270,8 +270,8 @@ def _persist_events_async(events, source_label: str = "") -> None:
     threading.Thread(target=_job, daemon=True).start()
 
 
-# ── 災害事件即時偵測（USGS / NOAA / GDACS）每 5 分鐘 ─────────────────────────
-# USGS / GDACS 文字 place 字串 → 我們訂閱用的中文區域
+# ── 災害事件即時偵測（地震官方來源 / NOAA / GDACS）每 5 分鐘 ──────────────────
+# 地震 / GDACS 文字 place 字串 → 我們訂閱用的中文區域
 _DISASTER_REGION_KEYWORDS = {
     "taiwan":      "台灣",
     "japan":       "日本",
@@ -293,7 +293,7 @@ _DISASTER_REGION_KEYWORDS = {
 
 
 def _infer_disaster_region(place_or_country: str) -> str:
-    """USGS place / GDACS country → 中文地區（用於訂閱比對）。"""
+    """地震 place / GDACS country → 中文地區（用於訂閱比對）。"""
     if not place_or_country:
         return ""
     s = place_or_country.lower()
@@ -303,63 +303,491 @@ def _infer_disaster_region(place_or_country: str) -> str:
     return ""
 
 
-def _fetch_usgs_quakes() -> list[dict]:
-    """USGS 地震 — 抓 M5.0+，按規模分級成 LOW/MED/HIGH/CRITICAL，
-    最終是否推給訂閱者由訂閱的 severity 門檻決定。"""
-    out = []
+_QUAKE_DAYS = 56  # 8 週，對齊全站事件 retention window
+_QUAKE_CRITICAL_MAG = 6.5
+_QUAKE_CRITICAL_INTENSITY = 60  # 6弱 / MMI VI
+_QUAKE_MIN_MAG_QUERY = 4.5
+_QUAKE_SOURCE_HEADERS = {
+    "User-Agent": "ASUSTIMES/1.0 (+https://asustimes.local)",
+    "Accept": "application/json,text/plain,*/*",
+}
+
+
+def _to_float(value) -> float | None:
     try:
+        if value in (None, ""):
+            return None
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _quake_dt_to_ms(value) -> int | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value if value > 10_000_000_000 else value * 1000)
+    if isinstance(value, datetime):
+        dt = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp() * 1000)
+    if not isinstance(value, str):
+        return None
+    s = value.strip().replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                dt = datetime.strptime(s[:len(fmt)], fmt)
+                break
+            except ValueError:
+                dt = None
+        if dt is None:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp() * 1000)
+
+
+def _quake_ms_to_iso(ms: int | None) -> str:
+    if not ms:
+        return datetime.now(timezone.utc).isoformat()
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()
+
+
+def _quake_intensity_value(label) -> int | None:
+    if label in (None, ""):
+        return None
+    if isinstance(label, (int, float)):
+        return int(float(label) * 10 if float(label) < 10 else float(label))
+    s = str(label).strip().upper()
+    s = s.translate(str.maketrans("０１２３４５６７８９＋－", "0123456789+-"))
+    s = s.replace("震度", "").replace("級", "").replace(" ", "")
+    mapping = {
+        "7": 70, "6+": 65, "6強": 65, "6-": 60, "6弱": 60, "6": 60,
+        "5+": 55, "5強": 55, "5-": 50, "5弱": 50, "5": 50,
+        "4": 40, "3": 30, "2": 20, "1": 10,
+        "VIII": 80, "VII": 70, "VI": 60, "V": 50,
+        "IV": 40, "III": 30, "II": 20, "I": 10,
+    }
+    for key, val in mapping.items():
+        if s == key or key in s:
+            return val
+    import re as _re
+    romans = []
+    for token in _re.findall(r"\b(?:VIII|VII|VI|IV|V|III|II|I)(?:-(?:VIII|VII|VI|IV|V|III|II|I))?\b", s):
+        for part in token.split("-"):
+            if part in mapping:
+                romans.append(mapping[part])
+    if romans:
+        return max(romans)
+    m = _re.search(r"\d(?:[+-]|弱|強)?", s)
+    return mapping.get(m.group(0)) if m else None
+
+
+def _quake_impact(mag, intensity_value: int | None = None) -> str:
+    mag_val = _to_float(mag)
+    if (mag_val is not None and mag_val >= _QUAKE_CRITICAL_MAG) or (
+        intensity_value is not None and intensity_value >= _QUAKE_CRITICAL_INTENSITY
+    ):
+        return "CRITICAL"
+    if (mag_val is not None and mag_val >= 6.0) or (intensity_value is not None and intensity_value >= 50):
+        return "HIGH"
+    if (mag_val is not None and mag_val >= 5.5) or (intensity_value is not None and intensity_value >= 40):
+        return "MED"
+    return "LOW"
+
+
+def _quake_feature(
+    *,
+    eid: str,
+    source: str,
+    place: str,
+    lat,
+    lng,
+    depth_km=None,
+    mag=None,
+    time_value=None,
+    source_url: str = "",
+    region: str = "",
+    max_intensity: str | None = None,
+    intensity_scale: str | None = None,
+    mag_type: str | None = None,
+) -> dict | None:
+    lat_f = _to_float(lat)
+    lng_f = _to_float(lng)
+    if not eid or lat_f is None or lng_f is None:
+        return None
+    depth_f = _to_float(depth_km)
+    mag_f = _to_float(mag)
+    time_ms = _quake_dt_to_ms(time_value)
+    intensity_value = _quake_intensity_value(max_intensity)
+    impact = _quake_impact(mag_f, intensity_value)
+    mag_label = f"M{mag_f:.1f}" if mag_f is not None else "規模未定"
+    intensity_text = f" / 最大震度 {max_intensity}" if max_intensity else ""
+    title = f"{mag_label} 地震{intensity_text} — {place or region or source}"
+    props = {
+        "mag": mag_f,
+        "magType": mag_type,
+        "place": place or "",
+        "time": time_ms,
+        "updated": time_ms,
+        "url": source_url,
+        "source": source,
+        "sourceUrl": source_url,
+        "region": region or _infer_disaster_region(place) or "",
+        "depth": depth_f,
+        "maxIntensity": max_intensity,
+        "maxIntensityValue": intensity_value,
+        "intensityScale": intensity_scale,
+        "impact": impact,
+        "title": title,
+    }
+    return {
+        "type": "Feature",
+        "id": eid,
+        "properties": props,
+        "geometry": {"type": "Point", "coordinates": [lng_f, lat_f, depth_f]},
+    }
+
+
+def _quake_feature_is_recent(feat: dict, days: int) -> bool:
+    if not days:
+        return True
+    time_ms = (feat.get("properties") or {}).get("time")
+    if not time_ms:
+        return True
+    cutoff = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000)
+    return int(time_ms) >= cutoff
+
+
+def _parse_jma_coord(cod: str) -> tuple[float | None, float | None, float | None]:
+    if not cod:
+        return None, None, None
+    import re as _re
+    m = _re.match(r"^([+-]\d+(?:\.\d+)?)([+-]\d+(?:\.\d+)?)([+-]\d+)(?:/)?$", str(cod).strip())
+    if not m:
+        return None, None, None
+    lat = _to_float(m.group(1))
+    lng = _to_float(m.group(2))
+    depth_m = _to_float(m.group(3))
+    if lat is None or lng is None or not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+        return None, None, None
+    depth_km = abs(depth_m) / 1000 if depth_m is not None else None
+    return lat, lng, depth_km
+
+
+def _feature_in_region(feat: dict, region: str) -> bool:
+    props = feat.get("properties") or {}
+    coords = (feat.get("geometry") or {}).get("coordinates") or []
+    lng = coords[0] if len(coords) > 0 else None
+    lat = coords[1] if len(coords) > 1 else None
+    lat_f = _to_float(lat)
+    lng_f = _to_float(lng)
+    place = (props.get("place") or "").lower()
+    if region == "台灣":
+        return (
+            lat_f is not None and lng_f is not None and 21.5 <= lat_f <= 25.8 and 119 <= lng_f <= 123.5
+        ) or any(k in place for k in ("taiwan", "臺灣", "台灣"))
+    if region == "日本":
+        return (
+            lat_f is not None and lng_f is not None and 24 <= lat_f <= 46.5 and 123.5 <= lng_f <= 154
+        ) or any(k in place for k in ("japan", "honshu", "hokkaido", "kyushu", "shikoku", "ryukyu"))
+    if region == "印度尼西亞":
+        return (
+            lat_f is not None and lng_f is not None and -11.5 <= lat_f <= 6.5 and 94 <= lng_f <= 142.5
+        ) or any(k in place for k in ("indonesia", "java", "sumatra", "sulawesi", "papua", "molucca", "bali"))
+    return False
+
+
+def _fetch_jma_quake_features(days: int = _QUAKE_DAYS) -> list[dict]:
+    out: list[dict] = []
+    try:
+        r = req_lib.get("https://www.jma.go.jp/bosai/quake/data/list.json", headers=_QUAKE_SOURCE_HEADERS, timeout=12)
+        if r.status_code != 200:
+            return out
+        best: dict[str, dict] = {}
+        for item in r.json() or []:
+            eid = str(item.get("eid") or "")
+            if not eid:
+                continue
+            score = 0
+            ttl = item.get("ttl") or ""
+            if "震源・震度" in ttl:
+                score += 8
+            if item.get("mag") not in (None, ""):
+                score += 4
+            if item.get("maxi") not in (None, ""):
+                score += 2
+            score += int(item.get("ser") or 0)
+            prev = best.get(eid)
+            if not prev or score > prev["_score"]:
+                item["_score"] = score
+                best[eid] = item
+        for item in best.values():
+            lat, lng, depth = _parse_jma_coord(item.get("cod", ""))
+            place = item.get("en_anm") or item.get("anm") or "Japan"
+            feat = _quake_feature(
+                eid=f"jma-{item.get('eid')}",
+                source="JMA日本氣象廳",
+                place=f"日本 {place}",
+                lat=lat,
+                lng=lng,
+                depth_km=depth,
+                mag=item.get("mag"),
+                time_value=item.get("at") or item.get("rdt"),
+                source_url=f"https://www.data.jma.go.jp/multi/quake/quake_detail.html?eventID={item.get('eid')}&lang=en",
+                region="日本",
+                max_intensity=str(item.get("maxi")) if item.get("maxi") not in (None, "") else None,
+                intensity_scale="JMA",
+                mag_type="Mj",
+            )
+            if feat and _feature_in_region(feat, "日本") and _quake_feature_is_recent(feat, days):
+                out.append(feat)
+    except Exception as e:
+        logger.warning(f"[quake] JMA fetch failed: {e}")
+    return out
+
+
+def _cwa_api_key() -> str:
+    return (
+        os.environ.get("CWA_API_KEY")
+        or os.environ.get("CWA_AUTHORIZATION")
+        or os.environ.get("CWA_OPENDATA_API_KEY")
+        or ""
+    ).strip()
+
+
+def _cwa_max_intensity(eq: dict) -> str | None:
+    labels: list[str] = []
+
+    def walk(value):
+        if isinstance(value, dict):
+            for k, v in value.items():
+                if k in {"AreaIntensity", "SeismicIntensity", "MaxIntensity"} and v not in (None, ""):
+                    labels.append(str(v))
+                walk(v)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    walk(eq.get("Intensity") or eq)
+    if not labels:
+        return None
+    return max(labels, key=lambda x: _quake_intensity_value(x) or 0)
+
+
+def _fetch_cwa_quake_features(days: int = _QUAKE_DAYS) -> list[dict]:
+    key = _cwa_api_key()
+    if not key:
+        logger.info("[quake] CWA key not set; Taiwan will use USGS fallback")
+        return []
+    out: list[dict] = []
+    for data_id in ("E-A0015-001", "E-A0016-001"):
+        try:
+            r = req_lib.get(
+                f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/{data_id}",
+                params={"Authorization": key, "format": "JSON"},
+                headers=_QUAKE_SOURCE_HEADERS,
+                timeout=12,
+            )
+            if r.status_code != 200:
+                continue
+            records = (r.json().get("records") or {}).get("Earthquake") or []
+            if isinstance(records, dict):
+                records = [records]
+            for eq in records:
+                info = eq.get("EarthquakeInfo") or {}
+                epicenter = info.get("Epicenter") or {}
+                mag_info = info.get("EarthquakeMagnitude") or {}
+                lat = epicenter.get("EpicenterLatitude") or info.get("EpicenterLatitude")
+                lng = epicenter.get("EpicenterLongitude") or info.get("EpicenterLongitude")
+                place = epicenter.get("Location") or info.get("Location") or eq.get("ReportContent") or "Taiwan"
+                origin = info.get("OriginTime")
+                max_intensity = _cwa_max_intensity(eq)
+                feat = _quake_feature(
+                    eid=f"cwa-{data_id}-{eq.get('EarthquakeNo') or origin or len(out)}",
+                    source="CWA中央氣象署",
+                    place=f"台灣 {place}",
+                    lat=lat,
+                    lng=lng,
+                    depth_km=info.get("FocalDepth"),
+                    mag=mag_info.get("MagnitudeValue") or eq.get("MagnitudeValue"),
+                    time_value=origin,
+                    source_url=eq.get("Web") or "https://www.cwa.gov.tw/",
+                    region="台灣",
+                    max_intensity=max_intensity,
+                    intensity_scale="CWA",
+                    mag_type=mag_info.get("MagnitudeType"),
+                )
+                if feat and _quake_feature_is_recent(feat, days):
+                    out.append(feat)
+        except Exception as e:
+            logger.warning(f"[quake] CWA {data_id} fetch failed: {e}")
+    return out
+
+
+def _parse_bmkg_depth(value) -> float | None:
+    if value is None:
+        return None
+    return _to_float(str(value).replace("km", "").strip())
+
+
+def _fetch_bmkg_quake_features(days: int = _QUAKE_DAYS) -> list[dict]:
+    urls = [
+        ("https://data.bmkg.go.id/DataMKG/TEWS/gempaterkini.json", False),
+        ("https://data.bmkg.go.id/DataMKG/TEWS/gempadirasakan.json", True),
+    ]
+    by_id: dict[str, dict] = {}
+    for url, felt_feed in urls:
+        try:
+            r = req_lib.get(url, headers=_QUAKE_SOURCE_HEADERS, timeout=12)
+            if r.status_code != 200:
+                continue
+            records = ((r.json().get("Infogempa") or {}).get("gempa")) or []
+            if isinstance(records, dict):
+                records = [records]
+            for rec in records:
+                coords = str(rec.get("Coordinates") or "").split(",")
+                if len(coords) != 2:
+                    continue
+                dt = rec.get("DateTime")
+                eid = f"bmkg-{str(dt or rec.get('Tanggal') or '').replace(':','').replace('-','').replace('+','')}-{coords[0].strip()}-{coords[1].strip()}"
+                max_intensity = f"MMI {rec.get('Dirasakan')}" if rec.get("Dirasakan") and rec.get("Dirasakan") != "-" else None
+                feat = _quake_feature(
+                    eid=eid,
+                    source="BMKG印尼氣象氣候地球物理局",
+                    place=f"印尼 {rec.get('Wilayah') or ''}".strip(),
+                    lat=coords[0],
+                    lng=coords[1],
+                    depth_km=_parse_bmkg_depth(rec.get("Kedalaman")),
+                    mag=rec.get("Magnitude"),
+                    time_value=dt,
+                    source_url="https://data.bmkg.go.id/gempabumi/",
+                    region="印度尼西亞",
+                    max_intensity=max_intensity,
+                    intensity_scale="MMI" if max_intensity else None,
+                    mag_type="M",
+                )
+                if not feat or not _quake_feature_is_recent(feat, days):
+                    continue
+                old = by_id.get(eid)
+                if old and not old["properties"].get("maxIntensity") and max_intensity:
+                    old["properties"]["maxIntensity"] = max_intensity
+                    old["properties"]["maxIntensityValue"] = _quake_intensity_value(max_intensity)
+                    old["properties"]["intensityScale"] = "MMI"
+                    old["properties"]["impact"] = _quake_impact(
+                        old["properties"].get("mag"),
+                        old["properties"].get("maxIntensityValue"),
+                    )
+                    old["properties"]["title"] = old["properties"]["title"].replace(" — ", f" / 最大震度 {max_intensity} — ")
+                else:
+                    by_id[eid] = feat
+        except Exception as e:
+            logger.warning(f"[quake] BMKG fetch failed ({url}): {e}")
+    return list(by_id.values())
+
+
+def _fetch_usgs_quake_features(days: int = _QUAKE_DAYS) -> list[dict]:
+    out: list[dict] = []
+    try:
+        starttime = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
         r = req_lib.get(
-            "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson",
-            timeout=10,
+            "https://earthquake.usgs.gov/fdsnws/event/1/query",
+            params={
+                "format": "geojson",
+                "starttime": starttime,
+                "minmagnitude": _QUAKE_MIN_MAG_QUERY,
+                "orderby": "time",
+            },
+            headers=_QUAKE_SOURCE_HEADERS,
+            timeout=15,
         )
         if r.status_code != 200:
             return out
-        for feat in r.json().get("features", []):
-            try:
-                props = feat.get("properties", {}) or {}
-                coords = feat.get("geometry", {}).get("coordinates", []) or []
-                mag = props.get("mag")
-                if mag is None or float(mag) < 6.5:
-                    continue  # M6.5+ 才寫進 DB — 與網頁地圖門檻一致 (避免 Telegram 出現
-                              # 平台上看不到的 M5-6.4 地震). 之前 M5.0+ 與網頁 M6.5+ 不對齊.
-                place = props.get("place", "") or ""
-                time_ms = props.get("time")
-                occurred = (
-                    datetime.fromtimestamp(time_ms / 1000, tz=timezone.utc).isoformat()
-                    if time_ms else datetime.now(timezone.utc).isoformat()
-                )
-                # 沿用網頁原本標準（資訊來源報告）：
-                #   M ≥ 6.5 → CRITICAL；6.0 ≤ M < 6.5 → HIGH
-                #   5.5 ≤ M < 6.0 → MED；5.0 ≤ M < 5.5 → LOW（地圖顯示但不推 medium 訂閱者）
-                if mag >= 6.5:
-                    impact = "CRITICAL"
-                elif mag >= 6.0:
-                    impact = "HIGH"
-                elif mag >= 5.5:
-                    impact = "MED"
-                else:
-                    impact = "LOW"
-                eid = f"usgs-{feat.get('id', '')}"
-                if not eid or eid == "usgs-":
-                    continue
-                out.append({
-                    "id":        eid,
-                    "type":      "disaster",
-                    "title":     f"M{mag} 地震 — {place}",
-                    "lat":       coords[1] if len(coords) > 1 else None,
-                    "lng":       coords[0] if len(coords) > 0 else None,
-                    "impact":    impact,
-                    "region":    _infer_disaster_region(place) or place,
-                    "time":      occurred,
-                    "supply":    f"M{mag} 地震，評估周邊晶圓廠與供應商損害狀況",
-                    "source":    "USGS",
-                    "sourceUrl": props.get("url", ""),
-                })
-            except Exception as e:
-                logger.debug(f"[disaster-persist] USGS feature parse: {e}")
+        for feat in r.json().get("features", []) or []:
+            props = feat.get("properties") or {}
+            coords = (feat.get("geometry") or {}).get("coordinates") or []
+            norm = _quake_feature(
+                eid=f"usgs-{feat.get('id')}",
+                source="USGS美國地質調查局",
+                place=props.get("place") or "",
+                lat=coords[1] if len(coords) > 1 else None,
+                lng=coords[0] if len(coords) > 0 else None,
+                depth_km=coords[2] if len(coords) > 2 else None,
+                mag=props.get("mag"),
+                time_value=props.get("time"),
+                source_url=props.get("url") or "https://earthquake.usgs.gov/",
+                region=_infer_disaster_region(props.get("place") or ""),
+                mag_type=props.get("magType"),
+            )
+            if norm and _quake_feature_is_recent(norm, days):
+                out.append(norm)
     except Exception as e:
-        logger.warning(f"[disaster-persist] USGS fetch: {e}")
+        logger.warning(f"[quake] USGS fetch failed: {e}")
     return out
+
+
+def _fetch_quake_features(days: int = _QUAKE_DAYS) -> list[dict]:
+    features: list[dict] = []
+    official_regions: list[str] = []
+    for region, fetcher in (
+        ("日本", _fetch_jma_quake_features),
+        ("台灣", _fetch_cwa_quake_features),
+        ("印度尼西亞", _fetch_bmkg_quake_features),
+    ):
+        local = fetcher(days)
+        if local:
+            features.extend(local)
+            official_regions.append(region)
+
+    usgs = _fetch_usgs_quake_features(days)
+    for feat in usgs:
+        if any(_feature_in_region(feat, region) for region in official_regions):
+            continue
+        features.append(feat)
+
+    deduped: dict[str, dict] = {}
+    for feat in features:
+        deduped[feat["id"]] = feat
+    return sorted(
+        deduped.values(),
+        key=lambda f: ((f.get("properties") or {}).get("time") or 0),
+        reverse=True,
+    )
+
+
+def _quake_feature_to_event(feat: dict) -> dict | None:
+    props = feat.get("properties") or {}
+    coords = (feat.get("geometry") or {}).get("coordinates") or []
+    if props.get("impact") != "CRITICAL":
+        return None
+    mag = props.get("mag")
+    mag_label = f"M{mag:.1f}" if isinstance(mag, (int, float)) else "地震"
+    intensity = props.get("maxIntensity")
+    intensity_text = f" / 最大震度 {intensity}" if intensity else ""
+    place = props.get("place") or props.get("region") or ""
+    return {
+        "id":        feat.get("id"),
+        "type":      "disaster",
+        "title":     props.get("title") or f"{mag_label} 地震{intensity_text} — {place}",
+        "lat":       coords[1] if len(coords) > 1 else None,
+        "lng":       coords[0] if len(coords) > 0 else None,
+        "impact":    props.get("impact"),
+        "region":    props.get("region") or _infer_disaster_region(place) or place,
+        "time":      _quake_ms_to_iso(props.get("time")),
+        "supply":    f"{mag_label} 地震{intensity_text}，評估周邊晶圓廠與供應商損害狀況",
+        "source":    props.get("source"),
+        "sourceUrl": props.get("sourceUrl") or props.get("url"),
+        "mag":       mag,
+        "maxIntensity": intensity,
+        "maxIntensityValue": props.get("maxIntensityValue"),
+        "intensityScale": props.get("intensityScale"),
+    }
+
+
+def _fetch_quake_events(days: int = 1) -> list[dict]:
+    return [ev for ev in (_quake_feature_to_event(f) for f in _fetch_quake_features(days)) if ev]
 
 
 def _fetch_noaa_storms() -> list[dict]:
@@ -481,11 +909,11 @@ def _fetch_gdacs_alerts() -> list[dict]:
 
 
 def _disaster_persist_loop():
-    """每 5 分鐘抓 USGS / NOAA / GDACS，把新災害事件寫進 risk_events 表。
+    """每 5 分鐘抓官方地震來源 / NOAA / GDACS，把新災害事件寫進 risk_events 表。
     Dispatcher（每 30 秒）會掃到並推給有訂閱對應地區的使用者。
 
     第一輪 30 秒後執行（讓其他 background thread 先啟動完）。
-    間隔 90 秒 — 地震 USGS publish 後越快推越好；NOAA/GDACS 不會比這個窗口快太多。
+    間隔 90 秒 — 地震官方 feed publish 後越快推越好；NOAA/GDACS 不會比這個窗口快太多。
     """
     logger.info("[disaster-persist] 啟動災害事件即時偵測 loop（每 90 秒）")
     first_run = True
@@ -494,14 +922,14 @@ def _disaster_persist_loop():
             time.sleep(30 if first_run else 90)
             first_run = False
 
-            quakes = _fetch_usgs_quakes()
+            quakes = _fetch_quake_events()
             storms = _fetch_noaa_storms()
             gdacs  = _fetch_gdacs_alerts()
             total = len(quakes) + len(storms) + len(gdacs)
             if total > 0:
                 logger.info(
                     f"[disaster-persist] 抓到 {total} 筆: "
-                    f"USGS={len(quakes)}, NOAA={len(storms)}, GDACS={len(gdacs)}"
+                    f"地震={len(quakes)}, NOAA={len(storms)}, GDACS={len(gdacs)}"
                 )
                 # _persist_events_async 內部已用 ON CONFLICT DO NOTHING 去重
                 _persist_events_async(quakes + storms + gdacs, "disaster")
@@ -3203,45 +3631,42 @@ def api_risk_suppliers():
 
 
 _QUAKE_CACHE: dict = {"data": None, "ts": 0.0}
-_QUAKE_CACHE_TTL = 300  # 5 minutes — USGS data refreshes minutely but front-end traffic
-                       # doesn't justify hitting their query API every request.
-_QUAKE_DAYS = 56  # 8 週，對齊全站事件 retention window
+_QUAKE_CACHE_TTL = 300  # 5 minutes — official feeds refresh often enough that per-request fetches are unnecessary.
 
 
 @app.route("/api/risk/quakes")
 def api_risk_quakes():
-    """USGS 過去 8 週 (56 天) M4.5+ 地震，5 分鐘 cache。
+    """官方來源優先的過去 8 週地震資料，5 分鐘 cache。
 
-    之前用 4.5_day.geojson 的 24-hour rolling feed → 24h 後事件就「不見」。
-    改用 USGS query API 拿 56 天視窗，符合全站事件保留期。
+    日本 JMA、台灣 CWA、印尼 BMKG 先接官方 JSON/API；其他地區保留 USGS fallback。
     """
     now = time.time()
     cached = _QUAKE_CACHE.get("data")
     if cached is not None and (now - _QUAKE_CACHE.get("ts", 0)) < _QUAKE_CACHE_TTL:
         return jsonify(cached)
     try:
-        starttime = (datetime.now(timezone.utc) - timedelta(days=_QUAKE_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
-        url = (
-            "https://earthquake.usgs.gov/fdsnws/event/1/query"
-            f"?format=geojson&starttime={starttime}&minmagnitude=4.5&orderby=time"
-        )
-        r = req_lib.get(url, timeout=15)
-        if r.status_code == 200:
-            data = r.json()
-            _QUAKE_CACHE["data"] = data
-            _QUAKE_CACHE["ts"] = now
-            return jsonify(data)
-        # USGS 失敗 → 退回 24h feed（最少還有今天的）
-        r2 = req_lib.get(
-            "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson",
-            timeout=5,
-        )
-        return r2.content, r2.status_code, {"Content-Type": "application/json"}
+        data = {
+            "type": "FeatureCollection",
+            "metadata": {
+                "title": "Official local earthquake feeds with USGS fallback",
+                "days": _QUAKE_DAYS,
+                "sources": ["JMA", "CWA", "BMKG", "USGS"],
+                "critical": {
+                    "magnitude": _QUAKE_CRITICAL_MAG,
+                    "maxIntensityValue": _QUAKE_CRITICAL_INTENSITY,
+                    "maxIntensity": "6弱",
+                },
+            },
+            "features": _fetch_quake_features(_QUAKE_DAYS),
+        }
+        _QUAKE_CACHE["data"] = data
+        _QUAKE_CACHE["ts"] = now
+        return jsonify(data)
     except Exception as e:
-        logger.warning(f"USGS quake fetch error: {e}")
+        logger.warning(f"official/local quake fetch error: {e}", exc_info=True)
         if cached is not None:
             return jsonify(cached)  # 拿舊 cache 比空陣列好
-        return jsonify({"features": []})
+        return jsonify({"type": "FeatureCollection", "features": []})
 
 
 # 5-minute caches for proxy endpoints — without these every page load hits
@@ -3355,7 +3780,7 @@ _geo_risk_lock  = threading.Lock()
 
 # ── Disaster Risks ──────────────────────────────────────────────
 # 已全部移除。所有災害事件都由各自的官方 feed 提供：
-#   地震 → USGS  (api_risk_quakes / _fetch_usgs_quakes)
+#   地震 → JMA / CWA / BMKG / USGS fallback  (api_risk_quakes / _fetch_quake_features)
 #   颱風 → NOAA NHC (api_risk_storms / _fetch_noaa_storms)
 #   洪水 / 火山 / 極端天氣 → GDACS (api_risk_disasters / _fetch_gdacs_alerts)
 # 之前用新聞 scrape 重複偵測這些事件，標題/規模/座標都寫死，不準且跟官方 feed 衝突。
