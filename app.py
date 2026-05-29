@@ -4056,6 +4056,11 @@ _STRIKE_COMPANY_EXCLUDE = {
     "三星電子": ["samsung biologics", "三星生物"],
 }
 
+_RESOLVED_STRIKE_CUTOFFS = {
+    "\u53f0\u7a4d\u96fb": "2026-05-29",
+    "\u4e09\u661f\u96fb\u5b50": "2026-05-27",
+}
+
 def _is_excluded_strike_event(event: dict) -> bool:
     """Return True for demo, rumor/threat, resolved, or wrong-company strike events."""
     if (event.get("id") or "") == "demo-strike-samsung":
@@ -4067,6 +4072,11 @@ def _is_excluded_strike_event(event: dict) -> bool:
 
     for company, kws in _STRIKE_COMPANY_EXCLUDE.items():
         if company in event.get("title", "") and any(kw in text for kw in kws):
+            return True
+    event_date = str(event.get("time", ""))[:10]
+    event_title = event.get("title", "")
+    for company, cutoff in _RESOLVED_STRIKE_CUTOFFS.items():
+        if company in event_title and event_date and event_date <= cutoff:
             return True
     return False
 
