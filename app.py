@@ -946,11 +946,6 @@ def api_demo_seed():
     today = _date.today().isoformat()
 
     demo_strikes = [
-        {"id":"demo-strike-samsung","type":"strike","title":"三星電子 罷工事件",
-         "lat":37.00,"lng":127.06,"region":"韓國","impact":"HIGH","time":today,
-         "supply":"三星電子勞資衝突，可能影響生產排程與出貨交期，建議評估替代供應",
-         "source":"Bing News自動監測（Demo）","sourceUrl":"https://example.com",
-         "newsTitle":"Samsung workers vote for major strike action"},
         {"id":"demo-strike-foxconn","type":"strike","title":"富士康 罷工事件",
          "lat":34.75,"lng":113.62,"region":"中國大陸","impact":"HIGH","time":today,
          "supply":"富士康勞資衝突，鄭州廠 iPhone 組裝線受影響",
@@ -4022,6 +4017,59 @@ _STRIKE_TARGETS = [
 _strike_cache: dict = {"data": [], "ts": 0.0}  # Force empty on startup + immediate refresh
 _strike_lock  = threading.Lock()
 
+_STRIKE_ACTION_KEYWORDS = [
+    "罷工", "工潮", "停工", "workers strike", "labor strike", "strike action",
+    "general strike", "full-scale strike", "went on strike", "go on strike",
+    "goes on strike", "on strike", "launch strike", "launches strike",
+    "launched strike", "begin strike", "begins strike", "began strike",
+    "start strike", "starts strike", "started strike", "walk out", "walkout",
+    "industrial action",
+]
+
+_STRIKE_EXCLUDE_KEYWORDS = [
+    # Not a current/active labor stoppage.
+    "沒有要罷工", "不會罷工", "未罷工", "暫緩罷工", "擱置罷工", "取消罷工",
+    "罷工喊卡", "化解罷工", "避免罷工", "避開罷工", "罷工危機落幕",
+    "罷工風險暫時解除", "罷工風險解除", "通過薪資協議", "薪資協議過關",
+    "達成協議", "初步協議", "臨時協議", "暫定協議", "投票通過",
+    "揚言", "威脅", "醞釀", "擬", "不排除", "效法", "網傳", "傳出",
+    "傳調整", "傳大砍", "傳砍", "傳聞", "社群", "員工不滿",
+    "not affected", "unaffected", "avert strike", "averts strike",
+    "averted strike", "avoid strike", "avoids strike", "avoided strike",
+    "strike averted", "strike threat is over", "strike risk is over",
+    "suspend strike", "suspends strike", "suspended strike", "postpone strike",
+    "postpones strike", "postponed strike", "put off strike", "puts off strike",
+    "hold off", "call off", "called off", "wage deal", "pay deal",
+    "tentative deal", "tentative agreement", "strike deal", "strike agreement",
+    "strike settlement", "approve wage deal", "approves wage deal",
+    "approved wage deal", "ratify", "ratified", "considering strikes",
+    "considering strike", "threaten strike", "threatens strike",
+    "threatening strike", "threaten to strike", "threatens to strike",
+    "threatening to strike", "strike threat", "strike looms", "strike loom",
+    "could strike", "may strike", "might strike", "reportedly",
+    "strike price", "court", "fine", "theft", "legal", "lawsuit", "patent",
+    "intellectual property",
+]
+
+_STRIKE_COMPANY_EXCLUDE = {
+    # Samsung Electronics labor issues matter to memory/fab supply. Biologics does not.
+    "三星電子": ["samsung biologics", "三星生物"],
+}
+
+def _is_excluded_strike_event(event: dict) -> bool:
+    """Return True for demo, rumor/threat, resolved, or wrong-company strike events."""
+    if (event.get("id") or "") == "demo-strike-samsung":
+        return True
+
+    text = " ".join(str(event.get(k, "")) for k in ("title", "newsTitle", "supply", "status")).lower()
+    if any(kw in text for kw in _STRIKE_EXCLUDE_KEYWORDS):
+        return True
+
+    for company, kws in _STRIKE_COMPANY_EXCLUDE.items():
+        if company in event.get("title", "") and any(kw in text for kw in kws):
+            return True
+    return False
+
 def _scan_one_strike(target, headers, cutoff):
     """Scan Bing News for one strike target. Returns result dict or None."""
     import xml.etree.ElementTree as ET
@@ -4060,23 +4108,21 @@ def _scan_one_strike(target, headers, cutoff):
                             desc = item.findtext("description", "").lower()
                             full_text = f"{title} {desc}"
 
-                            # Strict validation: must be actual labor strike, not other "strike" meanings
-                            has_strike_action = any(kw in full_text for kw in [
-                                "罷工", "工潮", "workers strike", "labor strike",
-                                "strike threat", "strike action", "strike demand",
-                                "strike call", "walk out", "walkout"
-                            ])
-                            has_exclude = any(kw in full_text for kw in [
-                                "not affected", "unaffected", "strike deal", "strike agreement",
-                                "strike price", "strike settlement", "court", "fine", "theft",
-                                "legal", "lawsuit", "patent", "intellectual property"
-                            ])
+                            # Strict validation: keep only current/active labor stoppages.
+                            # Rumors, strike threats, and resolved/averted negotiations are not events.
+                            has_strike_action = any(kw in full_text for kw in _STRIKE_ACTION_KEYWORDS)
+                            exclude_hits = [kw for kw in _STRIKE_EXCLUDE_KEYWORDS if kw in full_text]
+                            company_exclude_hits = [
+                                kw for kw in _STRIKE_COMPANY_EXCLUDE.get(target["company"], [])
+                                if kw in full_text
+                            ]
+                            has_exclude = bool(exclude_hits or company_exclude_hits)
 
                             if not has_strike_action or has_exclude:
                                 if not has_strike_action:
                                     logger.warning(f"[STRIKE] FILTERED {target['company']}: '{title[:70]}' — no strike action keywords")
                                 else:
-                                    logger.warning(f"[STRIKE] FILTERED {target['company']}: '{title[:70]}' — excluded: {[k for k in ['court','fine','theft','deal','agreement'] if k in full_text]}")
+                                    logger.warning(f"[STRIKE] FILTERED {target['company']}: '{title[:70]}' — excluded: {exclude_hits + company_exclude_hits}")
                                 continue
 
                             # === 公司主語驗證（避免新聞只順帶提及目標公司）===
@@ -4234,9 +4280,11 @@ def _do_strike_scan():
                 found_match = True
                 break
 
-        if found_match:
+        if found_match and not _is_excluded_strike_event(res):
             validated.append(res)
             logger.info(f"[STRIKE] ✓ Validated: {res['title']}")
+        elif found_match:
+            logger.warning(f"[STRIKE] ✗ REJECTED (excluded event): '{company_in_result}'")
         else:
             logger.warning(f"[STRIKE] ✗ REJECTED (company mismatch): '{company_in_result}'")
 
@@ -4280,6 +4328,7 @@ def api_risk_strikes():
     filtered_data = [
         event for event in data
         if not any(excluded in event.get("title", "") for excluded in EXCLUDED_COMPANIES)
+        and not _is_excluded_strike_event(event)
         and event.get("time", "") >= str(cutoff)  # Only show if latest news is recent (7 days)
     ]
 
@@ -4664,6 +4713,8 @@ def api_risk():
         # Skip non-fab strikes (only count strikes from actual fab companies)
         event_type = event.get("type", "")
         if event_type == "strike":
+            if _is_excluded_strike_event(event):
+                continue
             # Extract company name from event title (format: "公司名 罷工事件")
             title = event.get("title", "")
             is_fab_strike = any(fab in title for fab in _FAB_COMPANIES)
@@ -4805,6 +4856,8 @@ def api_risk():
     for event in strikes + geo_risks:
         event_type = event.get("type", "").lower()
         event_title = event.get("title", "").lower()
+        if event_type == "strike" and _is_excluded_strike_event(event):
+            continue
 
         # Check if this is a typhoon/flood/disaster event
         is_disaster = any(kw in event_title for kw in ["颱風", "typhoon", "洪水", "flood", "氣旋", "cyclone"])
