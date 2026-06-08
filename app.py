@@ -278,7 +278,13 @@ _DISASTER_REGION_KEYWORDS = {
     "korea":       "韓國", "korean": "韓國",
     "china":       "中國大陸", "chinese": "中國大陸",
     "malaysia":    "馬來西亞",
+    "philippine":  "菲律賓",
     "philippines": "菲律賓",
+    "filipina":    "菲律賓",
+    "filipino":    "菲律賓",
+    "mindanao":    "菲律賓",
+    "luzon":       "菲律賓",
+    "visayas":     "菲律賓",
     "vietnam":     "越南",
     "indonesia":   "印度尼西亞",
     "india":       "印度",
@@ -485,6 +491,9 @@ def _feature_in_region(feat: dict, region: str) -> bool:
     lat_f = _to_float(lat)
     lng_f = _to_float(lng)
     place = (props.get("place") or "").lower()
+    explicit_region = (props.get("region") or "").strip()
+    if explicit_region:
+        return explicit_region == region
     if region == "台灣":
         return (
             lat_f is not None and lng_f is not None and 21.5 <= lat_f <= 25.8 and 119 <= lng_f <= 123.5
@@ -497,6 +506,10 @@ def _feature_in_region(feat: dict, region: str) -> bool:
         return (
             lat_f is not None and lng_f is not None and -11.5 <= lat_f <= 6.5 and 94 <= lng_f <= 142.5
         ) or any(k in place for k in ("indonesia", "java", "sumatra", "sulawesi", "papua", "molucca", "bali"))
+    if region == "菲律賓":
+        return (
+            lat_f is not None and lng_f is not None and 4 <= lat_f <= 21.5 and 116 <= lng_f <= 127
+        ) or any(k in place for k in ("philippine", "philippines", "filipina", "mindanao", "luzon", "visayas"))
     return False
 
 
@@ -654,17 +667,20 @@ def _fetch_bmkg_quake_features(days: int = _QUAKE_DAYS) -> list[dict]:
                 dt = rec.get("DateTime")
                 eid = f"bmkg-{str(dt or rec.get('Tanggal') or '').replace(':','').replace('-','').replace('+','')}-{coords[0].strip()}-{coords[1].strip()}"
                 max_intensity = f"MMI {rec.get('Dirasakan')}" if rec.get("Dirasakan") and rec.get("Dirasakan") != "-" else None
+                wilayah = str(rec.get("Wilayah") or "").strip()
+                bmkg_region = _infer_disaster_region(wilayah) or "印度尼西亞"
+                place_prefix = "菲律賓" if bmkg_region == "菲律賓" else "印尼"
                 feat = _quake_feature(
                     eid=eid,
                     source="BMKG印尼氣象氣候地球物理局",
-                    place=f"印尼 {rec.get('Wilayah') or ''}".strip(),
+                    place=f"{place_prefix} {wilayah}".strip(),
                     lat=coords[0],
                     lng=coords[1],
                     depth_km=_parse_bmkg_depth(rec.get("Kedalaman")),
                     mag=rec.get("Magnitude"),
                     time_value=dt,
                     source_url="https://data.bmkg.go.id/gempabumi/",
-                    region="印度尼西亞",
+                    region=bmkg_region,
                     max_intensity=max_intensity,
                     intensity_scale="MMI" if max_intensity else None,
                     mag_type="M",
