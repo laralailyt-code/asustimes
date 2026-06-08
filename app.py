@@ -176,8 +176,13 @@ _bg_lock = threading.Lock()
 _telegram_bot_started = False
 _disaster_persist_started = False
 
+def _background_disabled() -> bool:
+    return os.environ.get("ASUSTIMES_DISABLE_BACKGROUND", "").strip().lower() in {"1", "true", "yes", "on"}
+
 @app.before_request
 def _ensure_bg_running():
+    if _background_disabled():
+        return
     global _bg_started, _telegram_bot_started, _disaster_persist_started
     if not _bg_started:
         with _bg_lock:
@@ -1700,8 +1705,7 @@ def _fetch_cnyes_futures_history(
     max_price: float,
     label: str,
 ) -> list[tuple[str, float]]:
-    """Fetch full daily commodity history from cnyes ChartSource JSONP.
-    Used by 鈀 (PA) and other cnyes futures series."""
+    """Fetch full daily commodity history from cnyes ChartSource JSONP."""
     import re as _re
     try:
         url = (
@@ -1735,6 +1739,17 @@ def _fetch_cnyes_futures_history(
         return []
 
 
+def _fetch_cnyes_cobalt_history() -> list[tuple[str, float]]:
+    """Fetch full daily cobalt LME history from cnyes (鉅亨網)."""
+    return _fetch_cnyes_futures_history(
+        code="lcocs",
+        referer="https://www.cnyes.com/futures/Javachart/lcocs.html",
+        min_price=10000,
+        max_price=200000,
+        label="cobalt",
+    )
+
+
 def _fetch_cnyes_palladium_history() -> list[tuple[str, float]]:
     """Fetch full daily palladium spot history from cnyes (鉅亨網 PA)."""
     return _fetch_cnyes_futures_history(
@@ -1744,44 +1759,6 @@ def _fetch_cnyes_palladium_history() -> list[tuple[str, float]]:
         max_price=10000,
         label="palladium",
     )
-
-
-def _fetch_cnyes_cobalt_history() -> list[tuple[str, float]]:
-    """Fetch full daily cobalt LME history from cnyes (鉅亨網).
-
-    Endpoint: /futures/highChart/ChartSource.aspx?type=futures&source=javachart&code=lcocs
-    Returns JSONP `([[epoch_ms, price], ...]);` covering ~360 trading days.
-    Values are LME cobalt cash-settle prices in USD/tonne, daily-updated.
-
-    Returns: [(YYYY-MM-DD, float), ...] sorted chronologically; empty list on failure.
-    """
-    import re as _re
-    try:
-        url = "https://www.cnyes.com/futures/highChart/ChartSource.aspx?type=futures&source=javachart&code=lcocs"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Referer": "https://www.cnyes.com/futures/Javachart/lcocs.html",
-        }
-        r = req_lib.get(url, headers=headers, timeout=15)
-        if r.status_code != 200:
-            return []
-        text = r.text.strip()
-        m = _re.match(r"^\((.*?)\)\s*;?\s*$", text, _re.DOTALL)
-        if not m:
-            return []
-        import json as _json
-        raw = _json.loads(m.group(1))
-        out: list[tuple[str, float]] = []
-        for ts_ms, val in raw:
-            d = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
-            v = float(val)
-            if 10000 < v < 200000:  # sanity filter
-                out.append((d, round(v, 2)))
-        out.sort(key=lambda x: x[0])
-        return out
-    except Exception as e:
-        logger.warning(f"cnyes cobalt fetch failed: {e}")
-        return []
 
 
 def _fetch_cnyes_cobalt_price() -> float | None:
@@ -2694,8 +2671,9 @@ def _live_price_loop():
     # Load CSV historical data first, then fetch fresh prices
     _load_commodity_csv_to_cache()
     _refresh_live_prices()
-    # Refresh at 07:00, 09:00, 11:00, 13:00, 15:00, 17:00 Taiwan time (UTC+8) every day
-    # This ensures ~2+ data points per 7 days for cobalt and other commodities
+    # Refresh at 07:00, 09:00, 11:00, 13:00, 15:00, 17:00 Taiwan time (UTC+8) every day.
+    # _save_commodity_csv also guarantees at least Mon/Wed/Fri columns in the
+    # recent window, so a partial cache cannot erase a multi-week history gap.
     _REFRESH_HOURS = {7, 9, 11, 13, 15, 17}
     last_run_hour: set = set()
     while True:
@@ -2949,6 +2927,23 @@ def _apply_carry_forward(rows: list, header: list, carry_back_days: int = 30) ->
                 row[cidx] = f"{first_real}*"
 
 
+def _add_recent_minimum_record_dates(all_dates: set[str], days: int = 45) -> None:
+    """Ensure recent commodity history has at least 3 recording dates per week.
+
+    Some sources only return latest-only values, and if a refresh misses a long
+    window the CSV can be rewritten without any date columns for that gap. Add
+    Mon/Wed/Fri columns for the recent window; _apply_carry_forward fills them
+    with tagged carry values until a real source value overwrites them.
+    """
+    today = datetime.now(TW_TZ).date()
+    start = today - timedelta(days=days)
+    cur = start
+    while cur <= today:
+        if cur.weekday() in (0, 2, 4) or cur == today:
+            all_dates.add(cur.isoformat())
+        cur += timedelta(days=1)
+
+
 def _save_commodity_csv():
     """Save current _live_commodity_cache back to CSV file in wide-format.
 
@@ -2992,6 +2987,8 @@ def _save_commodity_csv():
         if not all_dates:
             logger.warning("No dates found in commodity cache, skipping CSV save")
             return
+
+        _add_recent_minimum_record_dates(all_dates)
 
         # Sort dates chronologically
         sorted_dates = sorted(all_dates)
@@ -3038,8 +3035,8 @@ def _save_commodity_csv():
                     row.append("")
             rows.append(row)
 
-        # Carry-forward: fill empty cells with most recent prior value (tagged with *).
-        # Ensures no commodity stays blank for more than 1 day after first real point.
+        # Carry-forward: fill empty scheduled cells with most recent prior value
+        # (tagged with *). Real source values overwrite tags on the next save.
         _apply_carry_forward(rows, rows[0])
 
         # Write to CSV with utf-8-sig encoding (preserves BOM for Excel compatibility)
@@ -4929,6 +4926,8 @@ _threads_started = False
 
 def ensure_background_threads():
     """Ensure background threads are running (safe to call multiple times)."""
+    if _background_disabled():
+        return
     global _threads_started
     if _threads_started:
         return
@@ -5001,7 +5000,7 @@ def _start_critical_bg_threads():
 
 
 # 在 Render（gunicorn worker）載入時自動拉起
-if os.environ.get("RENDER") == "true":
+if os.environ.get("RENDER") == "true" and not _background_disabled():
     _start_critical_bg_threads()
 
 
