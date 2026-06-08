@@ -1568,6 +1568,34 @@ _TE_SLUGS = {
 # Cobalt: 走 cnyes 鉅亨網 (LME cash-settle, 360 天每日歷史) — 較貼近 settlement
 # 比 TE bid 準確（TE 與 settlement 有 ~$1000 basis 差距）。
 
+# cnyes LME spot ChartSource → (CSV item, valid range, chart URL, source label)
+_CNYES_LME_SPOT_ITEMS = {
+    "tin": (
+        "TNCS",
+        "錫 (tin) US$/tonne",
+        10000,
+        100000,
+        "https://www.cnyes.com/futures/html5chart/TNCS.html",
+        "LME tin spot",
+    ),
+    "nickel": (
+        "NDCS",
+        "鎳 (nickel)  US$/tonne",
+        1000,
+        100000,
+        "https://www.cnyes.com/futures/html5chart/NDCS.html",
+        "LME nickel spot",
+    ),
+    "zinc": (
+        "ZSCS",
+        "鋅 (zinc)  US$/tonne",
+        500,
+        10000,
+        "https://www.cnyes.com/futures/html5chart/ZSCS.html",
+        "LME zinc spot",
+    ),
+}
+
 
 def _fetch_bot_bcd_price(code: str) -> float | None:
     """Fetch latest price from bot.com.tw BCD API.
@@ -1758,6 +1786,21 @@ def _fetch_cnyes_palladium_history() -> list[tuple[str, float]]:
         min_price=100,
         max_price=10000,
         label="palladium",
+    )
+
+
+def _fetch_cnyes_lme_spot_history(slug: str) -> list[tuple[str, float]]:
+    """Fetch LME spot daily history for tin/nickel/zinc from cnyes ChartSource."""
+    item = _CNYES_LME_SPOT_ITEMS.get(slug)
+    if not item:
+        return []
+    code, _csv_name, min_price, max_price, url, label = item
+    return _fetch_cnyes_futures_history(
+        code=code,
+        referer=url,
+        min_price=min_price,
+        max_price=max_price,
+        label=label,
     )
 
 
@@ -2239,16 +2282,20 @@ def _fetch_smm_tungsten_powder_price() -> float | None:
     return None
 
 
-def _fetch_sci99_price(old_id: int, label: str = "") -> tuple[float | None, str | None]:
-    """Fetch latest price from sci99.com JSON API.
+def _fetch_sci99_history(
+    old_id: int,
+    label: str = "",
+    min_price: float | None = None,
+    max_price: float | None = None,
+) -> list[tuple[str, float]]:
+    """Fetch recent dated prices from sci99.com JSON API.
 
     sci99.com switched its monitor pages to JS-rendered empty tables in 2026,
     so parsing the static HTML returns nothing. Use the AJAX endpoint that the
     site itself calls. `oldId` matches the number in the page URL — e.g.
     monitor-678-0.html → oldId=678 (黃磷); monitor-68-0.html → oldId=68 (PC).
-
-    Returns (price as float, date_str) or (None, None) on failure.
     """
+    import re as _re
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -2263,20 +2310,40 @@ def _fetch_sci99_price(old_id: int, label: str = "") -> tuple[float | None, str 
         )
         if r.status_code != 200:
             logger.warning(f"sci99 API {label or old_id}: HTTP {r.status_code}")
-            return None, None
+            return []
         body = r.json()
         if body.get("code") != 200 or not body.get("data"):
             logger.warning(f"sci99 API {label or old_id}: empty data")
-            return None, None
-        first = body["data"][0]
-        date_str = first.get("dateRange")
-        price_str = first.get("mdataValue")
-        if not date_str or not price_str:
-            return None, None
-        return float(price_str.replace(",", "")), date_str
+            return []
+        out: list[tuple[str, float]] = []
+        for item in body.get("data") or []:
+            date_str = (item.get("dateRange") or "").strip()
+            price_str = (item.get("mdataValue") or "").strip()
+            if not _re.match(r"^\d{4}-\d{2}-\d{2}$", date_str) or not price_str:
+                continue
+            try:
+                price = float(price_str.replace(",", ""))
+            except ValueError:
+                continue
+            if min_price is not None and price < min_price:
+                continue
+            if max_price is not None and price > max_price:
+                continue
+            out.append((date_str, round(price, 2)))
+        out = sorted({d: v for d, v in out}.items())
+        return out
     except Exception as e:
         logger.warning(f"sci99 API {label or old_id} fetch error: {e}")
-        return None, None
+        return []
+
+
+def _fetch_sci99_price(old_id: int, label: str = "") -> tuple[float | None, str | None]:
+    """Fetch latest dated price from sci99.com JSON API."""
+    history = _fetch_sci99_history(old_id, label=label)
+    if history:
+        date_str, price = history[-1]
+        return price, date_str
+    return None, None
 
 
 def _fetch_pc_price_from_sci99() -> float | None:
@@ -2431,8 +2498,9 @@ def _refresh_live_prices():
     # 排除走別的來源處理的：
     # - copper, aluminum: 走 Yahoo Finance (HG=F, ALI=F)
     # - phosphorus:       走 sci99 JSON API
-    # tin/nickel/zinc/cobalt/lithium 走 TE（metals.live 已死、Yahoo 沒這幾檔期貨）
-    excluded_slugs = {"copper", "aluminum", "phosphorus"}
+    # - tin/nickel/zinc:  走 cnyes LME spot daily history
+    # lithium 仍走 TE latest；若 TE 沒有可用歷史 API，CSV 只保留來源確認日期。
+    excluded_slugs = {"copper", "aluminum", "phosphorus", "tin", "nickel", "zinc"}
     for slug, (csv_name, mult) in _TE_SLUGS.items():
         if slug in excluded_slugs:
             continue  # Skip LME metals and phosphorus, fetch them separately
@@ -2452,6 +2520,26 @@ def _refresh_live_prices():
             sources[csv_name] = {"label": "Trading Economics",
                                  "url":   f"https://tradingeconomics.com/commodity/{slug}"}
             logger.info(f"TradingEconomics: {csv_name} = {val}")
+
+    # Tin / Nickel / Zinc — cnyes LME spot daily history, source-dated.
+    logger.info("[REFRESH] Starting LME spot metals (cnyes tin/nickel/zinc)...")
+    for slug, item in _CNYES_LME_SPOT_ITEMS.items():
+        code, csv_name, _min_price, _max_price, url, label = item
+        history = _fetch_cnyes_lme_spot_history(slug)
+        if history:
+            with _live_cache_lock:
+                prev = list(_live_commodity_cache.get(csv_name, []))
+            source_dates = {d for d, _ in history}
+            merged = [p for p in prev if p[0] not in source_dates] + history
+            merged.sort(key=lambda x: x[0])
+            fresh[csv_name] = merged
+            sources[csv_name] = {
+                "label": f"鉅亨網 cnyes ({label})",
+                "url": url,
+            }
+            logger.info(f"cnyes {code}: {csv_name} = {history[-1][1]} ({len(history)} pts, latest {history[-1][0]})")
+        else:
+            logger.warning(f"cnyes {code} fetch failed; preserving cached {csv_name} history")
 
     # Cobalt — cnyes 鉅亨網 LME cash-settle (360-day daily history merged with cache)
     logger.info("[REFRESH] Starting Cobalt (cnyes lcocs)...")
@@ -2497,30 +2585,18 @@ def _refresh_live_prices():
     with _live_cache_lock:
         prev = list(_live_commodity_cache.get(yp_name, []))
 
-    # DO NOT initialize from historical CSV — always fetch fresh from URL
-    # User requirement: Yellow Phosphorus price must come from URL only, no CSV history
-
-    # Fetch from SCI99 JSON API (oldId=678 for 黃磷, matches monitor-678-0.html URL).
+    # Fetch dated rows from SCI99 JSON API (oldId=678 for 黃磷, matches monitor-678-0.html URL).
     # The HTML monitor page is now JS-rendered (empty static <table>), so we hit
     # the same AJAX endpoint that the page itself calls.
-    yp_price, yp_date = _fetch_sci99_price(678, label="Yellow Phosphorus")
-    if yp_price and yp_price > 0:
-        logger.info(f"Yellow Phosphorus from SCI99 API: {yp_price} CNY/tonne (date: {yp_date})")
-    else:
-        yp_price = None
-
-    if yp_price and yp_price > 0:
-        yp_val = round(yp_price, 2)
-        existing_dates = {d for d, _ in prev}
-        if today not in existing_dates:
-            prev.append((today, yp_val))
-            logger.info(f"Added new SCI99 price for {today}: {yp_val} CNY/tonne")
-        else:
-            prev = [(d if d != today else today, yp_val if d == today else p) for d, p in prev]
-        fresh[yp_name] = prev
+    yp_history = _fetch_sci99_history(678, label="Yellow Phosphorus", min_price=10000, max_price=60000)
+    if yp_history:
+        source_dates = {d for d, _ in yp_history}
+        merged = [p for p in prev if p[0] not in source_dates] + yp_history
+        merged.sort(key=lambda x: x[0])
+        fresh[yp_name] = merged
         sources[yp_name] = {"label": "SCI99（固定來源）",
                             "url":   "https://www.sci99.com/monitor-678-0.html"}
-        logger.info(f"Yellow Phosphorus: {len(prev)} historical points (latest: {yp_val} CNY/tonne on {today})")
+        logger.info(f"Yellow Phosphorus: {len(merged)} points (SCI99 latest: {yp_history[-1][1]} CNY/tonne on {yp_history[-1][0]})")
     else:
         # If fetch fails, preserve all historical data (don't delete history)
         fresh[yp_name] = prev
@@ -2529,7 +2605,7 @@ def _refresh_live_prices():
         logger.warning(f"Yellow Phosphorus fetch failed, preserved {len(prev)} historical points")
 
     # NOTE: Copper / Aluminum 走 _LIVE_COMMODITY_SYMBOLS Yahoo 路徑 (HG=F, ALI=F)。
-    # Tin / Nickel / Zinc / Cobalt 走 _TE_SLUGS Trading Economics 路徑。
+    # Tin / Nickel / Zinc / Cobalt 走 cnyes dated history；Lithium 仍走 TE latest。
     # 之前這裡有 4 個 dedicated block (Copper/Tin-Nickel-Zinc/Cobalt/Aluminum) 用已死的
     # metals.live API，並會用 stale cache 蓋掉 Yahoo/TE 已寫入的正確值，且 cobalt 還拿
     # ZS=F (大豆期貨!) × 22.05 當初始化資料。已全部移除以避免汙染 fresh[]。
@@ -2626,32 +2702,36 @@ def _refresh_live_prices():
         prev = [(date, price) for date, price in sorted(_PC_HISTORY.items())]
         logger.info(f"Initialized PC from user history: {len(prev)} points")
 
-    pc_price = _fetch_pc_price_from_sci99()
-    if pc_price is None:
-        # Fallback: try alternative source
-        pc_price = _fetch_pc_price_fallback()
-
-    if pc_price is not None:
-        pc_val = round(pc_price, 2)
-        existing_dates = {d for d, _ in prev}
-        if today not in existing_dates:
-            prev.append((today, pc_val))
-            logger.info(f"Added new PC price for {today}: {pc_val} CNY/tonne")
-        else:
-            # Update today if already exists
-            prev = [(d if d != today else today, pc_val if d == today else p) for d, p in prev]
-            logger.info(f"Updated PC price for {today}: {pc_val} CNY/tonne")
-        fresh[pc_name] = prev
-        src_label = "sci99.com" if pc_price else "buyplas.com (fallback)"
-        sources[pc_name] = {"label": src_label,
+    pc_history = _fetch_sci99_history(68, label="PC", min_price=10000, max_price=25000)
+    if pc_history:
+        source_dates = {d for d, _ in pc_history}
+        merged = [p for p in prev if p[0] not in source_dates] + pc_history
+        merged.sort(key=lambda x: x[0])
+        fresh[pc_name] = merged
+        sources[pc_name] = {"label": "sci99.com",
                             "url":   "https://www.sci99.com/monitor-68-0.html"}
-        logger.info(f"PC: {len(prev)} historical points (latest: {pc_val} CNY/tonne on {today})")
+        logger.info(f"PC: {len(merged)} points (SCI99 latest: {pc_history[-1][1]} CNY/tonne on {pc_history[-1][0]})")
     else:
-        # If all sources fail, preserve all historical data (don't delete history)
-        fresh[pc_name] = prev
-        sources[pc_name] = {"label": "sci99.com + buyplas (待更新)",
-                            "url":   "https://www.sci99.com/monitor-68-0.html"}
-        logger.warning(f"PC fetch failed, preserved {len(prev)} historical points")
+        pc_price = _fetch_pc_price_fallback()
+        if pc_price is not None:
+            pc_val = round(pc_price, 2)
+            existing_dates = {d for d, _ in prev}
+            if today not in existing_dates:
+                prev.append((today, pc_val))
+                logger.info(f"Added new PC fallback price for {today}: {pc_val} CNY/tonne")
+            else:
+                prev = [(d if d != today else today, pc_val if d == today else p) for d, p in prev]
+                logger.info(f"Updated PC fallback price for {today}: {pc_val} CNY/tonne")
+            fresh[pc_name] = prev
+            sources[pc_name] = {"label": "buyplas.com (fallback)",
+                                "url":   "https://www.buyplas.com/spot/1003-PP-PE-PVC-ABS-PS.html"}
+            logger.info(f"PC fallback: {len(prev)} points (latest: {pc_val} CNY/tonne on {today})")
+        else:
+            # If all sources fail, preserve all historical data (don't delete history)
+            fresh[pc_name] = prev
+            sources[pc_name] = {"label": "sci99.com + buyplas (待更新)",
+                                "url":   "https://www.sci99.com/monitor-68-0.html"}
+            logger.warning(f"PC fetch failed, preserved {len(prev)} historical points")
 
     with _live_cache_lock:
         _live_commodity_cache.update(fresh)
@@ -2783,8 +2863,13 @@ def _parse_commodity_csv() -> dict:
                     values.append(None)
                 else:
                     try:
-                        # Strip carry-forward marker '*' before parsing
-                        clean = v.replace(",", "").rstrip("*").strip()
+                        # Carry-forward placeholders keep CSV columns from
+                        # disappearing, but they are not real price records and
+                        # must not be plotted as trend data.
+                        if v.endswith("*"):
+                            values.append(None)
+                            continue
+                        clean = v.replace(",", "").strip()
                         values.append(float(clean))
                     except Exception:
                         values.append(None)
@@ -2867,6 +2952,44 @@ def _parse_commodity_csv() -> dict:
     return result
 
 
+def _existing_commodity_csv_dates() -> set[str]:
+    """Return existing CSV header dates so saves do not drop old columns."""
+    dates: set[str] = set()
+    if not os.path.exists(_COMMODITY_CSV):
+        return dates
+    try:
+        with open(_COMMODITY_CSV, encoding="utf-8-sig", newline="") as f:
+            rows = csv.reader(f)
+            header = next(rows, [])
+        today = datetime.now(TW_TZ)
+        prev_month = None
+        year = today.year
+        for raw in header[1:]:
+            raw = (raw or "").strip()
+            if not raw:
+                continue
+            try:
+                parts = raw.split("/")
+                if len(parts) == 3:
+                    y, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+                elif len(parts) == 2:
+                    month, day = int(parts[0]), int(parts[1])
+                    if prev_month is not None and month < prev_month and prev_month >= 10:
+                        year = today.year
+                    if month == 12 and prev_month is None:
+                        year = today.year - 1
+                    prev_month = month
+                    y = year
+                else:
+                    continue
+                dates.add(f"{y}-{month:02d}-{day:02d}")
+            except Exception:
+                continue
+    except Exception as e:
+        logger.warning(f"Commodity CSV header date scan error: {e}")
+    return dates
+
+
 def _apply_carry_forward(rows: list, header: list, carry_back_days: int = 30) -> None:
     """Fill empty cells using nearest real value, tagged with trailing '*'.
 
@@ -2928,19 +3051,18 @@ def _apply_carry_forward(rows: list, header: list, carry_back_days: int = 30) ->
 
 
 def _add_recent_minimum_record_dates(all_dates: set[str], days: int = 45) -> None:
-    """Ensure recent commodity history has at least 3 recording dates per week.
+    """Ensure recent commodity history keeps a daily recording column.
 
     Some sources only return latest-only values, and if a refresh misses a long
     window the CSV can be rewritten without any date columns for that gap. Add
-    Mon/Wed/Fri columns for the recent window; _apply_carry_forward fills them
-    with tagged carry values until a real source value overwrites them.
+    every recent date; _apply_carry_forward fills source-missing dates with
+    tagged carry values until a real source value overwrites them.
     """
     today = datetime.now(TW_TZ).date()
     start = today - timedelta(days=days)
     cur = start
     while cur <= today:
-        if cur.weekday() in (0, 2, 4) or cur == today:
-            all_dates.add(cur.isoformat())
+        all_dates.add(cur.isoformat())
         cur += timedelta(days=1)
 
 
@@ -2983,6 +3105,7 @@ def _save_commodity_csv():
         for item_name, price_list in cache_copy.items():
             for date_str, _ in price_list:
                 all_dates.add(date_str)
+        all_dates.update(_existing_commodity_csv_dates())
 
         if not all_dates:
             logger.warning("No dates found in commodity cache, skipping CSV save")
