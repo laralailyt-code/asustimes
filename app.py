@@ -4192,9 +4192,14 @@ _STRIKE_COMPANY_EXCLUDE = {
     "三星電子": ["samsung biologics", "三星生物"],
 }
 
+# Resolved/averted strikes: events dated <= cutoff are treated as stale and excluded.
+# Samsung: 2026-05-21 deal reached ~1h before the planned strike, ratified 5/29 (73.7%
+#   vote) -> no strike ever happened. June retrospectives (date > 5/27) kept re-
+#   triggering a false active-strike event, so the cutoff is extended to 6/30.
+#   Lower this date / remove the entry if a genuinely NEW strike threat emerges.
 _RESOLVED_STRIKE_CUTOFFS = {
     "\u53f0\u7a4d\u96fb": "2026-05-29",
-    "\u4e09\u661f\u96fb\u5b50": "2026-05-27",
+    "\u4e09\u661f\u96fb\u5b50": "2026-06-30",
 }
 
 def _is_excluded_strike_event(event: dict) -> bool:
