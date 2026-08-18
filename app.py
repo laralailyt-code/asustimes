@@ -307,9 +307,12 @@ def _infer_disaster_region(place_or_country: str) -> str:
     """地震 place / GDACS country → 中文地區（用於訂閱比對）。"""
     if not place_or_country:
         return ""
+    import re
     s = place_or_country.lower()
     for kw, region in _DISASTER_REGION_KEYWORDS.items():
-        if kw in s:
+        # 用單字邊界比對，避免短關鍵字（如 "usa"、"uk"）誤中地名裡湊巧出現的
+        # 字母序列（例如印尼地名常見字 "Pusat"、"PulauSaringi" 內含 "usa"）。
+        if re.search(rf"\b{re.escape(kw)}\b", s):
             return region
     return ""
 
@@ -749,9 +752,23 @@ def _fetch_usgs_quake_features(days: int = _QUAKE_DAYS) -> list[dict]:
     return out
 
 
+def _is_same_quake(a: dict, b: dict) -> bool:
+    """Rough same-event check for cross-source dedup: official feeds (JMA/CWA/
+    BMKG) and USGS report the same physical quake with slightly different
+    time/location/magnitude estimates, but never this close on both axes for
+    two distinct quakes."""
+    pa, pb = a.get("properties") or {}, b.get("properties") or {}
+    ta, tb = pa.get("time"), pb.get("time")
+    if ta is None or tb is None or abs(ta - tb) > 3 * 60 * 1000:
+        return False
+    ma, mb = pa.get("mag"), pb.get("mag")
+    if ma is None or mb is None or abs(ma - mb) > 0.5:
+        return False
+    return True
+
+
 def _fetch_quake_features(days: int = _QUAKE_DAYS) -> list[dict]:
     features: list[dict] = []
-    official_regions: list[str] = []
     for region, fetcher in (
         ("日本", _fetch_jma_quake_features),
         ("台灣", _fetch_cwa_quake_features),
@@ -760,11 +777,17 @@ def _fetch_quake_features(days: int = _QUAKE_DAYS) -> list[dict]:
         local = fetcher(days)
         if local:
             features.extend(local)
-            official_regions.append(region)
 
+    # BMKG/JMA/CWA feeds only carry a rolling window of the latest events, so an
+    # older-but-still-relevant quake (e.g. a major mainshock a few days back,
+    # once scrolled off BMKG's list) must still be picked up from USGS. Only
+    # drop a USGS feature when it's actually a duplicate of one already
+    # collected above — not merely because its region has *some* official
+    # coverage — otherwise events that aged out of the official feed vanish
+    # entirely instead of falling back to USGS.
     usgs = _fetch_usgs_quake_features(days)
     for feat in usgs:
-        if any(_feature_in_region(feat, region) for region in official_regions):
+        if any(_is_same_quake(feat, existing) for existing in features):
             continue
         features.append(feat)
 
