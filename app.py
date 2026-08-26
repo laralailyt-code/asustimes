@@ -63,11 +63,8 @@ def refresh_news():
         # Fetch fresh articles
         fresh_articles = fetch_all_news()
 
-        # Save fresh articles to archive for persistent storage
-        _save_articles_to_archive(fresh_articles)
-
-        # Load archived articles (past 2 years)
-        archived_articles = _load_archived_articles()
+        # Merge fresh articles into persistent archive (single read+write pass)
+        archived_articles = _sync_news_archive(fresh_articles)
 
         # Merge fresh + archived, deduplicate by URL
         merged = {}
@@ -3200,72 +3197,28 @@ _NEWS_ARCHIVE = os.path.join(os.path.dirname(__file__), "news_archive.json")
 _NEWS_ARCHIVE_LOCK = threading.Lock()
 _ARTICLE_RETENTION_DAYS = 730  # Keep articles for 2 years
 
-def _load_archived_articles() -> list[dict]:
-    """Load articles from persistent archive, filtering for articles from past 2 years."""
-    try:
-        if not os.path.exists(_NEWS_ARCHIVE):
-            logger.debug(f"Archive not found: {_NEWS_ARCHIVE}")
-            return []
-
-        try:
-            with open(_NEWS_ARCHIVE, "r", encoding="utf-8") as f:
-                all_articles = json.load(f)
-        except json.JSONDecodeError:
-            logger.warning(f"Archive corrupted, returning empty list")
-            return []
-
-        if not isinstance(all_articles, list):
-            logger.warning(f"Archive format invalid, returning empty list")
-            return []
-
-        if not all_articles:
-            logger.debug(f"Archive is empty")
-            return []
-
-        # Filter for articles from past 2 years
-        now = datetime.now(TW_TZ)
-        cutoff_date = now - timedelta(days=_ARTICLE_RETENTION_DAYS)
-
-        filtered = []
-        for article in all_articles:
-            try:
-                date_str = article.get("published") or article.get("fetched_at", "")
-                if date_str:
-                    # Parse date: expected format "YYYY-MM-DD HH:MM" or "YYYY-MM-DD HH:MM:SS"
-                    article_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-                    article_date = article_date.astimezone(TW_TZ)
-                    if article_date >= cutoff_date:
-                        filtered.append(article)
-            except Exception:
-                # If date parsing fails, include the article anyway (might be old format)
-                filtered.append(article)
-
-        logger.info(f"Loaded {len(filtered)} archived articles from past 2 years (total in archive: {len(all_articles)})")
-        return filtered
-    except Exception as e:
-        logger.warning(f"News archive load error: {e}")
-        return []
-
-
-def _save_articles_to_archive(new_articles: list[dict]):
-    """Append new articles to persistent archive, removing duplicates and old articles."""
-    if not new_articles:
-        return
-
+def _sync_news_archive(new_articles: list[dict]) -> list[dict]:
+    """Merge new articles into the persistent archive and filter to the 2-year
+    retention window, in a single read+write pass (previously this was two full
+    file reads: one to save, one to reload, which doubled peak memory use on
+    an archive that has grown into the tens of thousands of articles).
+    Returns the resulting archive so callers do not need a second load."""
     try:
         with _NEWS_ARCHIVE_LOCK:
             # Load existing archive
-            try:
-                if os.path.exists(_NEWS_ARCHIVE):
+            archive = []
+            if os.path.exists(_NEWS_ARCHIVE):
+                try:
                     with open(_NEWS_ARCHIVE, "r", encoding="utf-8") as f:
                         archive = json.load(f)
-                        if not isinstance(archive, list):
-                            archive = []
-                else:
+                    if not isinstance(archive, list):
+                        archive = []
+                except json.JSONDecodeError:
+                    logger.warning("Archive corrupted, returning empty list")
                     archive = []
-            except Exception as e:
-                logger.warning(f"Failed to load archive: {e}")
-                archive = []
+                except Exception as e:
+                    logger.warning(f"Failed to load archive: {e}")
+                    archive = []
 
             # Deduplicate by URL (most reliable key)
             archive_urls = {article.get("source_url", ""): article for article in archive if article.get("source_url")}
@@ -3278,9 +3231,8 @@ def _save_articles_to_archive(new_articles: list[dict]):
                     archive.append(article)
                     archive_urls[url] = article
                     added_count += 1
-                    logger.debug(f"Added article to archive: {article.get('title', '')[:50]}")
 
-            # Only filter if archive has articles older than 2 years
+            # Filter for articles from past 2 years
             now = datetime.now(TW_TZ)
             cutoff_date = now - timedelta(days=_ARTICLE_RETENTION_DAYS)
             filtered_archive = []
@@ -3289,6 +3241,7 @@ def _save_articles_to_archive(new_articles: list[dict]):
                 try:
                     date_str = article.get("published") or article.get("fetched_at", "")
                     if date_str:
+                        # Parse date: expected format "YYYY-MM-DD HH:MM" or "YYYY-MM-DD HH:MM:SS"
                         article_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
                         article_date = article_date.astimezone(TW_TZ)
                         if article_date >= cutoff_date:
@@ -3298,19 +3251,29 @@ def _save_articles_to_archive(new_articles: list[dict]):
                     else:
                         # Keep articles with unparseable dates (might be old or new)
                         filtered_archive.append(article)
-                except Exception as e:
+                except Exception:
                     # Keep articles with unparseable dates
-                    logger.debug(f"Error parsing article date: {e}")
                     filtered_archive.append(article)
 
-            # Write archive (sorted by date, newest first)
             filtered_archive.sort(key=lambda a: a.get("published") or a.get("fetched_at", ""), reverse=True)
-            with open(_NEWS_ARCHIVE, "w", encoding="utf-8") as f:
-                json.dump(filtered_archive, f, ensure_ascii=False, indent=2)
 
-            logger.info(f"News archive: +{added_count} new, -{removed_count} old, {len(filtered_archive)} total")
+            # Only rewrite the file when something actually changed
+            if new_articles:
+                try:
+                    # No indent: pretty-printing roughly doubles the in-memory
+                    # string buffer json.dump has to build for a large archive
+                    with open(_NEWS_ARCHIVE, "w", encoding="utf-8") as f:
+                        json.dump(filtered_archive, f, ensure_ascii=False)
+                    logger.info(f"News archive: +{added_count} new, -{removed_count} old, {len(filtered_archive)} total")
+                except Exception as e:
+                    logger.error(f"News archive save error: {e}", exc_info=True)
+            else:
+                logger.info(f"Loaded {len(filtered_archive)} archived articles from past 2 years (total in archive: {len(archive)})")
+
+            return filtered_archive
     except Exception as e:
-        logger.error(f"News archive save error: {e}", exc_info=True)
+        logger.warning(f"News archive sync error: {e}")
+        return []
 
 
 # ── Commodity news (bilingual: GDELT EN + Bing ZH with 3-layer guard) ────────
