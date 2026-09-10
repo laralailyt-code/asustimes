@@ -42,6 +42,7 @@ TW_TZ = timezone(timedelta(hours=8))
 # On Render: RENDER=true, On Localhost: RENDER is not set
 _IS_RENDER_PRODUCTION = os.environ.get("RENDER") == "true"
 _SHOW_RISK_PAGE = True  # Show risk page in all environments
+_SHOW_WARROOM_PAGE = False  # NB 競品戰情室已關閉
 
 # ── In-memory cache ────────────────────────────────────────────────────────────
 _cache: dict = {
@@ -1055,7 +1056,7 @@ def api_demo_clear():
 @app.route("/")
 def index():
     ensure_background_threads()
-    return render_template("index.html", show_risk_page=_SHOW_RISK_PAGE)
+    return render_template("index.html", show_risk_page=_SHOW_RISK_PAGE, show_warroom_page=_SHOW_WARROOM_PAGE)
 
 
 @app.route("/api/ping")

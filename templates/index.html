@@ -1020,7 +1020,7 @@
     <button class="page-nav-btn active" id="navNews" onclick="switchPage('news')">📰 新聞</button>
     <button class="page-nav-btn" id="navMarket" onclick="switchPage('market')">📈 原物料匯率行情</button>
     {% if show_risk_page %}<button class="page-nav-btn" id="navRisk" onclick="switchPage('risk')">🌐 供應鏈風險</button>{% endif %}
-    <button class="page-nav-btn" id="navWarRoom" onclick="switchPage('warroom')">📊 NB 競品戰情室</button>
+    {% if show_warroom_page %}<button class="page-nav-btn" id="navWarRoom" onclick="switchPage('warroom')">📊 NB 競品戰情室</button>{% endif %}
     <button class="page-nav-btn" id="navGuide" onclick="switchPage('guide')">📖 使用指南</button>
   </nav>
 </div>
@@ -2083,7 +2083,7 @@ const poller = setInterval(async()=>{
 
 // ── Page switcher ──────────────────────────────────────────
 function switchPage(page) {
-  const validPages = ['news', 'market', 'warroom', 'guide', 'risk'];
+  const validPages = ['news', 'market', 'guide', 'risk'];
   if (!validPages.includes(page)) page = 'news';
   const desiredHash = page === 'news' ? '' : `#${page}`;
   if (window.location.hash !== desiredHash) {
@@ -2154,7 +2154,7 @@ function switchPage(page) {
 
 function pageFromHash() {
   const page = (window.location.hash || '').replace('#', '').trim();
-  return ['market', 'warroom', 'guide', 'risk'].includes(page) ? page : null;
+  return ['market', 'guide', 'risk'].includes(page) ? page : null;
 }
 
 window.addEventListener('hashchange', () => {
